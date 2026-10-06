@@ -209,8 +209,11 @@ struct RateLimitInfo {
 /// Whether the attempt was rate limited: its final result is an error
 /// (`is_error`, or an `error*` subtype) and either the last
 /// `rate_limit_event` before it has a `status` other than `allowed` or
-/// `allowed_warning` (Claude's "close to the limit"), or the error text
-/// says "rate limit", "usage limit" (any case) or `429` as a whole word.
+/// `allowed_warning` (Claude's "close to the limit"), or, with
+/// `is_error: true` (where Claude puts API and CLI errors), the error's
+/// `errors`, else its `result`, says "rate limit", "usage limit" (any case)
+/// or `429` as a whole word. An `error*` subtype without `is_error` (out of
+/// turns, say) carries the model's own prose, so its text never counts.
 /// `None` for anything else: 05's failure table applies.
 pub fn rate_limited(stdout: &str) -> Option<RateLimit> {
     let line = claude_result_line(stdout)?;
@@ -230,12 +233,10 @@ pub fn rate_limited(stdout: &str) -> Option<RateLimit> {
             resets_at: info.resets_at,
             text: error.detail,
         }),
-        None if says_rate_limited(&error.detail) || says_rate_limited(&error.text) => {
-            Some(RateLimit {
-                resets_at: None,
-                text: error.detail,
-            })
-        }
+        None if error.is_error && says_rate_limited(&error.detail) => Some(RateLimit {
+            resets_at: None,
+            text: error.detail,
+        }),
         None => None,
     }
 }
@@ -256,6 +257,8 @@ fn says_rate_limited(text: &str) -> bool {
 
 /// An error the agent reported on its result line.
 struct ReportedError {
+    /// The line said `is_error: true` (not only an `error*` subtype).
+    is_error: bool,
     text: String,
     detail: String,
     turns: Option<u32>,
@@ -298,6 +301,7 @@ fn reported_error(line: &str) -> Option<ReportedError> {
         Some(turns) => turns.as_u64().and_then(|n| u32::try_from(n).ok()),
     };
     Some(ReportedError {
+        is_error,
         text: result.unwrap_or_else(|| detail.clone()),
         detail,
         turns,
@@ -805,6 +809,19 @@ mod tests {
             );
             assert_eq!(limited(&stdout), None, "{text}");
         }
+    }
+
+    #[test]
+    fn an_error_subtype_without_is_error_is_never_read_as_a_rate_limit_by_its_text() {
+        // Out of turns: `result` is the model's own prose, not an API error.
+        let stdout = r#"{"type":"result","subtype":"error_max_turns","is_error":false,"result":"implemented the rate limit middleware"}"#;
+        assert_eq!(limited(stdout), None);
+    }
+
+    #[test]
+    fn with_errors_the_text_check_reads_them_not_the_result_prose() {
+        let stdout = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"added a 429 handler","errors":["tests failed"]}"#;
+        assert_eq!(limited(stdout), None);
     }
 
     #[test]

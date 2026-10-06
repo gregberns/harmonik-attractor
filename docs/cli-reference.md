@@ -428,8 +428,11 @@ profile's `rate_limit_window` (built-in `2m`), instead of failing the node.
 
 **Claude (`claude-p`).** An invocation is rate limited when its result is an
 error and either the last `rate_limit_event` line's status is neither
-`allowed` nor `allowed_warning`, or the error says "rate limit", "usage
-limit" or `429` (as a whole word). PAS then waits:
+`allowed` nor `allowed_warning`, or the result has `is_error: true` and its
+error (`errors`, else `result`) says "rate limit", "usage limit" or `429`
+(as a whole word). An error subtype without `is_error`, such as running out
+of turns, is never read as a rate limit by its text, which is the model's
+own. PAS then waits:
 
 - until the event's `resetsAt`, when that is in the future;
 - 1 s, when `resetsAt` is now or past (the limit has already reset);
