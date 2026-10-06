@@ -939,14 +939,14 @@ digraph Pipeline {
 Each provider runs through its built-in agent profile (`claude`, `codex`, `gemini`), whose handler knows the CLI's flags and output format:
 
 - **Claude** (`claude-p`): Uses `--output-format stream-json --verbose` and `-p` for the prompt. Returns streaming JSON events; PAS uses the final `result` event.
-- **Codex** (`codex-exec`): Uses `codex exec --json --yolo --skip-git-repo-check --ephemeral --cd <workdir>` with the prompt as the last, positional argument. Returns streaming JSONL events; PAS extracts the last completed agent-message item.
+- **Codex** (`codex-exec`): Uses `codex exec --json --yolo --skip-git-repo-check --cd <workdir>` (on a retry or revisit, `codex exec resume <thread-id> --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox`) with the prompt as the last, positional argument. Returns streaming JSONL events; PAS extracts the last completed agent-message item.
 - **Gemini** (`gemini`): Uses `--output-format json --approval-mode yolo` with the prompt as a positional argument, last. When the profile's command with `--help` lists `stream-json` (Gemini CLI 0.11.0 and later), PAS passes `--output-format stream-json` in place of `json`. PAS does not pass a `--sandbox` flag to Gemini. Returns structured JSON, or streaming JSON events from which PAS joins the assistant messages.
 
 Every agent runs with stdin from `/dev/null` and the profile's environment: the default `env.remove` strips provider API keys (including `OPENAI_API_KEY`), so agents bill the logged-in subscription. See [Agent profiles](cli-reference.md#agent-profiles-agentsname-in-pastoml).
 
 During `pas run`, every agent invocation's raw stdout is also copied, line by line as it arrives, to a Transcript at `runs/<run-id>/transcripts/<invocation-id>.jsonl` in the Pipeline's log folder, and its stderr the same way to `transcripts/<invocation-id>.stderr.log`.
 
-When an agent process starts, before any of its output reaches the Transcript, PAS appends an `LlmStarted` Event: `invocation_id`, `spawn` (1 for the first process of the invocation), `node_id`, `attempt` (from 1), `profile` (e.g. `claude`, `codex`), the requested `model` (left out when none), `host`, `pid` and `pgid` of the agent process, and the `transcript` and `stderr` paths relative to the Run folder. To find which node and process a growing Transcript belongs to, look up the `LlmStarted` with the same `invocation_id` (the Transcript's file name). An agent that cannot be started records no `LlmStarted`. `LlmInvoked`'s `provider` is the profile name.
+When an agent process starts, before any of its output reaches the Transcript, PAS appends an `LlmStarted` Event: `invocation_id`, `spawn` (1 for the first process of the invocation), `node_id`, `attempt` (from 1), `profile` (e.g. `claude`, `codex`), the requested `model` (left out when none), `host`, `pid` and `pgid` of the agent process, the `session_id` it was started with, and the `transcript` and `stderr` paths relative to the Run folder. To find which node and process a growing Transcript belongs to, look up the `LlmStarted` with the same `invocation_id` (the Transcript's file name). An agent that cannot be started records no `LlmStarted`. `LlmInvoked`'s `provider` is the profile name.
 
 On a timeout or a stop, an agent gets TERM, its profile's `kill_grace` (built-in 10 s), then KILL. A stopped invocation's `LlmInvoked` has status `timeout`.
 
@@ -1041,7 +1041,7 @@ If a goal gate node keeps failing, its retry edge can revisit the graph. Node `m
 
 ### Unsupported execution attributes
 
-Canonical non-web compilation rejects `fidelity`, `reasoning_effort`, `auto_status`, `allow_partial`, and node/edge `thread_id` with `unsupported_execution_capability`. Manager-loop roles are rejected for the same reason. Remove these attributes or express the workflow as explicit sequential nodes. See [Execution capability contract](execution-capabilities.md).
+Canonical non-web compilation rejects `reasoning_effort` on nodes without an agent profile, `auto_status`, `allow_partial`, `fidelity` other than `full`/`fresh`, `fidelity`/`thread_id` on non-agent nodes, and edge `fidelity`/`thread_id` with `unsupported_execution_capability`. Manager-loop roles are rejected for the same reason. Remove these attributes or express the workflow as explicit sequential nodes. See [Execution capability contract](execution-capabilities.md).
 
 ### Intermediate results are lost
 

@@ -86,7 +86,7 @@ When `--workdir` is inside a git repository, each Run works in its own git workt
 - **`.pas/.gitignore`:** a new Run writes a `.gitignore` containing `*` in `<project-root>/.pas` (default worktree root), in a custom worktree root, and in the `.pas` folder of the default logs (when `--logs` is not given), so `git status` in the main checkout stays clean and pas's own files never count as uncommitted changes. An existing `.gitignore` there is never changed.
 - **Resume:** re-running the command resumes in the worktree and branch recorded in `run.json`, whatever `--base`, `--worktree-root` or `pas.toml` now say; each differing setting prints a warning. `run.json` is not rewritten.
 - **`--fresh`** starts a new Run with a new worktree and branch. The old worktree and branch stay; removing them is not done yet.
-- **Attempt commits:** after every attempt of every node except start and exit nodes, whatever its result, PAS commits everything in the worktree except `.pas/` (`git add -A -- . ':(exclude).pas'`, then `git commit --allow-empty --no-verify` with `core.hooksPath=/dev/null`, so none of the repository's hooks run, and with `commit.gpgsign=false`: attempt commits are never signed, since signing could prompt or fail in an unattended Run). The agent's own commits during the attempt stay, with PAS's commit on top. The message is `pas(<run-id>): <node> attempt <n> (<status>)` with the trailers `Pas-Run`, `Pas-Node`, `Pas-Attempt`, `Pas-Status` (`success`, `fail`, `retry` or `interrupted`) and, for a failure, `Pas-Failure-Class` (`reported`, `timeout`, `crash`, `no_result` or `launch`). If the repository has no `user.name`/`user.email`, the commit is made as `PAS <pas@localhost>`. A Run outside a worktree (not a git repository, or `--dry-run`) makes no commits. If an attempt can't be committed, the Run stops with `node '<id>' attempt <n>: could not commit the attempt: ...`; the changes stay in the worktree and a resume commits them as `interrupted`.
+- **Attempt commits:** after every attempt of every node except start and exit nodes, whatever its result, PAS commits everything in the worktree except `.pas/` (`git add -A -- . ':(exclude).pas'`, then `git commit --allow-empty --no-verify` with `core.hooksPath=/dev/null`, so none of the repository's hooks run, and with `commit.gpgsign=false`: attempt commits are never signed, since signing could prompt or fail in an unattended Run). The agent's own commits during the attempt stay, with PAS's commit on top. The message is `pas(<run-id>): <node> attempt <n> (<status>)` with the trailers `Pas-Run`, `Pas-Node`, `Pas-Attempt`, `Pas-Status` (`success`, `fail`, `retry` or `interrupted`), for a failure `Pas-Failure-Class` (`reported`, `timeout`, `crash`, `no_result` or `launch`), and `Pas-Session` (the agent session id the agent reported) for an agent attempt. If the repository has no `user.name`/`user.email`, the commit is made as `PAS <pas@localhost>`. A Run outside a worktree (not a git repository, or `--dry-run`) makes no commits. If an attempt can't be committed, the Run stops with `node '<id>' attempt <n>: could not commit the attempt: ...`; the changes stay in the worktree and a resume commits them as `interrupted`.
 - **Interrupted attempts:** if `pas` ended during an attempt (killed, crashed, or stopped with SIGTERM), a resume first commits what that attempt left (`Pas-Status: interrupted`), when the worktree has changes or the agent committed during it, even if the node has no attempts left. The node's next attempt is told so in its prompt: `Your previous attempt was interrupted; its changes since <start> are recorded in commit <sha>. Review git diff <start> before continuing.`, where `<start>` is the worktree's commit when the interrupted attempt began. An interrupted attempt still counts toward `max_retries`, except one ended by a stop (SIGTERM), which does not. Attempt numbers (`Pas-Attempt`, `PAS_ATTEMPT`) never repeat within a visit of a node: the attempt after an interrupted attempt 1 is attempt 2, whether or not attempt 1 counted.
 - **End of run:** when the Run succeeds, its worktree is removed (`git worktree remove`) and its branch stays, so the result is `git log pas/run/<run-id>`. A worktree with uncommitted changes outside `.pas/`, or one another process is working in (`--allow-shared-workdir`), is kept instead, with a warning in `final.json`. A failed or stopped Run keeps both the worktree and the branch, for a resume or a look. The branch is never deleted.
 - **Directory mode:** each `.dot` file is its own Run, so each phase gets its own worktree from `--base`, and a phase does not see an earlier phase's edits.
@@ -249,8 +249,8 @@ on the node, or `llm_provider`, which names a built-in profile:
 
 | Profile | Mechanism (handler) | Command and args | The handler adds |
 |---------|---------------------|------------------|------------------|
-| `claude` | `claude-p` | `claude --no-session-persistence --dangerously-skip-permissions --strict-mcp-config --disable-slash-commands` (+ `[codergen.claude]` flags) | `-p <prompt> --output-format stream-json --verbose` |
-| `codex` | `codex-exec` | `codex exec --json --yolo --skip-git-repo-check --ephemeral` | `--cd <workdir> <prompt>` |
+| `claude` | `claude-p` | `claude --dangerously-skip-permissions --strict-mcp-config --disable-slash-commands` (+ `[codergen.claude]` flags), then `--session-id <id>` (new) or `--resume <id>` (continue) | `-p <prompt> --output-format stream-json --verbose` |
+| `codex` | `codex-exec` | `codex exec --json --yolo --skip-git-repo-check`; to continue, `codex exec resume <thread-id> --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox` | `--cd <workdir>` (new sessions only) and `<prompt>` |
 | `gemini` | `gemini` | `gemini --approval-mode yolo` | `--output-format <json\|stream-json>` right after the command, and `<prompt>` last |
 
 A model is added as `--model <model>` for all three; only `claude` takes a
@@ -276,6 +276,41 @@ records the profile name as `provider`.
 >
 > Never put a key in `env.set`: its values are literal and committed with
 > `pas.toml`, so they land in git and in every Run's worktree.
+
+#### Agent sessions
+
+A node that runs again (a retry, or a loop back to it) continues its agent's
+session by default (design §1):
+
+- **Thread:** a node's session is recorded under its thread key, its
+  `thread_id` or else its node id; nodes with one `thread_id` share it. The
+  map lives in `checkpoint.json` (`agent_sessions`), so it survives a stop
+  and a resume.
+- **Fidelity:** `fidelity="full"` (the default when the profile can resume)
+  continues the thread's recorded session; `fidelity="fresh"` starts a new
+  one every time. A profile that can't resume (`gemini`) defaults to
+  `fresh`, and `fidelity="full"` on it fails `pas validate`.
+  `pas validate` lists each agent node's effective fidelity.
+- **Ids:** PAS mints a session id for a new session (`{session_id}`,
+  `PAS_SESSION_ID`) and records the id the agent reports: Claude's
+  `session_id`, Codex's `thread_id` (Codex can't be given an id). It shows
+  in `LlmStarted.session_id`, `LlmInvoked.agent_session_id` and
+  `continued`, and the `Pas-Session` trailer of the attempt commit.
+- **Profile fields:** `session_args` (added when starting a new session),
+  and one of `resume_args` (replaces only `session_args`) or
+  `resume_command` (replaces `command` and `args`; a `{command}` element
+  expands to the profile's command, so a profile that overrides `command`
+  resumes with its own program). `model_args` and `reasoning_args` follow
+  either form. A profile with both resume forms is refused.
+- **Persistence:** the built-in `claude` and `codex` profiles no longer pass
+  `--no-session-persistence` or `--ephemeral`, so session files persist
+  under `~/.claude` and `~/.codex`.
+- **No fallback:** a session that can't be continued fails the attempt.
+  Claude's "No conversation found with session ID" is a reported failure
+  (routable as a fail); Codex's missing thread exits 1 and stops the Run as
+  a crash. The map keeps the dead id, so a fail edge looping back to the
+  node fails the same way: set `fidelity="fresh"` on it, or start over with
+  `pas run --fresh`.
 
 A project replaces a profile by name, or adds one, in `pas.toml`:
 
@@ -1329,6 +1364,8 @@ with stdin from `/dev/null` (it never reads `pas`'s stdin). Its environment is
   - `PAS_ATTEMPT`: the attempt at this node, from 1.
   - `PAS_INVOCATION_ID`: this Model Invocation's id, the same as
     `LlmInvoked.invocation_id` and the Transcript's file name.
+  - `PAS_SESSION_ID`: the agent session id the invocation runs with (minted
+    for a new session, or the one being continued).
 
 Its stderr is written, as it arrives, to `transcripts/<invocation-id>.stderr.log`
 next to the Transcript, and kept after the process ends (or crashes).
@@ -1369,7 +1406,7 @@ These are set in the `.dot` file as node attributes and passed through to each `
 
 Every node also gets:
 - `--output-format stream-json --verbose` — streamed JSON events; PAS parses the final `result` event
-- `--no-session-persistence` — each node is a fresh session
+- `--session-id <id>`, or `--resume <id>` when the node continues its session (see [Agent sessions](#agent-sessions))
 - `--dangerously-skip-permissions` — allows file edits and bash execution
 - `--strict-mcp-config --disable-slash-commands` — only the MCP config PAS passes; no slash commands
 

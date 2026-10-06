@@ -108,7 +108,9 @@ Fields: `current_node_id`, `completed_nodes`, `node_outcomes`,
 `schema_version`, `quality_loop_counters`, `quality_last_footprint`,
 `previous_node_id`, `total_handler_attempts`, `active_node_id`,
 `active_node_attempts`, `active_attempt_number`, `active_attempt_head`,
-`execution_fingerprint`. A resume refuses a checkpoint whose
+`agent_sessions` (thread key, a node's `thread_id` or else its id, to the
+agent session id its agent last reported; a node that runs again continues
+it), `execution_fingerprint`. A resume refuses a checkpoint whose
 `execution_fingerprint` does not match the current graph. It belongs to the
 Pipeline folder, not a Run: `run_id` names the Run it resumes. Source:
 `crates/attractor-pipeline/src/checkpoint.rs`.
@@ -242,8 +244,8 @@ is the field-level reference.
 | [`TaskClaimed`](../crates/attractor-journal/tests/golden/journal/TaskClaimed.jsonl) | When a beads node claims the next Task. |
 | [`TaskSelectionBlocked`](../crates/attractor-journal/tests/golden/journal/TaskSelectionBlocked.jsonl) | When open Tasks remain but all are blocked. |
 | [`TaskClosed`](../crates/attractor-journal/tests/golden/journal/TaskClosed.jsonl) | When a beads node closes a Task, with its Run Commits. |
-| [`LlmStarted`](../crates/attractor-journal/tests/golden/journal/LlmStarted.jsonl) | When an agent process is spawned, before its first output: pid, pgid, host, transcript and stderr paths. |
-| [`LlmInvoked`](../crates/attractor-journal/tests/golden/journal/LlmInvoked.jsonl) | When a Model Invocation ends (or is dropped): status, tokens, cost, duration. |
+| [`LlmStarted`](../crates/attractor-journal/tests/golden/journal/LlmStarted.jsonl) | When an agent process is spawned, before its first output: pid, pgid, host, the session id it was started with, transcript and stderr paths. |
+| [`LlmInvoked`](../crates/attractor-journal/tests/golden/journal/LlmInvoked.jsonl) | When a Model Invocation ends (or is dropped): status, tokens, cost, duration, the session id the agent reported and whether it `continued` an earlier session. |
 | [`CommitsCreated`](../crates/attractor-journal/tests/golden/journal/CommitsCreated.jsonl) | When HEAD moved during a node attempt, listing the new commits. |
 | [`HumanInputRequested`](../crates/attractor-journal/tests/golden/journal/HumanInputRequested.jsonl) | When a Human Gate asks its question; fsynced, so a reader can answer at once. |
 | [`HumanInputAnswered`](../crates/attractor-journal/tests/golden/journal/HumanInputAnswered.jsonl) | When the Human Gate takes an answer, with its `source`. |
