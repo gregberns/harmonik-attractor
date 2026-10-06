@@ -32,7 +32,7 @@ branch, as part of merging it.
 | 02a | [Agent handler interface, process runner and the claude-p handler](tickets/02a-handler-crates-claude-p.md) | 01 | done |
 | 02b | [Agent start events, live stderr and graceful kill](tickets/02b-agent-start-events-stderr-kill.md) | 02a | done (catch-unwind deferred, operator pending) |
 | 03 | [Agent profiles in config, test-only profiles and reasoning level](tickets/03-agent-profiles-config.md) | 02a | done |
-| 04 | [Codex and Gemini as handler crates; remove LlmProvider](tickets/04-port-codex-gemini.md) | 03 | ready |
+| 04 | [Codex and Gemini as handler crates; remove LlmProvider](tickets/04-port-codex-gemini.md) | 03 | done |
 | 05 | [Clear run-ending errors and the two failure-hiding fixes](tickets/05-failure-reporting-and-hidden-failures.md) | 02b | done |
 | 06 | [A worktree and branch per run](tickets/06-worktree-and-branch.md) | 01 | done |
 | 07 | [Attempt commits, interrupted attempts and the end-of-run report](tickets/07-attempt-commits-and-end-of-run.md) | 05, 06 | done |
