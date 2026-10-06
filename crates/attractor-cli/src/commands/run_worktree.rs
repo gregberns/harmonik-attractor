@@ -11,9 +11,9 @@ use std::process::Command;
 /// Prefix of every Run branch.
 const BRANCH_PREFIX: &str = "pas/run/";
 
-/// The folder pas keeps its own files in, at the project root.
 /// The base of a new Run's branch when `--base` is not given.
 pub(crate) const DEFAULT_BASE: &str = "HEAD";
+/// The folder pas keeps its own files in, at the project root.
 pub(crate) const PAS_DIR: &str = ".pas";
 
 /// Why the Run's worktree could not be prepared.
@@ -242,14 +242,21 @@ pub(crate) fn place_new_run(request: &PlaceRequest<'_>) -> Result<RunPlace, Work
     if is_dirty(&top)? {
         warnings.push(dirty_warning(&top));
     }
+    let ignore = |dir: &Path| {
+        ensure_pas_gitignore(dir).map_err(|e| WorktreeError::Io {
+            path: dir.join(".gitignore"),
+            message: e.to_string(),
+        })
+    };
     let root = match request.root {
-        Some(root) => root.to_path_buf(),
+        // A root inside the repository would show in `git status` as
+        // untracked; outside it the .gitignore is harmless.
+        Some(root) => {
+            ignore(root)?;
+            root.to_path_buf()
+        }
         None => {
-            let pas_dir = top.join(PAS_DIR);
-            ensure_pas_gitignore(&pas_dir).map_err(|e| WorktreeError::Io {
-                path: pas_dir.join(".gitignore"),
-                message: e.to_string(),
-            })?;
+            ignore(&top.join(PAS_DIR))?;
             default_worktree_root(&top)
         }
     };
@@ -383,7 +390,7 @@ pub(crate) fn is_dirty(top: &Path) -> Result<bool, WorktreeError> {
 }
 
 /// Write `<pas_dir>/.gitignore` containing `*` unless the file exists, so
-/// git ignores everything pas keeps there.
+/// git ignores everything pas keeps there (also used for a worktree root).
 pub(crate) fn ensure_pas_gitignore(pas_dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(pas_dir)?;
     match std::fs::OpenOptions::new()
@@ -426,6 +433,9 @@ pub(crate) fn create_or_reuse(
     worktree: &RunWorktree,
 ) -> Result<PathBuf, WorktreeError> {
     let path = &worktree.path;
+    // Forget worktrees whose folder was deleted, so their branch can be
+    // checked out again.
+    git(top, &["worktree", "prune"])?;
     let state = worktree_state(top, path, &worktree.branch)?;
     let path_arg = path.to_string_lossy();
     match decide_worktree(&state, &worktree.branch, path)? {

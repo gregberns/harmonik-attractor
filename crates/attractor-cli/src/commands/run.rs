@@ -868,6 +868,17 @@ async fn prepare_run(
     // written, so a refused Run leaves no trace (C5).
     let workdir_abs = absolute(configured.controls().workdir().value());
     let mut locks = acquire_pipeline_lock(&logs_dir)?;
+    // The default logs folder is `.pas/logs/..` under the cwd: keep it out
+    // of `git status` (and the dirty check) from the moment it exists.
+    if logs.is_none() {
+        let pas_dir = std::path::Path::new(run_worktree::PAS_DIR);
+        run_worktree::ensure_pas_gitignore(pas_dir).map_err(|e| {
+            setup(&format!(
+                "cannot write {}: {e}",
+                pas_dir.join(".gitignore").display()
+            ))
+        })?;
+    }
 
     // Check for existing checkpoint. Loaded (not just existence-checked) so
     // the resume banner can show real progress instead of a bare notice.
@@ -926,17 +937,6 @@ async fn prepare_run(
         run_worktree::place_resumed_run(&request, recorded_worktree(&recorded))
     }
     .map_err(|e| SetupError::new(e.code(), e))?;
-    // The default logs folder is `.pas/logs/..` under the cwd: keep it out
-    // of `git status` too.
-    if is_new_run && logs.is_none() {
-        let pas_dir = std::path::Path::new(run_worktree::PAS_DIR);
-        run_worktree::ensure_pas_gitignore(pas_dir).map_err(|e| {
-            setup(&format!(
-                "cannot write {}: {e}",
-                pas_dir.join(".gitignore").display()
-            ))
-        })?;
-    }
     for warning in &place.warnings {
         eprintln!("warning: {warning}");
     }

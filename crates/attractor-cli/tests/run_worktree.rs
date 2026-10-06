@@ -203,6 +203,51 @@ fn default_logs_in_a_subdirectory_are_ignored_too() {
         "*\n"
     );
     assert_eq!(fake.git(&["status", "--porcelain"]), "");
+    // pas's own logs folder is not dirt.
+    assert!(
+        !stderr(&output).contains("uncommitted"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn a_refused_run_leaves_its_default_logs_ignored() {
+    let fake = FakeAgent::new();
+
+    let output = fake
+        .pas_run(&tool_node("true"))
+        .args(["--base", "nosuchref"])
+        .current_dir(fake.repo())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+
+    assert_eq!(fake.git(&["status", "--porcelain"]), "");
+}
+
+#[test]
+fn worktree_root_inside_the_repo_stays_out_of_git_status() {
+    let fake = FakeAgent::new();
+    fs::write(
+        fake.repo().join("pas.toml"),
+        "[project]\nname = \"demo\"\n\n[run]\nworktree_root = \"wt\"\n",
+    )
+    .unwrap();
+    fake.git(&["add", "pas.toml"]);
+    fake.git(&["commit", "-q", "-m", "pas.toml"]);
+
+    assert_success(&fake.run(&tool_node("true")));
+    assert_eq!(fake.git(&["status", "--porcelain"]), "");
+
+    let second = fake.run_with(&tool_node("true"), &["--fresh"]);
+    assert_success(&second);
+    assert!(
+        !stderr(&second).contains("uncommitted"),
+        "{}",
+        stderr(&second)
+    );
+    assert_eq!(fake.git(&["status", "--porcelain"]), "");
 }
 
 /// The `RunStarted` event's warnings.
@@ -565,4 +610,19 @@ fn resume_ignores_a_changed_worktree_root() {
             .count(),
         2
     );
+}
+
+#[test]
+fn resume_recreates_a_deleted_worktree_from_its_branch() {
+    let fake = FakeAgent::new();
+    let wt = run_until_stopped_at_gate(&fake, &[]);
+    fs::remove_dir_all(&wt).unwrap();
+
+    let output = fake.run_with(&edit_gate_check(), &[]);
+    assert_success(&output);
+
+    assert_eq!(fake.worktree(), wt);
+    // `check` sees the edit committed on the Run's branch.
+    assert_eq!(fs::read_to_string(wt.join("seen")).unwrap(), "ok\n");
+    assert_eq!(fake.attempts("edit_commit"), 1);
 }
