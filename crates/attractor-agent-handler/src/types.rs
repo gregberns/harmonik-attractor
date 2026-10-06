@@ -168,6 +168,9 @@ pub struct AgentResult {
     pub text: String,
     /// For a failure, a human-readable reason.
     pub detail: String,
+    /// The last lines of the agent's stderr (bounded), for a failure's
+    /// message; empty when there was none or it wasn't read.
+    pub stderr_tail: String,
     pub usage: Usage,
     pub exit: Option<ExitInfo>,
     pub duration: Duration,
@@ -187,6 +190,7 @@ impl AgentResult {
             status: AgentStatus::Failed(class),
             text: String::new(),
             detail: detail.into(),
+            stderr_tail: String::new(),
             usage: Usage::default(),
             exit: None,
             duration: Duration::ZERO,

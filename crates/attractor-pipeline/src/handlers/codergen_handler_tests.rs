@@ -529,6 +529,19 @@ mod transcripts {
         files.into_iter().next().unwrap()
     }
 
+    /// `transcript <path>; stderr <path>` of the one invocation in `run_dir`.
+    fn only_files(run_dir: &Path) -> String {
+        let transcript = only_transcript(run_dir);
+        let stem = transcript.file_stem().unwrap().to_str().unwrap().to_owned();
+        let stderr = transcript.with_file_name(format!("{stem}.stderr.log"));
+        assert!(stderr.is_file(), "{}", stderr.display());
+        format!(
+            "transcript {}; stderr {}",
+            transcript.display(),
+            stderr.display()
+        )
+    }
+
     async fn run(
         provider: LlmCliProvider,
         program: PathBuf,
@@ -794,7 +807,11 @@ mod transcripts {
 
         assert_eq!(
             error.to_string(),
-            handler_error("Claude Code exited with exit status: 3: crashed")
+            handler_error(&format!(
+                "attempt 1: Claude Code exited with exit status: 3; \
+                 last stderr lines:\ncrashed\n{}",
+                only_files(&run_dir)
+            ))
         );
         assert_eq!(
             std::fs::read_to_string(only_transcript(&run_dir)).unwrap(),
@@ -843,9 +860,13 @@ mod transcripts {
         .await
         .unwrap_err();
 
-        assert!(
-            matches!(error, AttractorError::CommandTimeout { timeout_ms: 3000 }),
-            "{error}"
+        assert!(error.is_retryable(), "{error}");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "node 'step' attempt 1 failed: timeout after 3000ms; {}",
+                only_files(&run_dir)
+            )
         );
         assert_eq!(
             std::fs::read_to_string(only_transcript(&run_dir)).unwrap(),
@@ -856,15 +877,19 @@ mod transcripts {
     // AC5: no output → empty Transcript and the same error as before.
     #[tokio::test]
     async fn silent_provider_leaves_empty_transcript_and_same_error() {
-        let cases = [
-            (
-                "echo boom >&2; exit 0",
-                handler_error("Claude Code produced no output. stderr: boom\n"),
-            ),
-            (
-                "echo boom >&2; exit 2",
-                handler_error("Claude Code exited with exit status: 2: boom"),
-            ),
+        // Each stub's expected error, given the Run folder.
+        type Expected = fn(&Path) -> String;
+        let cases: [(&str, Expected); 2] = [
+            ("echo boom >&2; exit 0", |_| {
+                handler_error("Claude Code produced no output. stderr: boom\n")
+            }),
+            ("echo boom >&2; exit 2", |run_dir| {
+                handler_error(&format!(
+                    "attempt 1: Claude Code exited with exit status: 2; \
+                     last stderr lines:\nboom\n{}",
+                    only_files(run_dir)
+                ))
+            }),
         ];
         for (body, expected) in cases {
             let tmp = tempfile::tempdir().unwrap();
@@ -873,7 +898,7 @@ mod transcripts {
 
             let error = run_claude(program, Some(&run_dir)).await.unwrap_err();
 
-            assert_eq!(error.to_string(), expected, "stub: {body}");
+            assert_eq!(error.to_string(), expected(&run_dir), "stub: {body}");
             let transcript = only_transcript(&run_dir);
             assert_eq!(std::fs::metadata(transcript).unwrap().len(), 0);
         }
@@ -1296,9 +1321,12 @@ mod transcripts {
         .await
         .unwrap_err();
 
-        assert!(
-            matches!(error, AttractorError::CommandTimeout { timeout_ms: 3000 }),
-            "{error}"
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "node 'step' attempt 1 failed: timeout after 3000ms; {}",
+                only_files(&run_dir)
+            )
         );
         let event = events.only();
         assert_eq!(event["status"], "timeout");
@@ -1358,7 +1386,11 @@ mod transcripts {
 
         assert_eq!(
             error.to_string(),
-            handler_error("Claude Code exited with exit status: 3: crashed")
+            handler_error(&format!(
+                "attempt 1: Claude Code exited with exit status: 3; \
+                 last stderr lines:\ncrashed\n{}",
+                only_files(&run_dir)
+            ))
         );
         let event = events.only();
         assert_eq!(event["status"], "failed");
@@ -1874,8 +1906,12 @@ mod stream_formats {
 // --- claude_outcome: one AgentResult per row of the mapping ---
 
 mod claude_outcomes {
+    use std::path::{Path, PathBuf};
+
     use attractor_agent_handler::{AgentResult, AgentStatus, FailureClass, Usage};
-    use attractor_types::{AttractorError, StageStatus};
+    use attractor_types::{AgentFiles, AttractorError, StageStatus};
+
+    use super::claude::{agent_failure_files, crash_message, AgentAttempt};
 
     use super::*;
 
@@ -1893,6 +1929,15 @@ mod claude_outcomes {
     }
 
     fn outcome_of(result: &AgentResult) -> attractor_types::Result<Outcome> {
+        outcome_in(result, None)
+    }
+
+    /// The outcome of attempt 2 of `step`, invocation `inv`, with a 1500 ms
+    /// timeout, in `run_dir` if given.
+    fn outcome_in(
+        result: &AgentResult,
+        run_dir: Option<&Path>,
+    ) -> attractor_types::Result<Outcome> {
         let node = make_node("step", "box", Some("do work"), HashMap::new());
         let resolved = ResolvedNode {
             node_id: node.id.clone(),
@@ -1901,7 +1946,67 @@ mod claude_outcomes {
             provider: Some(LlmProvider::Claude),
             invocation: Default::default(),
         };
-        claude_outcome(result, &node, &resolved, &make_minimal_graph(), 1500)
+        claude_outcome(
+            result,
+            &node,
+            &resolved,
+            &make_minimal_graph(),
+            &AgentAttempt {
+                attempt: 2,
+                timeout_ms: 1500,
+                run_dir,
+                invocation_id: "inv",
+            },
+        )
+    }
+
+    const RUN: &str = "/logs/p/runs/r1";
+
+    fn files() -> AgentFiles {
+        AgentFiles {
+            transcript: PathBuf::from("/logs/p/runs/r1/transcripts/inv.jsonl"),
+            stderr: PathBuf::from("/logs/p/runs/r1/transcripts/inv.stderr.log"),
+        }
+    }
+
+    fn crash(detail: &str, stderr_tail: &str) -> AgentResult {
+        AgentResult {
+            stderr_tail: stderr_tail.into(),
+            ..AgentResult::failed("inv", FailureClass::Crash, detail)
+        }
+    }
+
+    #[test]
+    fn agent_failure_files_are_the_run_folders_transcript_and_stderr() {
+        assert_eq!(agent_failure_files(None, "inv"), None);
+        assert_eq!(
+            agent_failure_files(Some(Path::new(RUN)), "inv"),
+            Some(files())
+        );
+    }
+
+    #[test]
+    fn crash_message_names_attempt_status_tail_and_files() {
+        assert_eq!(
+            crash_message(
+                "Claude Code",
+                2,
+                "exited with exit status: 3",
+                "one\ntwo",
+                Some(&files())
+            ),
+            "attempt 2: Claude Code exited with exit status: 3; last stderr lines:\none\ntwo\n\
+             transcript /logs/p/runs/r1/transcripts/inv.jsonl; \
+             stderr /logs/p/runs/r1/transcripts/inv.stderr.log"
+        );
+    }
+
+    #[test]
+    fn crash_message_without_stderr_or_run_folder() {
+        assert_eq!(
+            crash_message("Claude Code", 1, "exited with exit status: 3", "", None),
+            "attempt 1: Claude Code exited with exit status: 3; last stderr lines:\n(no stderr)"
+        );
     }
 
     fn handler_error(message: &str) -> String {
@@ -1951,25 +2056,111 @@ mod claude_outcomes {
     }
 
     #[test]
-    fn timeout_is_the_retryable_command_timeout() {
+    fn timeout_is_the_retryable_agent_timeout_without_a_run_folder() {
         let result = AgentResult::failed("inv", FailureClass::Timeout, "timed out after 1500ms");
         let error = outcome_of(&result).unwrap_err();
+        assert!(error.is_retryable(), "{error}");
+        assert_eq!(
+            error.to_string(),
+            "node 'step' attempt 2 failed: timeout after 1500ms"
+        );
         assert!(
-            matches!(error, AttractorError::CommandTimeout { timeout_ms: 1500 }),
-            "{error}"
+            matches!(
+                &error,
+                AttractorError::AgentTimeout {
+                    node,
+                    attempt: 2,
+                    timeout_ms: 1500,
+                    files: None,
+                } if node == "step"
+            ),
+            "{error:?}"
         );
     }
 
     #[test]
-    fn crash_keeps_todays_exited_with_message() {
-        let result = AgentResult::failed(
-            "inv",
-            FailureClass::Crash,
-            "exited with exit status: 3: fake-claude: crashed",
+    fn timeout_in_a_run_folder_names_the_transcript_and_stderr() {
+        let result = AgentResult::failed("inv", FailureClass::Timeout, "timed out after 1500ms");
+        let error = outcome_in(&result, Some(Path::new(RUN))).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "node 'step' attempt 2 failed: timeout after 1500ms; \
+             transcript /logs/p/runs/r1/transcripts/inv.jsonl; \
+             stderr /logs/p/runs/r1/transcripts/inv.stderr.log"
         );
+    }
+
+    #[test]
+    fn crash_names_attempt_status_and_stderr_tail_without_a_run_folder() {
+        let result = crash("exited with exit status: 3", "fake-claude: crashed");
         assert_eq!(
             outcome_of(&result).unwrap_err().to_string(),
-            handler_error("Claude Code exited with exit status: 3: fake-claude: crashed")
+            handler_error(
+                "attempt 2: Claude Code exited with exit status: 3; \
+                 last stderr lines:\nfake-claude: crashed"
+            )
+        );
+    }
+
+    #[test]
+    fn crash_in_a_run_folder_also_names_the_transcript_and_stderr() {
+        let result = crash("exited with exit status: 3", "fake-claude: crashed");
+        assert_eq!(
+            outcome_in(&result, Some(Path::new(RUN)))
+                .unwrap_err()
+                .to_string(),
+            handler_error(
+                "attempt 2: Claude Code exited with exit status: 3; \
+                 last stderr lines:\nfake-claude: crashed\n\
+                 transcript /logs/p/runs/r1/transcripts/inv.jsonl; \
+                 stderr /logs/p/runs/r1/transcripts/inv.stderr.log"
+            )
+        );
+    }
+
+    #[test]
+    fn crash_without_stderr_says_so() {
+        let result = crash("exited with signal: 9 (SIGKILL)", "");
+        assert_eq!(
+            outcome_of(&result).unwrap_err().to_string(),
+            handler_error(
+                "attempt 2: Claude Code exited with signal: 9 (SIGKILL); \
+                 last stderr lines:\n(no stderr)"
+            )
+        );
+    }
+
+    #[test]
+    fn a_failed_wait_is_a_crash_message_with_its_detail() {
+        let result = crash("execution failed: wait broke", "");
+        assert_eq!(
+            outcome_in(&result, Some(Path::new(RUN)))
+                .unwrap_err()
+                .to_string(),
+            handler_error(
+                "attempt 2: Claude Code execution failed: wait broke; \
+                 last stderr lines:\n(no stderr)\n\
+                 transcript /logs/p/runs/r1/transcripts/inv.jsonl; \
+                 stderr /logs/p/runs/r1/transcripts/inv.stderr.log"
+            )
+        );
+    }
+
+    #[test]
+    fn no_result_keeps_its_message_in_a_run_folder() {
+        let result = AgentResult {
+            stderr_tail: "boom".into(),
+            ..AgentResult::failed(
+                "inv",
+                FailureClass::NoResult,
+                "Claude Code produced no output. stderr: boom",
+            )
+        };
+        assert_eq!(
+            outcome_in(&result, Some(Path::new(RUN)))
+                .unwrap_err()
+                .to_string(),
+            handler_error("Claude Code produced no output. stderr: boom")
         );
     }
 

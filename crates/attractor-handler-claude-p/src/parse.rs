@@ -6,6 +6,7 @@ use std::process::ExitStatus;
 use std::time::Duration;
 
 use attractor_agent_handler::{AgentResult, AgentStatus, ExitInfo, FailureClass, Usage};
+use attractor_agent_process::stderr_tail;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
@@ -102,7 +103,8 @@ pub fn claude_result_line(stdout: &str) -> Option<&str> {
 /// - a final result line that doesn't deserialize: `NoResult`, whatever the exit;
 /// - a final result line with `is_error` or a `subtype` starting `error`: `Reported`;
 /// - any other final result line: `Completed`, even after a non-zero exit;
-/// - no result line and a non-zero exit or a signal: `Crash`;
+/// - no result line and a non-zero exit or a signal: `Crash`, with the exit
+///   status as `detail` (the stderr is in `stderr_tail`);
 /// - no result line and exit 0: `NoResult`.
 ///
 /// Without a result line, stdout as a whole is tried as one result object,
@@ -117,12 +119,13 @@ pub fn classify(invocation_id: &str, out: &Exited<'_>, duration: Duration) -> Ag
         }),
         duration,
         usage,
+        stderr_tail: stderr_tail(out.stderr),
         ..AgentResult::failed(invocation_id, FailureClass::NoResult, "")
     };
     if result_line.is_none() && !out.status.success() {
         return AgentResult {
             status: AgentStatus::Failed(FailureClass::Crash),
-            detail: format!("exited with {}: {}", out.status, out.stderr.trim()),
+            detail: format!("exited with {}", out.status),
             ..base
         };
     }
@@ -340,7 +343,8 @@ mod tests {
     fn no_result_line_and_non_zero_exit_is_a_crash_with_exit_status_text() {
         let result = run("{\"type\":\"system\"}\n", "  crashed\n", 3);
         assert_eq!(result.status, AgentStatus::Failed(FailureClass::Crash));
-        assert_eq!(result.detail, "exited with exit status: 3: crashed");
+        assert_eq!(result.detail, "exited with exit status: 3");
+        assert_eq!(result.stderr_tail, "  crashed");
         assert_eq!(result.exit.and_then(|e| e.code), Some(3));
     }
 

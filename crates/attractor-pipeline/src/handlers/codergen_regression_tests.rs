@@ -834,8 +834,34 @@ async fn nonzero_exit_with_final_result_gives_pre_streaming_outcome() {
     }
 }
 
+/// Ticket 05's crash message for `node`'s first attempt, naming the one
+/// Claude invocation's files in `run_dir`.
+fn claude_crash_error(node: &str, code: i32, run_dir: &Path) -> String {
+    let transcripts: Vec<PathBuf> = std::fs::read_dir(run_dir.join("transcripts"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
+        .collect();
+    assert_eq!(transcripts.len(), 1, "{transcripts:?}");
+    let transcript = &transcripts[0];
+    let stem = transcript.file_stem().unwrap().to_str().unwrap();
+    let stderr = transcript.with_file_name(format!("{stem}.stderr.log"));
+    attractor_types::AttractorError::HandlerError {
+        handler: "codergen".into(),
+        node: node.into(),
+        message: format!(
+            "attempt 1: Claude Code exited with exit status: {code}; \
+             last stderr lines:\n{STDERR}\ntranscript {}; stderr {}",
+            transcript.display(),
+            stderr.display()
+        ),
+    }
+    .to_string()
+}
+
 /// With no output there is no Outcome, before or after streaming, and the
-/// error is the same.
+/// error is the same, except a Claude crash, whose message ticket 05
+/// changed.
 #[tokio::test]
 async fn empty_stdout_is_the_same_error_on_both_sides() {
     for provider in [LlmProvider::Claude, LlmProvider::Codex, LlmProvider::Gemini] {
@@ -852,9 +878,14 @@ async fn empty_stdout_is_the_same_error_on_both_sides() {
             };
             let stage = stage(provider, None);
             for code in [0, 1] {
-                let (both, _dir) = run_both(&response, &stage, code, true).await;
+                let (both, dir) = run_both(&response, &stage, code, true).await;
                 let case = format!("{} exit {code} stream={gemini_stream}", response.case);
                 match (&both.new, &both.old) {
+                    (Err(new), Err(_)) if provider == LlmProvider::Claude && code != 0 => {
+                        let expected =
+                            claude_crash_error(&stage.node.id, code, &dir.path().join("run"));
+                        assert_eq!(new.to_string(), expected, "{case}")
+                    }
                     (Err(new), Err(old)) => {
                         assert_eq!(new.to_string(), old.to_string(), "{case}")
                     }
