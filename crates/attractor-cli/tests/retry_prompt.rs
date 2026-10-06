@@ -195,12 +195,18 @@ fn the_first_attempt_after_a_resume_names_the_failure_before_the_stop() {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    wait_until("the second start of work", || {
-        journal_so_far(&fake)
-            .iter()
+    // LlmStarted is journalled at spawn, before the fake has counted the
+    // start or set hang_term's TERM trap; its init line comes after both.
+    wait_until("the second start's init line", || {
+        let started: Vec<Value> = journal_so_far(&fake)
+            .into_iter()
             .filter(|e| e["type"] == "LlmStarted")
-            .count()
-            == 2
+            .collect();
+        let (Some(second), Some(run)) = (started.get(1), fake.run_dirs().into_iter().next()) else {
+            return false;
+        };
+        let transcript = run.join(second["data"]["transcript"].as_str().unwrap());
+        fs::read_to_string(transcript).is_ok_and(|text| text.contains(r#""subtype":"init""#))
     });
     // SAFETY: sending a signal to our own child's pid.
     let sent = unsafe { libc::kill(run.id() as libc::pid_t, libc::SIGTERM) };
