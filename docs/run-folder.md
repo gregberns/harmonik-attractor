@@ -67,6 +67,8 @@ eight hex digits. With `--logs <dir>`, `<dir>` is the Pipeline folder.
     transcripts/<inv>.jsonl                agent stdout
     transcripts/<inv>.stderr.log           agent stderr
     transcripts/<inv>.prompt.txt           prompt, argv, env names
+    transcripts/<inv>.<n>.jsonl            spawn n's stdout (a rate-limited agent re-spawned)
+    transcripts/<inv>.<n>.stderr.log       spawn n's stderr
     pi-sessions/                           Pi's session files (pi profiles only)
     pi-agent/<inv>/                        Pi's agent dir, only while the invocation runs
     answers/<question-id>.json             Human Gate answer
@@ -97,6 +99,8 @@ per Pipeline.
 | `<stem>-<hash>/runs/<run-id>/final.json` | pretty JSON | `pas run`, at the end of each Attempt, after `AttemptEnded`; not after SIGKILL | replaced (temp file, rename) | `v` (1) |
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.jsonl` | the agent's stdout, as written (`stream-json` lines for `claude -p`, JSONL for `codex exec --json`, `json`/`stream-json` for Gemini) | the agent process runner, created when the agent process starts, streamed while it runs | created once, then appended | none (the provider's format) |
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.stderr.log` | text | the agent process runner, as above, for stderr | created once, then appended | none |
+| `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.<n>.jsonl` | spawn `n`'s stdout (`n` from 2), when a rate-limited Claude agent waited and re-spawned within the invocation | the agent process runner, as for spawn 1 | created once, then appended | none (the provider's format) |
+| `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.<n>.stderr.log` | text | the agent process runner, as above, for spawn `n`'s stderr | created once, then appended | none |
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.prompt.txt` | text, see below | the agent registry (`Agents::run`), before the handler is called | written once | first line `pas prompt file v1` |
 | `<stem>-<hash>/runs/<run-id>/pi-sessions/` | Pi's own session files | Pi (`--session-dir`), for `pi` profiles | Pi's | none (Pi's format) |
 | `<stem>-<hash>/runs/<run-id>/pi-agent/<inv>/models.json`, `settings.json` | JSON, mode 0600, in a 0700 folder | the `pi` handler, before Pi starts; the folder is removed when the invocation ends | written once (created 0600) | none (Pi's format) |
@@ -192,7 +196,12 @@ a warning and runs the agent anyway.
 Both files are created only once the agent process has started, so a
 reader can match a growing transcript to its `LlmStarted` event and tell a
 silent agent from its file's size and modification time. `LlmStarted`
-and `LlmInvoked` record the paths relative to the Run folder.
+and `LlmInvoked` record the paths relative to the Run folder. A
+rate-limited Claude agent that waits and re-spawns within one invocation
+writes spawn `n` (from 2) to `<inv>.<n>.jsonl` and `<inv>.<n>.stderr.log`;
+each spawn has its own `LlmStarted` (with its `spawn` number and files),
+each wait an `LlmRateLimited`, and the invocation's one `LlmInvoked` names
+the last spawn's transcript, with usage summed over the spawns.
 
 ### `pi-sessions/` and `pi-agent/<inv>/`
 
@@ -263,6 +272,7 @@ is the field-level reference.
 | [`TaskSelectionBlocked`](../crates/attractor-journal/tests/golden/journal/TaskSelectionBlocked.jsonl) | When open Tasks remain but all are blocked. |
 | [`TaskClosed`](../crates/attractor-journal/tests/golden/journal/TaskClosed.jsonl) | When a beads node closes a Task, with its Run Commits. |
 | [`LlmStarted`](../crates/attractor-journal/tests/golden/journal/LlmStarted.jsonl) | When an agent process is spawned, before its first output: pid, pgid, host, the session id it was started with, transcript and stderr paths. |
+| [`LlmRateLimited`](../crates/attractor-journal/tests/golden/journal/LlmRateLimited.jsonl) | Before a rate-limited agent waits to re-spawn within its invocation: `invocation_id`, `wait_s` (whole seconds, rounded up) and the `spawn` that was limited. |
 | [`LlmInvoked`](../crates/attractor-journal/tests/golden/journal/LlmInvoked.jsonl) | When a Model Invocation ends (or is dropped): status, tokens, cost, duration, the session id the agent reported and whether it `continued` an earlier session. |
 | [`CommitsCreated`](../crates/attractor-journal/tests/golden/journal/CommitsCreated.jsonl) | When HEAD moved during a node attempt, listing the new commits. |
 | [`HumanInputRequested`](../crates/attractor-journal/tests/golden/journal/HumanInputRequested.jsonl) | When a Human Gate asks its question; fsynced, so a reader can answer at once. |

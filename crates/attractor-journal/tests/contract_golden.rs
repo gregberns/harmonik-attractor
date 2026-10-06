@@ -216,7 +216,11 @@ fn golden_file_for_every_event_type() {
     let stems: BTreeSet<&str> = goldens.iter().map(|(t, _)| t.as_str()).collect();
     let known: BTreeSet<&str> = EventData::KNOWN_TYPES.iter().copied().collect();
     assert_eq!(stems, known, "golden files must match the v1 Event types");
-    assert_eq!(known.len(), 25, "C3 lists 24 Event types, plus LlmStarted");
+    assert_eq!(
+        known.len(),
+        26,
+        "C3 lists 24 Event types, plus LlmStarted and LlmRateLimited"
+    );
 
     let mut files: Vec<PathBuf> = std::fs::read_dir(golden_dir().join("journal"))
         .unwrap()

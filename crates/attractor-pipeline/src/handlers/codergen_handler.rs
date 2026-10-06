@@ -119,9 +119,22 @@ struct LlmInvocation<'a> {
     agent_session_id: Option<String>,
     started: Instant,
     emitted: bool,
+    /// The invocation's latest spawn (a rate-limited agent re-spawns).
+    last_spawn: &'a std::sync::atomic::AtomicU32,
 }
 
 impl LlmInvocation<'_> {
+    /// The latest spawn's transcript, relative to the Run folder.
+    fn transcript_rel(&self) -> String {
+        let spawn = self.last_spawn.load(std::sync::atomic::Ordering::SeqCst);
+        attractor_agent_handler::spawn_path(
+            Path::new(&attractor_journal::transcript_rel_path(&self.invocation_id)),
+            spawn,
+        )
+        .to_string_lossy()
+        .into_owned()
+    }
+
     fn finish(mut self, status: &str, usage: InvocationUsage) {
         self.emit(status, usage);
     }
@@ -134,8 +147,7 @@ impl LlmInvocation<'_> {
     /// Usage read back from the Transcript, which holds the provider's stdout
     /// so far. Missing or unreadable → all `None`.
     fn transcript_usage(&self) -> InvocationUsage {
-        let path =
-            attractor_journal::RunDir::from_path(&self.run_dir).transcript(&self.invocation_id);
+        let path = self.run_dir.join(self.transcript_rel());
         std::fs::read(path)
             .map(|bytes| (self.summarize)(&String::from_utf8_lossy(&bytes)))
             .unwrap_or_default()
@@ -155,7 +167,7 @@ impl LlmInvocation<'_> {
             output_tokens: usage.output_tokens,
             cost_usd: usage.cost_usd,
             duration_ms: u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX),
-            transcript: attractor_journal::transcript_rel_path(&self.invocation_id),
+            transcript: self.transcript_rel(),
             status: status.to_owned(),
             agent_session_id: self.agent_session_id.clone(),
             continued: self.continued,
@@ -191,10 +203,25 @@ fn choose_session(
 /// dropped future.
 struct StartedJournal<'a> {
     events: &'a dyn EventSink,
+    /// The Run folder: `LlmStarted`'s paths are relative to it.
+    run_dir: &'a Path,
+    /// Set to each spawn's number as it starts, for `LlmInvoked`.
+    last_spawn: &'a std::sync::atomic::AtomicU32,
+}
+
+impl StartedJournal<'_> {
+    /// `path` relative to the Run folder (as given when it isn't in it).
+    fn relative(&self, path: Option<&Path>, fallback: String) -> String {
+        path.and_then(|path| path.strip_prefix(self.run_dir).ok())
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or(fallback)
+    }
 }
 
 impl AgentObserver for StartedJournal<'_> {
     fn started(&self, started: &Started) {
+        self.last_spawn
+            .store(started.spawn, std::sync::atomic::Ordering::SeqCst);
         self.events.emit(PipelineEvent::LlmStarted {
             invocation_id: started.invocation_id.clone(),
             spawn: started.spawn,
@@ -206,12 +233,26 @@ impl AgentObserver for StartedJournal<'_> {
             session_id: started.session_id.clone(),
             pid: started.pid,
             pgid: started.pgid,
-            transcript: attractor_journal::transcript_rel_path(&started.invocation_id),
-            stderr: attractor_journal::stderr_rel_path(&started.invocation_id),
+            transcript: self.relative(
+                started.transcript.as_deref(),
+                attractor_journal::transcript_rel_path(&started.invocation_id),
+            ),
+            stderr: self.relative(
+                started.stderr.as_deref(),
+                attractor_journal::stderr_rel_path(&started.invocation_id),
+            ),
         });
     }
 
     fn finished(&self, _result: &AgentResult) {}
+
+    fn rate_limited(&self, rate_limited: &attractor_agent_handler::RateLimited) {
+        self.events.emit(PipelineEvent::LlmRateLimited {
+            invocation_id: rate_limited.invocation_id.clone(),
+            wait_s: rate_limited.wait_s,
+            spawn: Some(rate_limited.spawn),
+        });
+    }
 }
 
 #[async_trait]
@@ -422,8 +463,13 @@ impl CodergenHandler {
         let stderr = run_dir.as_ref().map(|dir| dir.stderr(&invocation_id));
         let prompt_file = run_dir.as_ref().map(|dir| dir.prompt(&invocation_id));
         // `LlmStarted` needs a Run folder: its paths are relative to it.
+        let last_spawn = std::sync::atomic::AtomicU32::new(1);
         let journal_starts = match (controls.events, &controls.run_dir) {
-            (Some(events), Some(_)) => Some(StartedJournal { events }),
+            (Some(events), Some(run_dir)) => Some(StartedJournal {
+                events,
+                run_dir,
+                last_spawn: &last_spawn,
+            }),
             _ => None,
         };
         let summarize =
@@ -443,6 +489,7 @@ impl CodergenHandler {
                 agent_session_id: None,
                 started: Instant::now(),
                 emitted: false,
+                last_spawn: &last_spawn,
             }),
             _ => None,
         };

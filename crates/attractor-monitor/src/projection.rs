@@ -551,6 +551,7 @@ impl RunView {
             | EventData::CheckpointSaved { .. }
             | EventData::ContextUpdated { .. }
             | EventData::LlmStarted { .. }
+            | EventData::LlmRateLimited { .. }
             | EventData::Unknown { .. } => {}
         }
         self.recompute_status();

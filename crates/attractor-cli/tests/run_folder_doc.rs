@@ -68,21 +68,39 @@ fn journal(run: &Path) -> Vec<Value> {
         .collect()
 }
 
-/// Replace each id in `path` with its placeholder.
+/// Replace each id in `path` with its placeholder, and a spawn number
+/// after `<inv>.` (`<inv>.2.jsonl`) with `<n>`.
 fn normalise(path: &str, ids: &[(String, &str)]) -> String {
-    ids.iter()
+    let path = ids
+        .iter()
         .fold(path.to_string(), |path, (id, placeholder)| {
             path.replace(id.as_str(), placeholder)
-        })
+        });
+    let Some(at) = path.find("<inv>.") else {
+        return path;
+    };
+    let rest = &path[at + "<inv>.".len()..];
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    if digits > 0 && rest[digits..].starts_with('.') {
+        format!("{}<inv>.<n>{}", &path[..at], &rest[digits..])
+    } else {
+        path
+    }
 }
 
 #[test]
 fn every_file_a_run_creates_is_in_the_doc() {
     let fake = FakeAgent::new();
     // A Human Gate (answers/), a retried agent (two invocations, each with a
-    // transcript, stderr log and prompt file), then a crash, so the Run fails
+    // transcript, stderr log and prompt file), a rate-limited agent (one
+    // invocation, two spawns: <inv>.2.jsonl), then a crash, so the Run fails
     // and its checkpoint stays.
     fs::write(fake.scenarios().join("work.1"), "scenario=hang\n").unwrap();
+    fs::write(
+        fake.scenarios().join("limited"),
+        "scenario=rate_limited times=1\n",
+    )
+    .unwrap();
     fs::write(fake.scenarios().join("work"), "scenario=success\n").unwrap();
     fs::write(fake.scenarios().join("last"), "scenario=crash\n").unwrap();
     let mut pas = fake
@@ -91,11 +109,12 @@ fn every_file_a_run_creates_is_in_the_doc() {
                 start [shape="Mdiamond"]
                 gate [shape="hexagon", prompt="Go on?"]
                 work [shape="box", agent="fake", timeout="1s", max_retries=1, prompt="work"]
+                limited [shape="box", agent="fake-claude", timeout="30s", prompt="limited"]
                 last [shape="box", agent="fake", timeout="30s", prompt="last"]
                 done [shape="Msquare"]
                 start -> gate
                 gate -> work [label="yes"]
-                work -> last -> done
+                work -> limited -> last -> done
             }"#,
         )
         .stdin(Stdio::null())
@@ -129,7 +148,13 @@ fn every_file_a_run_creates_is_in_the_doc() {
             "<inv>",
         ));
     }
-    assert_eq!(ids.len(), 2 + 3, "two invocations of work, one of last");
+    ids.sort();
+    ids.dedup();
+    assert_eq!(
+        ids.len(),
+        2 + 4,
+        "two invocations of work, one of limited (two spawns), one of last"
+    );
 
     let doc = doc();
     let logs: PathBuf = fake.run_dirs()[0]
@@ -156,6 +181,8 @@ fn every_file_a_run_creates_is_in_the_doc() {
         "<stem>-<hash>/checkpoint.json",
         "<stem>-<hash>/runs/<run-id>/final.json",
         "<stem>-<hash>/runs/<run-id>/transcripts/<inv>.prompt.txt",
+        "<stem>-<hash>/runs/<run-id>/transcripts/<inv>.<n>.jsonl",
+        "<stem>-<hash>/runs/<run-id>/transcripts/<inv>.<n>.stderr.log",
         "<stem>-<hash>/runs/<run-id>/answers/<question-id>.json",
     ] {
         assert!(

@@ -245,6 +245,14 @@ pub enum EventData {
         /// Stderr log path relative to the Run folder.
         stderr: String,
     },
+    /// A rate-limited agent waits before its next spawn (design §5):
+    /// `wait_s` in whole seconds; `spawn` is the spawn that was limited.
+    LlmRateLimited {
+        invocation_id: String,
+        wait_s: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        spawn: Option<u32>,
+    },
     LlmInvoked {
         invocation_id: String,
         node_id: String,
@@ -327,6 +335,7 @@ impl EventData {
         "TaskSelectionBlocked",
         "TaskClosed",
         "LlmStarted",
+        "LlmRateLimited",
         "LlmInvoked",
         "CommitsCreated",
         "HumanInputRequested",
@@ -357,6 +366,7 @@ impl EventData {
             Self::TaskSelectionBlocked { .. } => "TaskSelectionBlocked",
             Self::TaskClosed { .. } => "TaskClosed",
             Self::LlmStarted { .. } => "LlmStarted",
+            Self::LlmRateLimited { .. } => "LlmRateLimited",
             Self::LlmInvoked { .. } => "LlmInvoked",
             Self::CommitsCreated { .. } => "CommitsCreated",
             Self::HumanInputRequested { .. } => "HumanInputRequested",
@@ -594,6 +604,11 @@ mod tests {
                 pgid: 42,
                 transcript: s("transcripts/i.jsonl"),
                 stderr: s("transcripts/i.stderr.log"),
+            },
+            EventData::LlmRateLimited {
+                invocation_id: s("i"),
+                wait_s: 30,
+                spawn: Some(1),
             },
             EventData::LlmInvoked {
                 invocation_id: s("i"),

@@ -91,6 +91,14 @@ pub enum PipelineEvent {
         transcript: String,
         stderr: String,
     },
+    /// A rate-limited agent waits before its next spawn (design §5):
+    /// `wait_s` in whole seconds; `spawn` is the spawn that was limited.
+    LlmRateLimited {
+        invocation_id: String,
+        wait_s: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        spawn: Option<u32>,
+    },
     /// One provider process (Model Invocation) exited, failed, or timed out
     /// (spec C3). `transcript` is relative to the Run folder.
     LlmInvoked {
@@ -263,6 +271,15 @@ impl PipelineEvent {
                 pgid,
                 transcript,
                 stderr,
+            },
+            Self::LlmRateLimited {
+                invocation_id,
+                wait_s,
+                spawn,
+            } => EventData::LlmRateLimited {
+                invocation_id,
+                wait_s,
+                spawn,
             },
             Self::LlmInvoked {
                 invocation_id,
