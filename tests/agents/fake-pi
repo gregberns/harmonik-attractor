@@ -1,0 +1,208 @@
+#!/bin/sh
+# fake-pi: a digital twin of `pi --mode json` for PAS tests. It copies the
+# agent dir Pi would read (models.json, settings.json) into the scenario
+# folder and prints scripted Pi JSONL for the scenario named in a scenario
+# file for the node or in the node's prompt. See README.md next to this script.
+
+die() {
+    printf 'fake-pi: %s\n' "$1" >&2
+    exit 2
+}
+
+[ -n "${FAKE_AGENT_SCENARIOS:-}" ] || die "FAKE_AGENT_SCENARIOS is not set"
+[ -d "$FAKE_AGENT_SCENARIOS" ] || die "FAKE_AGENT_SCENARIOS is not a directory: $FAKE_AGENT_SCENARIOS"
+log="$FAKE_AGENT_SCENARIOS/invocations.log"
+
+# Log the environment PAS gives the agent, and this process's pid. Besides
+# the other fakes' variables: Pi's own, and every variable whose name ends in
+# _KEY, so tests can see that no API key reached pi's environment.
+{
+    printf '%s\n' '--- start' "FAKE_PID=$$"
+    env | grep -E '^(PAS_|ANTHROPIC_|OPENAI_|CLAUDE_CODE_USE_|PI_CODING_AGENT_DIR=|PI_TELEMETRY=|PI_OFFLINE=|PI_SKIP_VERSION_CHECK=)|^[A-Za-z_][A-Za-z0-9_]*_KEY=' | sort
+} >>"$FAKE_AGENT_SCENARIOS/env.log"
+
+# Log argv, one argument per line; the positional prompt (last) as <prompt>.
+printf '%s\n' '--- start' >>"$log"
+mode=
+model=
+session_id=
+prompt=
+have_prompt=
+while [ $# -gt 0 ]; do
+    case $1 in
+        --mode | --model | --thinking | --session-dir | --session-id)
+            [ $# -ge 2 ] || die "$1 needs a value"
+            printf '%s\n' "$1" "$2" >>"$log"
+            case $1 in
+                --mode) mode=$2 ;;
+                --model) model=$2 ;;
+                --session-id) session_id=$2 ;;
+            esac
+            shift 2
+            ;;
+        -*)
+            # Includes --api-key: the key must never be on pi's argv.
+            die "unknown flag $1"
+            ;;
+        *)
+            [ $# -eq 1 ] || die "the prompt must be the last argument, got $1"
+            printf '%s\n' '<prompt>' >>"$log"
+            prompt=$1
+            have_prompt=1
+            shift
+            ;;
+    esac
+done
+[ -n "$have_prompt" ] || die "a positional prompt is required"
+[ "$mode" = json ] || die "--mode json is required, got '$mode'"
+case $model in
+    */*) ;;
+    '') ;;
+    *) die "--model needs <provider>/<id>, got '$model'" ;;
+esac
+provider=${model%%/*}
+model_id=${model#*/}
+printf '%s\n' '--- start' "$prompt" >>"$FAKE_AGENT_SCENARIOS/prompts.log"
+# Count this node's starts and keep each start's and attempt's prompt, as
+# fake-claude does.
+node_start=
+if [ -n "${PAS_NODE_ID:-}" ]; then
+    starts="$FAKE_AGENT_SCENARIOS/starts.$PAS_NODE_ID"
+    node_start=$(cat "$starts" 2>/dev/null || echo 0)
+    node_start=$((node_start + 1))
+    printf '%s\n' "$node_start" >"$starts"
+    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID@$node_start"
+fi
+if [ -n "${PAS_NODE_ID:-}" ] && [ -n "${PAS_ATTEMPT:-}" ]; then
+    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID.$PAS_ATTEMPT"
+fi
+
+# Keep what Pi would read from its agent dir, for this start: copies of
+# models.json and settings.json (a missing file is not copied), whether
+# models.json is mode 0600 exactly (`0600`, `other` or `missing`), and the
+# dir's path, so a test can check the dir is gone after the run.
+if [ -n "${PI_CODING_AGENT_DIR:-}" ] && [ -n "$node_start" ]; then
+    at="$PAS_NODE_ID@$node_start"
+    printf '%s\n' "$PI_CODING_AGENT_DIR" >"$FAKE_AGENT_SCENARIOS/pi-agent-dir.$at"
+    models="$PI_CODING_AGENT_DIR/models.json"
+    if [ -f "$models" ]; then
+        cp "$models" "$FAKE_AGENT_SCENARIOS/models.$at.json"
+        if [ -n "$(find "$models" -prune -perm 0600)" ]; then
+            printf '%s\n' 0600 >"$FAKE_AGENT_SCENARIOS/models.$at.mode"
+        else
+            printf '%s\n' other >"$FAKE_AGENT_SCENARIOS/models.$at.mode"
+        fi
+    else
+        printf '%s\n' missing >"$FAKE_AGENT_SCENARIOS/models.$at.mode"
+    fi
+    settings="$PI_CODING_AGENT_DIR/settings.json"
+    [ ! -f "$settings" ] || cp "$settings" "$FAKE_AGENT_SCENARIOS/settings.$at.json"
+fi
+
+# The scenario text, as fake-claude finds it: the file <node>@<start>, then
+# <node>.<attempt>, then <node>, else the node's own prompt after the last
+# "Task (".
+node_file=
+if [ -n "${PAS_NODE_ID:-}" ]; then
+    if [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID@$node_start" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID@$node_start"
+    elif [ -n "${PAS_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT"
+    elif [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID"
+    fi
+fi
+if [ -n "$node_file" ]; then
+    task=$(head -n 1 "$node_file")
+else
+    task=${prompt##*Task (}
+fi
+
+token() {
+    printf '%s\n' "$task" | tr -s ' \t' '\n\n' | sed -n "s/^$1=\\([A-Za-z0-9_-]*\\).*/\\1/p" | tail -n 1
+}
+
+scenario=$(token scenario)
+[ -n "$scenario" ] || die "no scenario=<name> in the scenario file or node prompt"
+
+counter="$FAKE_AGENT_SCENARIOS/attempts.$scenario"
+attempt=$(cat "$counter" 2>/dev/null || echo 0)
+printf '%s\n' "$((attempt + 1))" >"$counter"
+
+# jstr <value>: <value> as a JSON string body, with `\` and `"` escaped
+# (the values here are ids and paths, single-line).
+jstr() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+# The session: the --session-id value, else a made-up id from the pid.
+session="00000000-0000-4000-8000-$(printf '%012d' "$$")"
+[ -z "$session_id" ] || session=$session_id
+
+header() {
+    json='{"type":"session","version":3,"id":"'"$(jstr "$session")"'","cwd":"'"$(jstr "$(pwd)")"'"}'
+    printf '%s\n' "$json" '{"type":"agent_start"}'
+}
+
+footer() {
+    printf '%s\n' '{"type":"agent_end"}' '{"type":"agent_settled"}'
+}
+
+usage='{"input":10,"output":5,"cacheRead":0,"cacheWrite":0,"totalTokens":15,"cost":{"input":0.001,"output":0.002,"cacheRead":0,"cacheWrite":0,"total":0.003}}'
+
+# assistant <stopReason> <text> [<errorMessage>]: an assistant message_end.
+# An empty <text> gives empty content. <text> and <errorMessage> are plain
+# ASCII without quotes or backslashes.
+assistant() {
+    content='[]'
+    [ -z "$2" ] || content='[{"type":"text","text":"'"$2"'"}]'
+    error=
+    [ -z "${3:-}" ] || error=',"errorMessage":"'"$3"'"'
+    json='{"type":"message_end","message":{"role":"assistant","content":'"$content"',"stopReason":"'"$1"'"'"$error"',"provider":"'"$(jstr "$provider")"'","model":"'"$(jstr "$model_id")"'","usage":'"$usage"'}}'
+    printf '%s\n' "$json"
+}
+
+case $scenario in
+    stop)
+        header
+        assistant stop 'fake-pi: done'
+        footer
+        ;;
+    error)
+        header
+        assistant error '' '401: fake auth error'
+        footer
+        ;;
+    aborted)
+        header
+        assistant aborted ''
+        footer
+        ;;
+    no_final)
+        header
+        footer
+        ;;
+    tool_use_then_stop)
+        header
+        assistant toolUse 'fake-pi: using a tool'
+        assistant stop 'fake-pi: done after tool'
+        footer
+        ;;
+    length)
+        header
+        assistant length 'fake-pi: cut'
+        footer
+        ;;
+    crash)
+        header
+        printf '%s\n' 'fake-pi: crashed' >&2
+        exit 3
+        ;;
+    hang)
+        exec sleep "${FAKE_HANG_SECS:-30}"
+        ;;
+    *)
+        die "unknown scenario $scenario"
+        ;;
+esac
+exit 0

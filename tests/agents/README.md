@@ -169,3 +169,52 @@ nothing to the other logs. The first line of `gemini-help` in the scenario
 folder picks the answer: `json` (help without `stream-json`), `fail`
 (exit 1), `hang` (writes its pid to `probe.pid` and sleeps); anything else,
 or no file, lists `stream-json`.
+
+## fake-pi
+
+A twin of `pi --mode json` for the `pi` handler. It counts starts, finds its
+scenario and logs `invocations.log` (the positional prompt as `<prompt>`),
+`prompts.log`, `prompt.<node>.<attempt>` and `prompt.<node>@<k>` like the
+other fakes.
+
+- **Flags.** `--mode json` (required; another mode exits 2), `--model
+  <provider>/<id>` (without a `/` exits 2), `--thinking <level>`,
+  `--session-dir <dir>`, `--session-id <id>`, then the prompt as the last,
+  positional argument (required). Any other flag exits 2 with `fake-pi:
+  unknown flag <x>`; that includes `--api-key`, which must never reach pi's
+  argv.
+- **env.log** also holds `PI_CODING_AGENT_DIR`, `PI_TELEMETRY`, `PI_OFFLINE`,
+  `PI_SKIP_VERSION_CHECK` and every variable whose name ends in `_KEY`
+  (e.g. `FAKE_PI_KEY`, `OPENAI_API_KEY`), so a test can check that no key
+  reached pi's environment.
+- **The agent dir.** On every start with `PAS_NODE_ID` and
+  `PI_CODING_AGENT_DIR` set (before the scenario runs, so `hang` does it
+  too), for the node's k-th start:
+
+  | File | Contents |
+  |---|---|
+  | `models.<node>@<k>.json` | a copy of `$PI_CODING_AGENT_DIR/models.json` (absent if it was missing) |
+  | `settings.<node>@<k>.json` | a copy of `$PI_CODING_AGENT_DIR/settings.json` (absent if it was missing) |
+  | `models.<node>@<k>.mode` | `0600` if `models.json` is exactly mode 0600, `other` if not, `missing` if there was none |
+  | `pi-agent-dir.<node>@<k>` | the `PI_CODING_AGENT_DIR` path, to check it is gone after the run |
+
+  These copies can hold an API key; the scenario folder is a TempDir
+  outside the test repo, so they are never committed.
+- **Output.** Pi's JSONL: `{"type":"session","version":3,"id":<--session-id
+  value, else an id from its pid>,"cwd":<pwd>}`, `{"type":"agent_start"}`,
+  the scenario's assistant `message_end` lines, `{"type":"agent_end"}`,
+  `{"type":"agent_settled"}`. A `message_end` is
+  `{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":...}],"stopReason":...,"provider":<from --model>,"model":<id from --model>,"usage":{"input":10,"output":5,"cacheRead":0,"cacheWrite":0,"totalTokens":15,"cost":{...,"total":0.003}}}}`,
+  with `"content":[]` when its text is empty and an `errorMessage` when it
+  has one. Like Pi, it exits 0 whatever the stop reason.
+
+| Scenario | Assistant `message_end` lines | Exit |
+|---|---|---|
+| `stop` | `stop`, text `fake-pi: done` | 0 |
+| `error` | `error`, no text, `errorMessage` `401: fake auth error` | 0 |
+| `aborted` | `aborted`, no text, no `errorMessage` | 0 |
+| `no_final` | none (header, `agent_start`, `agent_end`, `agent_settled`) | 0 |
+| `tool_use_then_stop` | `toolUse` (text `fake-pi: using a tool`), then `stop`, text `fake-pi: done after tool` | 0 |
+| `length` | `length`, text `fake-pi: cut` | 0 |
+| `crash` | none: the session header and `agent_start`, then `fake-pi: crashed` on stderr | 3 |
+| `hang` | prints nothing at all, then `exec sleep $FAKE_HANG_SECS` | - |
