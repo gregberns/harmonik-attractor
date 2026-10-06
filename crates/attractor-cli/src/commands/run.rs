@@ -38,6 +38,11 @@ pub struct RunInvocation {
     /// `--allow-shared-workdir`: start even if another Run holds the
     /// Worktree lock, and record `shared_workdir: true` in `RunStarted`.
     pub allow_shared_workdir: bool,
+    /// `--base`: the commit a new Run's branch starts at; `None` is `HEAD`.
+    pub base: Option<String>,
+    /// `--worktree-root`, absolute; `None` leaves it to pas.toml or the
+    /// built-in default.
+    pub worktree_root: Option<PathBuf>,
 }
 
 /// Time between Heartbeat Events while an Attempt runs (C3).
@@ -264,9 +269,11 @@ fn print_highlighted(lines: &[String], json: bool) {
     say!(json, "{cyan}+{border}+{reset}");
 }
 
+#[allow(clippy::too_many_arguments)]
 fn prepare_run_configuration(
     path: &std::path::Path,
     workdir: Option<&std::path::Path>,
+    worktree_root: Option<&std::path::Path>,
     dry_run: bool,
     max_budget_usd: Option<f64>,
     max_steps: Option<u64>,
@@ -298,6 +305,7 @@ fn prepare_run_configuration(
             max_steps,
             max_budget_usd,
             workdir: workdir.map(std::path::Path::to_path_buf),
+            worktree_root: worktree_root.map(std::path::Path::to_path_buf),
             claude: codergen_claude.to_execution_options()?,
             ..Default::default()
         },
@@ -821,6 +829,7 @@ async fn prepare_run(
     let configured = prepare_run_configuration(
         path,
         workdir,
+        invocation.worktree_root.as_deref(),
         dry_run,
         max_budget_usd,
         max_steps,
@@ -902,8 +911,8 @@ async fn prepare_run(
         run_worktree::place_new_run(&run_worktree::PlaceRequest {
             source: &workdir_abs,
             run_id: &run_id,
-            base: "HEAD",
-            root: None,
+            base: invocation.base.as_deref().unwrap_or("HEAD"),
+            root: configured.controls().worktree_root().value().as_deref(),
             dry_run: *configured.controls().dry_run().value(),
         })
     } else {
@@ -1100,6 +1109,7 @@ pub async fn cmd_run_dir(
         prepare_run_configuration(
             dot_file,
             workdir,
+            invocation.worktree_root.as_deref(),
             dry_run,
             max_budget_usd,
             max_steps,

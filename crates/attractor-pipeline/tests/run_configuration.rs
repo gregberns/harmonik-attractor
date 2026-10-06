@@ -949,3 +949,59 @@ fn graph_cannot_author_run_controls_or_provider_isolation() {
         assert!(error.to_string().contains("reserved"), "{key}: {error}");
     }
 }
+
+#[test]
+fn worktree_root_resolves_caller_then_manifest_then_built_in() {
+    let simple =
+        || plan(r#"digraph G { start [shape="Mdiamond"] done [shape="Msquare"] start -> done }"#);
+    let with_toml = tempfile::tempdir().unwrap();
+    std::fs::create_dir(with_toml.path().join(".git")).unwrap();
+    std::fs::write(
+        with_toml.path().join("pas.toml"),
+        "[project]\nname = \"demo\"\n\n[run]\nworktree_root = \"wt\"\n",
+    )
+    .unwrap();
+    let dir = with_toml.path().canonicalize().unwrap();
+
+    let caller = RunConfiguration::prepare(
+        simple(),
+        ExecutionOptions {
+            workdir: Some(dir.clone()),
+            worktree_root: Some("/flag/root".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let root = caller.controls().worktree_root();
+    assert_eq!(
+        root.value().as_deref(),
+        Some(std::path::Path::new("/flag/root"))
+    );
+    assert_eq!(root.source(), ConfigurationSource::Caller);
+
+    let manifest = RunConfiguration::prepare(
+        simple(),
+        ExecutionOptions {
+            workdir: Some(dir.clone()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let root = manifest.controls().worktree_root();
+    assert_eq!(root.value().as_deref(), Some(dir.join("wt").as_path()));
+    assert_eq!(root.source(), ConfigurationSource::Manifest);
+
+    let bare = tempfile::tempdir().unwrap();
+    std::fs::create_dir(bare.path().join(".git")).unwrap();
+    let built_in = RunConfiguration::prepare(
+        simple(),
+        ExecutionOptions {
+            workdir: Some(bare.path().into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let root = built_in.controls().worktree_root();
+    assert_eq!(root.value(), &None);
+    assert_eq!(root.source(), ConfigurationSource::BuiltIn);
+}

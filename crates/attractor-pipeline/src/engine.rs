@@ -309,6 +309,7 @@ async fn legacy_options(context: Context) -> Result<(ExecutionOptions, Context)>
             .get("max_budget_usd")
             .and_then(|value| value.as_f64()),
         workdir: string("workdir").map(PathBuf::from),
+        worktree_root: None,
         quality_disabled: snapshot
             .get("quality_disabled")
             .and_then(|value| value.as_bool()),

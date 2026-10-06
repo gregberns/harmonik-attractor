@@ -9,12 +9,20 @@ pub struct Manifest {
     pub toolchain: Option<ToolchainSection>,
     pub quality: Option<QualitySection>,
     pub codergen: Option<CodergenSection>,
+    pub run: Option<RunSection>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProjectSection {
     pub name: String,
     pub version: Option<String>,
+}
+
+/// `[run]`: where a Run's git worktree goes.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RunSection {
+    /// Folder holding the Runs' worktrees, relative to `pas.toml`'s folder.
+    pub worktree_root: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

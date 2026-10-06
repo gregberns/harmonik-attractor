@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use attractor_quality::{
     ClaudeCodergenConfig, ClaudeSettingSource, ClaudeSettingsMode, ResolutionError,
@@ -103,6 +103,8 @@ pub struct ExecutionOptions {
     pub max_steps: Option<u64>,
     pub max_budget_usd: Option<f64>,
     pub workdir: Option<PathBuf>,
+    /// `--worktree-root`, already absolute.
+    pub worktree_root: Option<PathBuf>,
     pub quality_disabled: Option<bool>,
     pub quality_max_fix_iterations: Option<u32>,
     pub claude: ClaudeExecutionOptions,
@@ -178,6 +180,7 @@ pub struct ResolvedConfig {
     max_steps: ResolvedValue<u64>,
     max_budget_usd: ResolvedValue<f64>,
     workdir: ResolvedValue<PathBuf>,
+    worktree_root: ResolvedValue<Option<PathBuf>>,
     quality_disabled: ResolvedValue<bool>,
     quality_max_fix_iterations: HashMap<String, ResolvedValue<u32>>,
     claude: ResolvedClaudeConfig,
@@ -199,6 +202,12 @@ impl ResolvedConfig {
 
     pub fn workdir(&self) -> &ResolvedValue<PathBuf> {
         &self.workdir
+    }
+
+    /// Folder for the Runs' git worktrees; `None` means the built-in
+    /// `<project-root>/.pas/worktrees`.
+    pub fn worktree_root(&self) -> &ResolvedValue<Option<PathBuf>> {
+        &self.worktree_root
     }
 
     pub fn quality_disabled(&self) -> &ResolvedValue<bool> {
@@ -236,6 +245,7 @@ impl fmt::Debug for ResolvedConfig {
             .field("max_steps", &self.max_steps)
             .field("max_budget_usd", &self.max_budget_usd)
             .field("workdir", &self.workdir)
+            .field("worktree_root", &self.worktree_root)
             .field("quality_disabled", &self.quality_disabled)
             .field(
                 "quality_max_fix_iterations",
@@ -355,6 +365,7 @@ impl RunConfiguration {
                 },
             ),
             workdir: ResolvedValue::new(workdir, if workdir_is_caller { caller } else { built_in }),
+            worktree_root: resolve_worktree_root(options.worktree_root.as_ref(), manifest.as_ref()),
             quality_disabled: ResolvedValue::new(
                 options.quality_disabled.unwrap_or(false),
                 if options.quality_disabled.is_some() {
@@ -556,6 +567,24 @@ fn resolve_claude(
             manifest.and_then(|c| c.mcp_config_json.as_ref()),
         ),
     })
+}
+
+/// `--worktree-root` > `pas.toml` `[run] worktree_root` (relative to the
+/// `pas.toml` folder) > built-in (`None`).
+fn resolve_worktree_root(
+    caller: Option<&PathBuf>,
+    manifest: Option<&ResolvedManifest>,
+) -> ResolvedValue<Option<PathBuf>> {
+    let from_manifest = manifest.and_then(|resolved| {
+        let root = resolved.manifest.run.as_ref()?.worktree_root.as_ref()?;
+        let dir = resolved.path.parent().unwrap_or_else(|| Path::new("."));
+        Some(dir.join(root))
+    });
+    match (caller, from_manifest) {
+        (Some(root), _) => ResolvedValue::new(Some(root.clone()), ConfigurationSource::Caller),
+        (None, Some(root)) => ResolvedValue::new(Some(root), ConfigurationSource::Manifest),
+        (None, None) => ResolvedValue::new(None, ConfigurationSource::BuiltIn),
+    }
 }
 
 pub fn is_reserved_key(key: &str) -> bool {

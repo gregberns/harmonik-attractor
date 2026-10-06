@@ -104,10 +104,22 @@ enum Commands {
         #[arg(long)]
         json: bool,
 
-        /// Start even if another Run is active in this git worktree
+        /// Start even if another process is working in this Run's git
+        /// worktree, e.g. the same Run resumed with another `--logs`
         /// (recorded as `shared_workdir` in `RunStarted`)
         #[arg(long)]
         allow_shared_workdir: bool,
+
+        /// Start a new Run's branch at this commit, branch or tag.
+        /// Default: HEAD. Ignored on resume
+        #[arg(long)]
+        base: Option<String>,
+
+        /// Folder for the Runs' git worktrees. Default: `[run]
+        /// worktree_root` in pas.toml, else `<project-root>/.pas/worktrees`.
+        /// Ignored on resume
+        #[arg(long)]
+        worktree_root: Option<PathBuf>,
     },
 
     /// Answer a waiting Human Gate by creating its answer file. Exits 7 when
@@ -487,6 +499,8 @@ async fn run_cli() -> anyhow::Result<()> {
             run_id,
             json,
             allow_shared_workdir,
+            base,
+            worktree_root,
         } => {
             let codergen_claude = CodergenClaudeCliOpts {
                 settings_mode: codergen_claude_settings_mode,
@@ -504,6 +518,8 @@ async fn run_cli() -> anyhow::Result<()> {
                 index_path: None,
                 heartbeat_interval: heartbeat_interval_from_env(),
                 allow_shared_workdir,
+                base,
+                worktree_root: worktree_root.map(|root| std::path::absolute(&root).unwrap_or(root)),
             };
             if pipeline.is_dir() {
                 cmd_run_dir(

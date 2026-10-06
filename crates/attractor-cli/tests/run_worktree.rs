@@ -288,3 +288,103 @@ fn clean_checkout_has_no_warnings() {
     let started = fake.events_of("RunStarted");
     assert!(started[0].get("warnings").is_none(), "{started:?}");
 }
+
+#[test]
+fn base_flag_starts_the_branch_at_that_commit() {
+    let fake = FakeAgent::new();
+    let older = fake.git(&["rev-parse", "HEAD"]);
+    fake.git(&["commit", "-q", "--allow-empty", "-m", "newer"]);
+
+    assert_success(&fake.run_with(&tool_node("true"), &["--base", &older]));
+
+    let meta = fake.run_meta();
+    assert_eq!(meta["base"], older.as_str());
+    assert_eq!(meta["base_sha"], older.as_str());
+    assert_eq!(fake.git_in(&fake.worktree(), &["rev-parse", "HEAD"]), older);
+}
+
+#[test]
+fn worktree_root_flag_puts_the_worktree_there() {
+    let fake = FakeAgent::new();
+    let root = fake.root().join("elsewhere");
+
+    assert_success(&fake.run_with(
+        &tool_node("true"),
+        &["--worktree-root", root.to_str().unwrap()],
+    ));
+
+    let run_id = fake.run_meta()["run_id"].as_str().unwrap().to_string();
+    assert_eq!(fake.worktree(), canonical(&root).join(&run_id));
+    assert!(fake.worktree().is_dir());
+    assert!(!fake.repo().join(".pas/worktrees").exists());
+}
+
+fn write_pas_toml(fake: &FakeAgent, worktree_root: &str) {
+    fs::write(
+        fake.repo().join("pas.toml"),
+        format!("[project]\nname = \"demo\"\n\n[run]\nworktree_root = \"{worktree_root}\"\n"),
+    )
+    .unwrap();
+    fs::write(
+        fake.repo().join(".gitignore"),
+        format!("/{worktree_root}/\n"),
+    )
+    .unwrap();
+    fake.git(&["add", "pas.toml", ".gitignore"]);
+    fake.git(&["commit", "-q", "-m", "pas.toml"]);
+}
+
+#[test]
+fn pas_toml_worktree_root_is_relative_to_pas_toml() {
+    let fake = FakeAgent::new();
+    write_pas_toml(&fake, "wt");
+
+    assert_success(&fake.run(&tool_node("true")));
+
+    let run_id = fake.run_meta()["run_id"].as_str().unwrap().to_string();
+    assert_eq!(
+        fake.worktree(),
+        canonical(&fake.repo()).join("wt").join(&run_id)
+    );
+}
+
+#[test]
+fn worktree_root_flag_beats_pas_toml() {
+    let fake = FakeAgent::new();
+    write_pas_toml(&fake, "wt");
+    let root = fake.root().join("flag-root");
+
+    assert_success(&fake.run_with(
+        &tool_node("true"),
+        &["--worktree-root", root.to_str().unwrap()],
+    ));
+
+    let run_id = fake.run_meta()["run_id"].as_str().unwrap().to_string();
+    assert_eq!(fake.worktree(), canonical(&root).join(&run_id));
+    assert!(!fake.repo().join("wt").exists());
+}
+
+#[test]
+fn unknown_base_is_refused_before_any_branch_or_worktree() {
+    let fake = FakeAgent::new();
+
+    let output = fake.run_with(&tool_node("true"), &["--base", "nosuchref", "--json"]);
+
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    let first: serde_json::Value = serde_json::from_str(
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(first["error"]["code"], "invalid_base", "{first}");
+    assert_eq!(fake.git(&["branch", "--list", "pas/run/*"]), "");
+    assert!(!fake.repo().join(".pas/worktrees").exists());
+    assert_eq!(
+        fake.git(&["worktree", "list", "--porcelain"])
+            .matches("worktree ")
+            .count(),
+        1
+    );
+}
