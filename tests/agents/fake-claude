@@ -1,6 +1,7 @@
 #!/bin/sh
 # fake-claude: a digital twin of `claude -p` for PAS tests. It prints
-# scripted stream-json for the scenario named in the node's prompt.
+# scripted stream-json for the scenario named in a scenario file for the node
+# or in the node's prompt.
 # See README.md next to this script for the contract and how to add a scenario.
 
 die() {
@@ -11,6 +12,12 @@ die() {
 [ -n "${FAKE_AGENT_SCENARIOS:-}" ] || die "FAKE_AGENT_SCENARIOS is not set"
 [ -d "$FAKE_AGENT_SCENARIOS" ] || die "FAKE_AGENT_SCENARIOS is not a directory: $FAKE_AGENT_SCENARIOS"
 log="$FAKE_AGENT_SCENARIOS/invocations.log"
+
+# Log the environment PAS gives the agent. grep finding nothing is fine.
+{
+    printf '%s\n' '--- start'
+    env | grep -E '^(PAS_|ANTHROPIC_|OPENAI_|CLAUDE_CODE_USE_)' | sort
+} >>"$FAKE_AGENT_SCENARIOS/env.log"
 
 # Log argv, one argument per line, leaving out the multi-line -p value.
 printf '%s\n' '--- start' >>"$log"
@@ -44,20 +51,39 @@ done
 [ -n "$have_prompt" ] || die "-p is required"
 printf '%s\n' '--- start' "$prompt" >>"$FAKE_AGENT_SCENARIOS/prompts.log"
 
-# The node's own prompt: the text after the last "Task (". The text before it
-# holds the goal and earlier nodes' results.
-task=${prompt##*Task (}
+# The scenario text, first match wins: the first line of the file
+# <node>.<attempt>, then of the file <node>, in $FAKE_AGENT_SCENARIOS (named by
+# PAS_NODE_ID and PAS_ATTEMPT); else the node's own prompt, the text after the
+# last "Task (". The text before it holds the goal and earlier nodes' results.
+node_file=
+if [ -n "${PAS_NODE_ID:-}" ]; then
+    if [ -n "${PAS_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT"
+    elif [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID"
+    fi
+fi
+if [ -n "$node_file" ]; then
+    task=$(head -n 1 "$node_file")
+else
+    task=${prompt##*Task (}
+fi
 
-# The value of the last `<key>=<value>` token in the node's prompt.
+# The value of the last `<key>=<value>` token in the scenario text.
 token() {
     printf '%s\n' "$task" | tr -s ' \t' '\n\n' | sed -n "s/^$1=\\([A-Za-z0-9_-]*\\).*/\\1/p" | tail -n 1
 }
 
 scenario=$(token scenario)
-[ -n "$scenario" ] || die "no scenario=<name> in the node prompt"
+[ -n "$scenario" ] || die "no scenario=<name> in the scenario file or node prompt"
 label=$(token label)
 fails=$(token fails)
 fails=${fails:-1}
+code=$(token exit)
+code=${code:-0}
+case $code in
+    *[!0-9]*) die "exit=<N> needs a number, got $code" ;;
+esac
 
 # Count every start of this scenario.
 counter="$FAKE_AGENT_SCENARIOS/attempts.$scenario"
@@ -153,6 +179,17 @@ case $scenario in
         if [ "$attempt" -le "$fails" ]; then
             hang
         fi
+        succeed 'fake-claude: success'
+        ;;
+    bad_result)
+        init
+        json='{"type":"result","subtype":"success","is_error":false}'
+        printf '%s\n' "$json"
+        exit "$code"
+        ;;
+    stdin)
+        bytes=$(cat | wc -c | tr -d ' ')
+        printf '%s\n' "$bytes" >"$FAKE_AGENT_SCENARIOS/stdin.bytes"
         succeed 'fake-claude: success'
         ;;
     *)
