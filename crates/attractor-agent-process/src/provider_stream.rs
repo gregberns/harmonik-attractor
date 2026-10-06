@@ -81,6 +81,7 @@ impl Transcript {
 }
 
 /// What the provider process produced.
+#[derive(Debug)]
 pub struct StreamedOutput {
     pub status: ExitStatus,
     pub stdout: Vec<u8>,

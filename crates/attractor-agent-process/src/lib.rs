@@ -5,6 +5,8 @@
 
 pub mod process_group;
 pub mod provider_stream;
+mod run_local;
 
 pub use process_group::ProcessGroupGuard;
 pub use provider_stream::{run_streaming, StreamedOutput, Transcript};
+pub use run_local::{run_local, LocalRun};
