@@ -1,0 +1,107 @@
+#!/bin/sh
+# fake-claude: a digital twin of `claude -p` for PAS tests. It prints
+# scripted stream-json for the scenario named in the node's prompt.
+# See README.md next to this script for the contract and how to add a scenario.
+
+die() {
+    printf 'fake-claude: %s\n' "$1" >&2
+    exit 2
+}
+
+[ -n "${FAKE_AGENT_SCENARIOS:-}" ] || die "FAKE_AGENT_SCENARIOS is not set"
+[ -d "$FAKE_AGENT_SCENARIOS" ] || die "FAKE_AGENT_SCENARIOS is not a directory: $FAKE_AGENT_SCENARIOS"
+log="$FAKE_AGENT_SCENARIOS/invocations.log"
+
+# Log argv, one argument per line, leaving out the multi-line -p value.
+printf '%s\n' '--- start' >>"$log"
+prompt=
+have_prompt=
+while [ $# -gt 0 ]; do
+    printf '%s\n' "$1" >>"$log"
+    case $1 in
+        -p)
+            [ $# -ge 2 ] || die "-p needs a value"
+            prompt=$2
+            have_prompt=1
+            shift 2
+            ;;
+        --output-format | --setting-sources | --mcp-config | --settings | \
+            --tools | --agents | --plugin-dir | --model | --allowedTools | \
+            --max-budget-usd)
+            [ $# -ge 2 ] || die "$1 needs a value"
+            printf '%s\n' "$2" >>"$log"
+            shift 2
+            ;;
+        --verbose | --no-session-persistence | --dangerously-skip-permissions | \
+            --strict-mcp-config | --disable-slash-commands | --safe-mode | --bare)
+            shift
+            ;;
+        *)
+            die "unknown flag $1"
+            ;;
+    esac
+done
+[ -n "$have_prompt" ] || die "-p is required"
+printf '%s\n' '--- start' "$prompt" >>"$FAKE_AGENT_SCENARIOS/prompts.log"
+
+# The node's own prompt: the text after the last "Task (". The text before it
+# holds the goal and earlier nodes' results.
+task=${prompt##*Task (}
+
+# The value of the last `<key>=<value>` token in the node's prompt.
+token() {
+    printf '%s\n' "$task" | tr -s ' \t' '\n\n' | sed -n "s/^$1=\\([A-Za-z0-9_-]*\\).*/\\1/p" | tail -n 1
+}
+
+scenario=$(token scenario)
+[ -n "$scenario" ] || die "no scenario=<name> in the node prompt"
+label=$(token label)
+fails=$(token fails)
+fails=${fails:-1}
+
+# Count every start of this scenario.
+counter="$FAKE_AGENT_SCENARIOS/attempts.$scenario"
+attempt=$(cat "$counter" 2>/dev/null || echo 0)
+attempt=$((attempt + 1))
+printf '%s\n' "$attempt" >"$counter"
+
+session="00000000-0000-4000-8000-$(printf '%012d' "$$")"
+
+init() {
+    json='{"type":"system","subtype":"init","session_id":"'"$session"'","tools":["Bash","Edit","Read","Write"],"model":"fake-model","claude_code_version":"fake"}'
+    printf '%s\n' "$json"
+}
+
+# assistant <text>: one assistant text message. <text> is plain ASCII without
+# quotes or backslashes, so it needs no JSON escaping.
+assistant() {
+    json='{"type":"assistant","message":{"model":"fake-model","type":"message","role":"assistant","content":[{"type":"text","text":"'"$1"'"}],"usage":{"input_tokens":1,"output_tokens":1}},"session_id":"'"$session"'"}'
+    printf '%s\n' "$json"
+}
+
+# result <subtype> <is_error> <text>: the final result line. <text> may hold
+# a JSON escape such as \n.
+result() {
+    json='{"type":"result","subtype":"'"$1"'","is_error":'"$2"',"result":"'"$3"'","session_id":"'"$session"'","num_turns":1,"total_cost_usd":0.001,"usage":{"input_tokens":1,"output_tokens":1}}'
+    printf '%s\n' "$json"
+}
+
+succeed() {
+    init
+    assistant "$1"
+    result success false "$1"
+}
+
+hang() {
+    init
+    exec sleep "${FAKE_HANG_SECS:-30}"
+}
+
+case $scenario in
+    success)
+        succeed 'fake-claude: success'
+        ;;
+    *)
+        die "unknown scenario $scenario"
+        ;;
+esac
