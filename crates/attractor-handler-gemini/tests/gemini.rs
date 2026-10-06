@@ -57,6 +57,18 @@ impl Fixture {
         self.dir.path().join("scenarios")
     }
 
+    fn prompt_file(&self) -> PathBuf {
+        self.dir.path().join("t.prompt.txt")
+    }
+
+    /// The argv section of the prompt file.
+    fn prompt_file_argv(&self) -> Vec<String> {
+        let text = fs::read_to_string(self.prompt_file()).unwrap();
+        let start = text.find("argv:\n").unwrap() + "argv:\n".len();
+        let end = text[start..].find("\n\n").unwrap() + start;
+        text[start..end].lines().map(String::from).collect()
+    }
+
     fn read(&self, name: &str) -> String {
         fs::read_to_string(self.scenarios().join(name)).unwrap_or_default()
     }
@@ -99,6 +111,7 @@ impl Fixture {
                 },
                 transcript: Some(self.dir.path().join("t.jsonl")),
                 stderr: Some(self.dir.path().join("t.stderr.log")),
+                prompt_file: Some(self.prompt_file()),
                 observer: None,
                 cancel: CancellationToken::new(),
             })
@@ -247,4 +260,17 @@ async fn a_hanging_probe_falls_back_to_json_and_leaves_nothing_behind() {
         );
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+#[tokio::test]
+async fn the_prompt_file_records_the_spawned_argv_with_the_probed_format() {
+    let fx = Fixture::new();
+    fx.run("scenario=success").await;
+    let mut expected = vec![fake_gemini()];
+    expected.extend(fx.invocations()[0].iter().cloned());
+    assert_eq!(fx.prompt_file_argv(), expected);
+    assert_eq!(
+        fx.prompt_file_argv()[1..3],
+        ["--output-format", "stream-json"]
+    );
 }

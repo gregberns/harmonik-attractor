@@ -22,10 +22,17 @@ pub struct CodexExec;
 impl CodexExec {
     pub const MECHANISM: &'static str = "codex-exec";
     pub const DISPLAY_NAME: &'static str = "Codex CLI";
+}
+
+#[async_trait]
+impl AgentHandler for CodexExec {
+    fn mechanism(&self) -> &'static str {
+        Self::MECHANISM
+    }
 
     /// The invocation's argv, then `--cd <workdir>` and the prompt, which
     /// Codex takes as its last, positional argument (`-p` is `--profile`).
-    pub fn argv(inv: &Invocation<'_>) -> Vec<String> {
+    fn argv(&self, inv: &Invocation<'_>) -> Vec<String> {
         let mut argv = inv.argv.clone();
         argv.extend([
             "--cd".to_string(),
@@ -33,13 +40,6 @@ impl CodexExec {
             inv.prompt.to_string(),
         ]);
         argv
-    }
-}
-
-#[async_trait]
-impl AgentHandler for CodexExec {
-    fn mechanism(&self) -> &'static str {
-        Self::MECHANISM
     }
 
     fn display_name(&self) -> &'static str {
@@ -61,7 +61,7 @@ impl AgentHandler for CodexExec {
             })
         };
         let local = run_local(
-            &Self::argv(&inv),
+            &self.argv(&inv),
             &inv.env,
             inv.workdir,
             inv.transcript,

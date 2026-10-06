@@ -107,6 +107,7 @@ impl Fixture {
                 },
                 transcript: Some(self.dir.path().join("t.jsonl")),
                 stderr: Some(self.dir.path().join("t.stderr.log")),
+                prompt_file: Some(self.dir.path().join("t.prompt.txt")),
                 observer: None,
                 cancel: CancellationToken::new(),
             })
@@ -208,4 +209,30 @@ async fn the_api_key_is_stripped_and_the_pas_ids_are_set() {
     assert!(!env.contains("OPENAI_API_KEY"), "{env}");
     assert!(env.contains("PAS_NODE_ID=work"), "{env}");
     assert!(env.contains("PAS_RUN_ID=run-1"), "{env}");
+}
+
+#[tokio::test]
+async fn the_prompt_file_records_the_spawned_argv() {
+    let fx = Fixture::new();
+    fx.run("scenario=success", None, LONG).await;
+    let text = fs::read_to_string(fx.dir.path().join("t.prompt.txt")).unwrap();
+    let start = text.find("argv:\n").unwrap() + "argv:\n".len();
+    let end = text[start..].find("\n\n").unwrap() + start;
+    let argv: Vec<&str> = text[start..end].lines().collect();
+    let workdir = fx.workdir().to_string_lossy().into_owned();
+    let fake = fake_codex().to_string_lossy().into_owned();
+    assert_eq!(
+        argv,
+        [
+            fake.as_str(),
+            "exec",
+            "--json",
+            "--yolo",
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "--cd",
+            workdir.as_str(),
+            "<prompt>",
+        ]
+    );
 }

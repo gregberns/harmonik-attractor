@@ -24,6 +24,10 @@ pub const HARD_DEADLINE_MARGIN: Duration = Duration::from_secs(5);
 pub trait AgentHandler: Send + Sync {
     /// The `mechanism` name profiles use.
     fn mechanism(&self) -> &'static str;
+    /// Anything the handler must learn before [`AgentHandler::argv`] is
+    /// final (e.g. Gemini probes its output format). Called once per
+    /// invocation, before the prompt file is written and before `run`.
+    async fn prepare(&self, _inv: &Invocation<'_>) {}
     /// The complete argv the handler starts the agent with: `inv.argv` plus
     /// the handler's own flags. The prompt file records it, so a handler
     /// must spawn with exactly this.
@@ -332,6 +336,7 @@ impl Agents {
                     cancel: req.cancel.clone(),
                     spawned: &spawned,
                 };
+                handler.prepare(&inv).await;
                 if let Some(path) = &req.prompt_file {
                     let text = prompt_file_text(
                         &req.record.invocation_id,

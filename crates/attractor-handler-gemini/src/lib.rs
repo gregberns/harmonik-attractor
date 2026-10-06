@@ -53,7 +53,7 @@ impl Gemini {
     /// the profile's (possibly multi-word) command, and the prompt last
     /// (positional; `-p` is deprecated). Gemini has no `--cwd`: the process
     /// runs in the workdir.
-    pub fn argv(inv: &Invocation<'_>, format: OutputFormat) -> Vec<String> {
+    pub fn argv_with(inv: &Invocation<'_>, format: OutputFormat) -> Vec<String> {
         let at = inv.command_len.min(inv.argv.len());
         let (command, rest) = inv.argv.split_at(at);
         command
@@ -65,17 +65,26 @@ impl Gemini {
             .collect()
     }
 
-    /// The output format for `inv`'s command, probed on first use.
-    async fn format(&self, inv: &Invocation<'_>) -> OutputFormat {
-        let command = inv.argv[..inv.command_len.min(inv.argv.len())].to_vec();
-        let known = self
-            .formats
+    /// The profile's command in `inv`'s argv.
+    fn command(inv: &Invocation<'_>) -> Vec<String> {
+        inv.argv[..inv.command_len.min(inv.argv.len())].to_vec()
+    }
+
+    /// The format already probed for `inv`'s command, if any.
+    fn known_format(&self, inv: &Invocation<'_>) -> Option<OutputFormat> {
+        let command = Self::command(inv);
+        self.formats
             .lock()
             .ok()
-            .and_then(|formats| formats.get(&command).copied());
-        if let Some(format) = known {
+            .and_then(|formats| formats.get(&command).copied())
+    }
+
+    /// The output format for `inv`'s command, probed on first use.
+    async fn format(&self, inv: &Invocation<'_>) -> OutputFormat {
+        if let Some(format) = self.known_format(inv) {
             return format;
         }
+        let command = Self::command(inv);
         let format = probe(&command, &inv.env, inv.workdir, self.probe_timeout).await;
         if let Ok(mut formats) = self.formats.lock() {
             formats.insert(command, format);
@@ -90,6 +99,17 @@ impl AgentHandler for Gemini {
         Self::MECHANISM
     }
 
+    /// Probes the command's output format (once per command).
+    async fn prepare(&self, inv: &Invocation<'_>) {
+        self.format(inv).await;
+    }
+
+    /// The argv with the probed `--output-format` (`json` if no probe result
+    /// is known, as after any probe failure).
+    fn argv(&self, inv: &Invocation<'_>) -> Vec<String> {
+        Self::argv_with(inv, self.known_format(inv).unwrap_or(OutputFormat::Json))
+    }
+
     fn display_name(&self) -> &'static str {
         Self::DISPLAY_NAME
     }
@@ -101,7 +121,8 @@ impl AgentHandler for Gemini {
 
     async fn run(&self, inv: Invocation<'_>) -> AgentResult {
         let started = Instant::now();
-        let format = self.format(&inv).await;
+        // `Agents::run` already called `prepare`; this is the cache.
+        self.format(&inv).await;
         let spawned = |spawn: Spawn| {
             (inv.spawned)(Spawned {
                 pid: spawn.pid,
@@ -110,7 +131,7 @@ impl AgentHandler for Gemini {
             })
         };
         let local = run_local(
-            &Self::argv(&inv, format),
+            &self.argv(&inv),
             &inv.env,
             inv.workdir,
             inv.transcript,
