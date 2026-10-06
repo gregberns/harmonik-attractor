@@ -626,6 +626,7 @@ async fn run_both(
                 attempt: 1,
                 cancel: CancellationToken::new(),
                 resume_note: None,
+                failure_note: None,
                 session: None,
             },
         )

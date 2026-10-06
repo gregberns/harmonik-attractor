@@ -75,6 +75,8 @@ struct ExecutionProgress {
     resuming_attempt: bool,
     /// Thread key -> agent session id, as recorded in the checkpoint.
     agent_sessions: std::collections::BTreeMap<String, String>,
+    /// Node id -> how its last finished attempt failed (ticket 11).
+    last_failure: std::collections::BTreeMap<String, crate::attempt_failure::AttemptFailure>,
 }
 
 struct CheckpointData<'a> {
@@ -114,6 +116,7 @@ impl CheckpointData<'_> {
         checkpoint.active_attempt_number = progress.active_attempt_number;
         checkpoint.active_attempt_head = progress.active_attempt_head.clone();
         checkpoint.agent_sessions = progress.agent_sessions.clone();
+        checkpoint.last_failure = progress.last_failure.clone();
         save_checkpoint(&checkpoint, logs_root).await?;
         self.observers.emit(PipelineEvent::CheckpointSaved {
             node_id: current_node_id.to_string(),
@@ -609,6 +612,12 @@ impl PipelineExecutor {
             // An agent node's session: the id recorded for its thread, and
             // a cell for the id this attempt's agent reports.
             let reported_session = std::sync::OnceLock::new();
+            // The node's last finished attempt failed (this visit or an
+            // earlier one, or before a resume): tell the agent why.
+            let failure_note = progress
+                .last_failure
+                .get(&node.id)
+                .map(crate::attempt_failure::failure_note);
             let session = resolved
                 .agent
                 .is_some()
@@ -634,7 +643,8 @@ impl PipelineExecutor {
                     // Only the first attempt after an interrupted one.
                     resume_note.as_deref().filter(|_| attempt == first_attempt),
                 )
-                .with_session(session),
+                .with_session(session)
+                .with_failure_note(failure_note.as_deref()),
                 configured.plan().graph(),
             );
             let result = if resolved.runs_through_agents() {
@@ -680,6 +690,19 @@ impl PipelineExecutor {
                 progress
                     .agent_sessions
                     .insert(resolved.thread_key().to_string(), id.clone());
+                checkpoint.save(&node.id, progress).await?;
+            }
+            // A finished attempt sets or clears the node's failure for its
+            // next attempt; a stopped one leaves it as it was.
+            if !matches!(result, Err(AttractorError::Cancelled { .. })) {
+                match crate::attempt_failure::attempt_failure(&result) {
+                    Some(failure) => {
+                        progress.last_failure.insert(node.id.clone(), failure);
+                    }
+                    None => {
+                        progress.last_failure.remove(&node.id);
+                    }
+                }
                 checkpoint.save(&node.id, progress).await?;
             }
             // Record the attempt, whatever its result, as one commit in the
@@ -1082,6 +1105,7 @@ impl PipelineExecutor {
                 progress.active_attempt_number = cp.active_attempt_number;
                 progress.active_attempt_head = cp.active_attempt_head;
                 progress.agent_sessions = cp.agent_sessions;
+                progress.last_failure = cp.last_failure;
                 quality_loop_counters = cp.quality_loop_counters;
                 quality_last_footprint = cp.quality_last_footprint;
                 prev_node_id = cp.previous_node_id;

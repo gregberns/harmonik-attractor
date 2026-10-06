@@ -507,10 +507,77 @@ mod transcripts {
                     attempt: 1,
                     cancel: CancellationToken::new(),
                     resume_note: None,
+                    failure_note: None,
                     session: None,
                 },
             )
             .await
+    }
+
+    /// The prompt a stub Claude got for node `step` (`do work`) with the
+    /// given notes: the stub saves its `-p` value to `prompt.txt`.
+    async fn prompt_with_notes(failure_note: Option<&str>, resume_note: Option<&str>) -> String {
+        let tmp = tempfile::tempdir().unwrap();
+        let saved = tmp.path().join("prompt.txt");
+        let program = stub(
+            tmp.path(),
+            &format!(
+                "while [ \"$1\" != -p ]; do shift; done; printf '%s' \"$2\" > '{}'; echo '{CLAUDE_RESULT_LINE}'",
+                saved.display()
+            ),
+        );
+        let node = make_node("step", "box", Some("do work"), HashMap::new());
+        let resolved = ResolvedNode {
+            node_id: node.id.clone(),
+            kind: ResolvedNodeKind::Task,
+            handler: crate::HandlerIdentity::Codergen,
+            agent: crate::handlers::codergen_handler::test_agent(Some(ProviderAlias::CLAUDE), None),
+            invocation: Default::default(),
+            fidelity: None,
+            thread_id: None,
+        };
+        CodergenHandler::new(crate::handlers::tests::stub_agents(&program))
+            .execute_with_controls(
+                &node,
+                &resolved,
+                &Context::default(),
+                &make_minimal_graph(),
+                CodergenExecutionControls {
+                    dry_run: false,
+                    workdir: None,
+                    claude: Some(ClaudeCliConfig::default()),
+                    run_dir: None,
+                    events: None,
+                    run_id: None,
+                    attempt: 2,
+                    cancel: CancellationToken::new(),
+                    resume_note: resume_note.map(str::to_owned),
+                    failure_note: failure_note.map(str::to_owned),
+                    session: None,
+                },
+            )
+            .await
+            .unwrap();
+        std::fs::read_to_string(saved).unwrap()
+    }
+
+    // Ticket 11: the failure note follows the task, before 07's interrupted
+    // note; with neither, the prompt is the task alone, as before.
+    #[tokio::test]
+    async fn the_failure_note_follows_the_task_before_the_interrupted_note() {
+        assert_eq!(prompt_with_notes(None, None).await, "Task (step): do work");
+        assert_eq!(
+            prompt_with_notes(Some("The previous attempt timed out after 1 s."), None).await,
+            "Task (step): do work\n\nThe previous attempt timed out after 1 s."
+        );
+        assert_eq!(
+            prompt_with_notes(
+                Some("The previous attempt failed (reported): tests failed"),
+                Some("The previous attempt was interrupted."),
+            )
+            .await,
+            "Task (step): do work\n\nThe previous attempt failed (reported): tests failed\n\nThe previous attempt was interrupted."
+        );
     }
 
     async fn run_claude(program: PathBuf, run_dir: Option<&Path>) -> Result<Outcome> {
@@ -956,6 +1023,7 @@ mod transcripts {
                     attempt: 1,
                     cancel: CancellationToken::new(),
                     resume_note: None,
+                    failure_note: None,
                     session: None,
                 },
             )
@@ -1456,6 +1524,7 @@ mod stream_formats {
                     attempt: 1,
                     cancel: CancellationToken::new(),
                     resume_note: None,
+                    failure_note: None,
                     session: None,
                 },
             )

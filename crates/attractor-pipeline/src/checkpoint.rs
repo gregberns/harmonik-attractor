@@ -83,6 +83,12 @@ pub struct PipelineCheckpoint {
     /// (ticket 08). Older checkpoints read it as empty.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub agent_sessions: BTreeMap<String, String>,
+    /// Node id -> how that node's last finished attempt failed; removed when
+    /// one succeeds. The node's next attempt gets a note naming it (ticket
+    /// 11). Never in the context, so no other node's prompt sees it. Older
+    /// checkpoints read it as empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub last_failure: BTreeMap<String, crate::attempt_failure::AttemptFailure>,
     /// Fingerprint of the compiled execution plan this checkpoint belongs to.
     ///
     /// On resume the engine recomputes the fingerprint of the current plan
@@ -125,6 +131,7 @@ impl PipelineCheckpoint {
             active_attempt_number: None,
             active_attempt_head: None,
             agent_sessions: BTreeMap::new(),
+            last_failure: BTreeMap::new(),
             execution_fingerprint: None,
         }
     }
@@ -164,6 +171,7 @@ impl PipelineCheckpoint {
             active_attempt_number: None,
             active_attempt_head: None,
             agent_sessions: BTreeMap::new(),
+            last_failure: BTreeMap::new(),
             execution_fingerprint,
         }
     }
@@ -506,5 +514,25 @@ mod tests {
         assert_eq!(restored.total_handler_attempts, 0);
         assert_eq!(restored.active_node_id, None);
         assert_eq!(restored.active_node_attempts, 0);
+    }
+
+    #[tokio::test]
+    async fn last_failure_round_trips_and_an_old_checkpoint_has_none() {
+        use crate::attempt_failure::AttemptFailure;
+        let dir = tempfile::tempdir().unwrap();
+        let mut cp = sample_checkpoint();
+        cp.last_failure
+            .insert("work".into(), AttemptFailure::TimedOut { timeout_ms: 1000 });
+        save_checkpoint(&cp, dir.path()).await.unwrap();
+        let loaded = load_checkpoint(dir.path()).await.unwrap().unwrap();
+        assert_eq!(loaded.last_failure, cp.last_failure);
+
+        // Written only when there is one; a checkpoint without it loads empty.
+        let mut empty = sample_checkpoint();
+        empty.last_failure.clear();
+        let json = serde_json::to_value(&empty).unwrap();
+        assert!(json.get("last_failure").is_none(), "{json}");
+        let old: PipelineCheckpoint = serde_json::from_value(json).unwrap();
+        assert!(old.last_failure.is_empty());
     }
 }

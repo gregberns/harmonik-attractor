@@ -87,6 +87,8 @@ struct CodergenExecutionControls<'a> {
     cancel: CancellationToken,
     /// Set for the attempt after an interrupted one; added to the prompt.
     resume_note: Option<String>,
+    /// Set when the node's last finished attempt failed; added to the prompt.
+    failure_note: Option<String>,
     /// The attempt's session context from the engine; `None` outside it.
     session: Option<SessionContext<'a>>,
 }
@@ -347,6 +349,11 @@ impl CodergenHandler {
         }
 
         full_prompt.push_str(&format!("Task ({}): {}", label, prompt));
+        // The node's last attempt failed: tell the agent how (before the
+        // interruption note: oldest first).
+        if let Some(note) = &controls.failure_note {
+            full_prompt.push_str(&format!("\n\n{note}"));
+        }
         // The previous attempt was interrupted: tell the agent where its work is.
         if let Some(note) = &controls.resume_note {
             full_prompt.push_str(&format!("\n\n{note}"));
@@ -665,6 +672,7 @@ impl ProviderNodeHandler for CodergenHandler {
                 attempt: 1,
                 cancel: CancellationToken::new(),
                 resume_note: None,
+                failure_note: None,
                 session: None,
             },
         )
@@ -694,6 +702,7 @@ impl ProviderNodeHandler for CodergenHandler {
                 attempt: execution.attempt(),
                 cancel: execution.cancel().clone(),
                 resume_note: execution.resume_note().map(str::to_owned),
+                failure_note: execution.failure_note().map(str::to_owned),
                 session: execution.session(),
             },
         )

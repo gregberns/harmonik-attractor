@@ -31,6 +31,7 @@ pub struct HandlerExecutionContext<'a> {
     cancel: &'a CancellationToken,
     resume_note: Option<&'a str>,
     session: Option<SessionContext<'a>>,
+    failure_note: Option<&'a str>,
 }
 
 /// An agent attempt's session (design §1): the session id recorded for its
@@ -64,7 +65,22 @@ impl<'a> HandlerExecutionContext<'a> {
             cancel,
             resume_note,
             session: None,
+            failure_note: None,
         }
+    }
+
+    /// The same context with a note naming the node's previous failure.
+    pub(crate) fn with_failure_note(self, failure_note: Option<&'a str>) -> Self {
+        Self {
+            failure_note,
+            ..self
+        }
+    }
+
+    /// When the node's last finished attempt failed: a note naming that
+    /// failure's class and reason, for the agent's prompt (ticket 11).
+    pub fn failure_note(self) -> Option<&'a str> {
+        self.failure_note
     }
 
     /// The same context for an agent attempt with `session`.
