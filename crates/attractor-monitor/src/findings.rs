@@ -386,6 +386,7 @@ mod tests {
             max_budget_usd: budget,
             max_steps: steps,
             shared_workdir: shared,
+            warnings: Vec::new(),
         }
     }
 

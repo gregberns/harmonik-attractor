@@ -116,6 +116,9 @@ pub enum EventData {
         /// Set when the Run was started with `--allow-shared-workdir` (C5).
         #[serde(default)]
         shared_workdir: bool,
+        /// Setup warnings, e.g. a dirty source checkout (ticket 06).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        warnings: Vec<String>,
     },
     AttemptStarted {
         attempt: u32,
@@ -455,6 +458,7 @@ mod tests {
                 max_budget_usd: None,
                 max_steps: None,
                 shared_workdir: false,
+                warnings: Vec::new(),
             },
             EventData::AttemptStarted {
                 attempt: 2,

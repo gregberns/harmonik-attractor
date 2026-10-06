@@ -199,3 +199,92 @@ fn default_logs_in_a_subdirectory_are_ignored_too() {
     );
     assert_eq!(fake.git(&["status", "--porcelain"]), "");
 }
+
+/// The `RunStarted` event's warnings.
+fn run_started_warnings(fake: &FakeAgent) -> Vec<String> {
+    let started = fake.events_of("RunStarted");
+    assert_eq!(started.len(), 1, "{started:?}");
+    started[0]["warnings"]
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .map(|w| w.as_str().unwrap().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn run_json_warnings(fake: &FakeAgent) -> Vec<String> {
+    serde_json::from_value(fake.run_meta()["warnings"].clone()).unwrap()
+}
+
+fn assert_dirty_warning(warnings: &[String]) {
+    assert!(
+        warnings.iter().any(|w| w.contains("uncommitted")),
+        "{warnings:?}"
+    );
+}
+
+#[test]
+fn dirty_checkout_warns_and_stays_out_of_the_worktree() {
+    let fake = FakeAgent::new();
+    fs::write(fake.repo().join("tracked"), "committed\n").unwrap();
+    fake.git(&["add", "tracked"]);
+    fake.git(&["commit", "-q", "-m", "tracked"]);
+    fs::write(fake.repo().join("tracked"), "changed\n").unwrap();
+    fs::write(fake.repo().join("untracked"), "new\n").unwrap();
+
+    let output = fake.run(&tool_node("true"));
+    assert_success(&output);
+
+    assert_dirty_warning(&run_json_warnings(&fake));
+    assert_dirty_warning(&run_started_warnings(&fake));
+    assert!(
+        stderr(&output).contains("uncommitted"),
+        "{}",
+        stderr(&output)
+    );
+
+    let wt = fake.worktree();
+    assert_eq!(
+        fs::read_to_string(wt.join("tracked")).unwrap(),
+        "committed\n"
+    );
+    assert!(!wt.join("untracked").exists());
+    assert_eq!(
+        fs::read_to_string(fake.repo().join("tracked")).unwrap(),
+        "changed\n"
+    );
+    assert!(fake.repo().join("untracked").is_file());
+}
+
+#[test]
+fn dirt_outside_a_subdirectory_workdir_still_warns() {
+    let fake = FakeAgent::new();
+    fs::create_dir_all(fake.repo().join("sub")).unwrap();
+    fs::write(fake.repo().join("sub/keep"), "").unwrap();
+    fake.git(&["add", "sub/keep"]);
+    fake.git(&["commit", "-q", "-m", "sub"]);
+    fs::write(fake.repo().join("at-root"), "dirt\n").unwrap();
+
+    let output = fake
+        .command_in(&tool_node("true"), &fake.repo().join("sub"), &[])
+        .output()
+        .unwrap();
+    assert_success(&output);
+
+    assert_dirty_warning(&run_json_warnings(&fake));
+    assert_dirty_warning(&run_started_warnings(&fake));
+}
+
+#[test]
+fn clean_checkout_has_no_warnings() {
+    let fake = FakeAgent::new();
+
+    assert_success(&fake.run(&tool_node("true")));
+
+    assert!(run_json_warnings(&fake).is_empty());
+    assert!(run_started_warnings(&fake).is_empty());
+    let started = fake.events_of("RunStarted");
+    assert!(started[0].get("warnings").is_none(), "{started:?}");
+}

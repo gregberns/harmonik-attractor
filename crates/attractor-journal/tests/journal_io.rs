@@ -51,6 +51,7 @@ fn writer_reader_round_trip() {
                 max_budget_usd: Some(50.5),
                 max_steps: Some(200),
                 shared_workdir: true,
+                warnings: Vec::new(),
             })
             .unwrap(),
         writer

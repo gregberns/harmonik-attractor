@@ -41,6 +41,7 @@ fn started() -> EventData {
         max_budget_usd: None,
         max_steps: None,
         shared_workdir: false,
+        warnings: Vec::new(),
     }
 }
 

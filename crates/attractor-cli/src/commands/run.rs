@@ -1024,6 +1024,7 @@ async fn prepare_run(
                 max_budget_usd: Some(*controls.max_budget_usd().value()),
                 max_steps: Some(*controls.max_steps().value()),
                 shared_workdir,
+                warnings: place.warnings.clone(),
             })
             .map_err(journal_error)?;
     }

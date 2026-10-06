@@ -324,6 +324,7 @@ impl RunView {
                 max_budget_usd,
                 max_steps,
                 shared_workdir,
+                warnings: _,
             } => {
                 self.pipeline_name = Some(pipeline_name.clone());
                 self.pipeline_path = Some(pipeline_path.clone());

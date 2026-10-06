@@ -113,6 +113,7 @@ fn add_run(e: &Env, kind: Kind, argv: &[&str]) -> String {
         max_budget_usd: None,
         max_steps: None,
         shared_workdir: false,
+        warnings: Vec::new(),
     })
     .unwrap();
     w.append(EventData::AttemptStarted {
