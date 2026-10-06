@@ -9,7 +9,7 @@ pub mod tool_handler;
 pub mod wait_human;
 
 pub use beads::{BeadsCloseHandler, BeadsSelectHandler};
-pub use codergen_handler::CodergenHandler;
+pub use codergen_handler::{agent_profiles, CodergenHandler, CLAUDE_PROFILE};
 pub use manager::ManagerLoopHandler;
 pub use parallel::{FanInHandler, ParallelHandler};
 pub use quality_handler::QualityHandler;

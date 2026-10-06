@@ -46,8 +46,8 @@ pub use handler::{
 };
 pub use handlers::wait_human::WaitHumanHandler;
 pub use handlers::{
-    BeadsCloseHandler, BeadsSelectHandler, CodergenHandler, FanInHandler, ManagerLoopHandler,
-    ParallelHandler, QualityHandler, ToolHandler,
+    agent_profiles, BeadsCloseHandler, BeadsSelectHandler, CodergenHandler, FanInHandler,
+    ManagerLoopHandler, ParallelHandler, QualityHandler, ToolHandler,
 };
 pub use interviewer::{
     Answer, AutoApproveInterviewer, ConsoleInterviewer, Interviewer, JournalInterviewer, Question,

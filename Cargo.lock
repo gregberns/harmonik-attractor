@@ -283,6 +283,7 @@ dependencies = [
 name = "attractor-quality"
 version = "0.11.0"
 dependencies = [
+ "attractor-agent-handler",
  "blake3",
  "chrono",
  "dirs",

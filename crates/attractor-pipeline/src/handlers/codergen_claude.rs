@@ -1,10 +1,13 @@
-//! Claude nodes: the flags the engine still derives for the `claude` profile
-//! and the mapping from an [`AgentResult`] to today's outcomes and errors.
-//! Pure functions.
+//! Claude nodes: the `[codergen.claude]` flags, folded into the `claude`
+//! profile, the node flags the engine still derives, and the mapping from an
+//! [`AgentResult`] to today's outcomes and errors. Pure functions, except
+//! [`agent_profiles`] reading the built-in profiles compiled into the binary.
 
 use std::path::Path;
 
-use attractor_agent_handler::{AgentResult, AgentStatus, FailureClass, Usage};
+use attractor_agent_handler::{
+    AgentResult, AgentStatus, AgentsConfig, ConfigError, FailureClass, Profile, Usage,
+};
 use attractor_dot::AttributeValue;
 use attractor_journal::RunDir;
 use attractor_quality::ClaudeSettingsMode;
@@ -14,6 +17,10 @@ use super::provider::InvocationUsage;
 use super::{provider_outcome, ProviderResult};
 use crate::execution_plan::{LlmProvider, ResolvedNode};
 use crate::graph::{PipelineGraph, PipelineNode};
+use crate::run_configuration::{ResolvedClaudeConfig, ResolvedConfig};
+
+/// The agent profile Claude nodes (`llm_provider="claude"`) run with.
+pub const CLAUDE_PROFILE: &str = "claude";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ClaudeCliConfig {
@@ -40,9 +47,83 @@ impl Default for ClaudeCliConfig {
     }
 }
 
-/// The `AgentRequest.extra_args` of a Claude node: the `[codergen.claude]`
-/// flags, then the node's `allowed_tools` and `max_budget_usd`.
-pub(super) fn claude_extra_args(cfg: &ClaudeCliConfig, node: &PipelineNode) -> Vec<String> {
+impl ClaudeCliConfig {
+    /// The `[codergen.claude]` settings a run resolved (CLI over `pas.toml`).
+    pub(super) fn from_resolved(claude: &ResolvedClaudeConfig) -> Self {
+        Self {
+            settings_mode: *claude.settings_mode().value(),
+            setting_sources: claude
+                .setting_sources()
+                .value()
+                .iter()
+                .map(|source| source.as_str().to_owned())
+                .collect(),
+            settings: claude.settings().value().clone(),
+            tools: claude.tools().value().clone(),
+            agents: claude.agents().value().clone(),
+            plugin_dirs: claude
+                .plugin_dirs()
+                .value()
+                .iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect(),
+            mcp_config: claude.mcp_config().value().clone(),
+        }
+    }
+}
+
+/// The agent profiles a run uses: the built-in ones, then `pas.toml`'s
+/// `[agents.<name>]` (whole profiles by name), with the run's
+/// `[codergen.claude]` flags folded into the `claude` profile's args before
+/// `inherit_from` resolves, so a profile inheriting from `claude` keeps them.
+pub fn agent_profiles(controls: &ResolvedConfig) -> std::result::Result<Vec<Profile>, ConfigError> {
+    let overrides = controls
+        .manifest()
+        .map(|resolved| resolved.manifest.agents.clone())
+        .unwrap_or_default();
+    let config = AgentsConfig::builtin()?.with_overrides(&overrides);
+    let flags = claude_settings_args(&ClaudeCliConfig::from_resolved(controls.claude()));
+    fold_codergen_claude(config, flags).resolve()
+}
+
+/// `config` with `flags` appended to the `claude` profile's args. When that
+/// profile sets no args of its own, they go after the args it inherits.
+pub(super) fn fold_codergen_claude(mut config: AgentsConfig, flags: Vec<String>) -> AgentsConfig {
+    let inherited = inherited_args(&config, CLAUDE_PROFILE);
+    if let Some(claude) = config.profiles.get_mut(CLAUDE_PROFILE) {
+        let args = claude.args.get_or_insert(inherited);
+        args.extend(flags);
+    }
+    config
+}
+
+/// The args `name` gets from its `inherit_from` chain; empty when none sets
+/// any (or the chain is broken, which resolving reports).
+fn inherited_args(config: &AgentsConfig, name: &str) -> Vec<String> {
+    let mut next = config
+        .profiles
+        .get(name)
+        .and_then(|p| p.inherit_from.clone());
+    let mut seen = vec![name.to_string()];
+    while let Some(parent_name) = next {
+        if seen.contains(&parent_name) {
+            break;
+        }
+        let Some(parent) = config.profiles.get(&parent_name) else {
+            break;
+        };
+        if let Some(args) = &parent.args {
+            return args.clone();
+        }
+        next = parent.inherit_from.clone();
+        seen.push(parent_name);
+    }
+    Vec::new()
+}
+
+/// The `[codergen.claude]` flags: settings mode, `--mcp-config`,
+/// `--settings`, `--tools`, `--agents`, `--plugin-dir`.
+pub(super) fn claude_settings_args(cfg: &ClaudeCliConfig) -> Vec<String> {
     let mut args = Vec::new();
     match cfg.settings_mode {
         ClaudeSettingsMode::SubscriptionBare => args.push("--safe-mode".to_string()),
@@ -73,6 +154,16 @@ pub(super) fn claude_extra_args(cfg: &ClaudeCliConfig, node: &PipelineNode) -> V
     for plugin_dir in &cfg.plugin_dirs {
         flag("--plugin-dir", plugin_dir);
     }
+    args
+}
+
+/// The node attributes `allowed_tools` and `max_budget_usd` as flags.
+pub(super) fn claude_node_args(node: &PipelineNode) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut flag = |name: &str, value: &str| {
+        args.push(name.to_string());
+        args.push(value.to_string());
+    };
     if let Some(AttributeValue::String(tools)) = node.raw_attrs.get("allowed_tools") {
         flag("--allowedTools", tools);
     }

@@ -604,7 +604,7 @@ async fn run_both(
             CodergenExecutionControls {
                 dry_run: false,
                 workdir: None,
-                claude: ClaudeCliConfig::default(),
+                claude: Some(ClaudeCliConfig::default()),
                 run_dir: with_run_dir.then(|| run_dir.clone()),
                 program: Some(program),
                 events: None,

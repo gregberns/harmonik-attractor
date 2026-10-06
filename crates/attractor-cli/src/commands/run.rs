@@ -798,7 +798,10 @@ pub async fn cmd_run(
     // `answers/<question-id>.json`, e.g. written by `pas answer`.
     let interviewer =
         std::sync::Arc::new(attractor_pipeline::JournalInterviewer::new(run_dir.clone()));
-    let agents = crate::agents::agents()?;
+    let agents = crate::agents::agents(
+        attractor_pipeline::agent_profiles(configured.controls())?,
+        false,
+    )?;
     let stop_grace = agents.stop_grace();
     let registry = attractor_pipeline::default_registry_with_interviewer(agents, interviewer);
     let cancel = attractor_agent_handler::CancellationToken::new();

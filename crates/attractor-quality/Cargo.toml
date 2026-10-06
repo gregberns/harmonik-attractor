@@ -6,6 +6,7 @@ license.workspace = true
 description = "Manifest schema, walk-up resolution, and quality tooling for pas"
 
 [dependencies]
+attractor-agent-handler = { path = "../attractor-agent-handler" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

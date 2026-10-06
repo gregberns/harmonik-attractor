@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use attractor_agent_handler::{builtin_profiles, AgentHandler, Agents, ConfigError};
+use attractor_agent_handler::{AgentHandler, Agents, ConfigError, Profile};
 use attractor_handler_claude_p::ClaudeP;
 
 /// The handlers `pas` ships with.
@@ -20,8 +20,10 @@ fn parent_env() -> BTreeMap<String, String> {
         .collect()
 }
 
-/// The registry Claude nodes run through: the built-in profiles, the
-/// shipped handlers and this process's environment.
-pub fn agents() -> Result<Arc<Agents>, ConfigError> {
-    Agents::new(handlers(), builtin_profiles()?, parent_env(), false).map(Arc::new)
+/// The registry agent nodes run through: the run's `profiles` (see
+/// [`attractor_pipeline::agent_profiles`]), the shipped handlers and this
+/// process's environment. `test_only` profiles run only when
+/// `allow_test_agents` is set.
+pub fn agents(profiles: Vec<Profile>, allow_test_agents: bool) -> Result<Arc<Agents>, ConfigError> {
+    Agents::new(handlers(), profiles, parent_env(), allow_test_agents).map(Arc::new)
 }

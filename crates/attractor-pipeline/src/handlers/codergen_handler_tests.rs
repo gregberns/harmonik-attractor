@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use attractor_types::StageStatus;
 
+use super::claude::fold_codergen_claude;
 use super::*;
 use crate::handlers::tests::{make_minimal_graph, make_node};
 
@@ -142,7 +143,7 @@ fn parse_cli_output_empty_stdout_errors() {
 /// settings-mode flag used to come first); the set of flags and values is
 /// unchanged.
 fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
-    use attractor_agent_handler::{argv, builtin_profiles, Invocation};
+    use attractor_agent_handler::{argv, AgentsConfig, Invocation};
     let node = make_node("n", "box", Some("do work"), HashMap::new());
     let request = AgentRequest {
         selection: Selection {
@@ -151,7 +152,7 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
             reasoning: None,
         },
         prompt: "test prompt".into(),
-        extra_args: claude_extra_args(&cfg, &node),
+        extra_args: claude_node_args(&node),
         workdir: PathBuf::from("."),
         timeout: None,
         record: Record {
@@ -165,7 +166,8 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
         observer: None,
         cancel: CancellationToken::new(),
     };
-    let claude = builtin_profiles().unwrap().remove(0);
+    let config = fold_codergen_claude(AgentsConfig::builtin().unwrap(), claude_settings_args(&cfg));
+    let claude = config.resolve().unwrap().remove(0);
     attractor_handler_claude_p::ClaudeP::argv(&Invocation {
         invocation_id: "i",
         argv: argv(&claude, &request),
@@ -260,7 +262,7 @@ fn claude_argv_emits_explicit_pas_owned_config() {
 }
 
 #[test]
-fn claude_extra_args_carry_allowed_tools_and_budget() {
+fn claude_node_args_carry_allowed_tools_and_budget() {
     let mut attrs = HashMap::new();
     attrs.insert(
         "allowed_tools".to_string(),
@@ -272,15 +274,69 @@ fn claude_extra_args_carry_allowed_tools_and_budget() {
     );
     let node = make_node("n", "box", Some("do work"), attrs);
     assert_eq!(
-        claude_extra_args(&ClaudeCliConfig::default(), &node),
-        [
-            "--safe-mode",
-            "--allowedTools",
-            "Read,Grep",
-            "--max-budget-usd",
-            "2.5"
-        ]
+        claude_node_args(&node),
+        ["--allowedTools", "Read,Grep", "--max-budget-usd", "2.5"]
     );
+}
+
+#[test]
+fn codergen_claude_flags_fold_into_the_end_of_the_claude_profiles_args() {
+    use attractor_agent_handler::AgentsConfig;
+    let cfg = ClaudeCliConfig {
+        settings_mode: ClaudeSettingsMode::StrictBare,
+        tools: Some("Read".into()),
+        ..ClaudeCliConfig::default()
+    };
+    let overrides = AgentsConfig::parse(
+        r#"
+        [profiles.claude-opus]
+        inherit_from = "claude"
+        model = "opus"
+        "#,
+    )
+    .unwrap()
+    .profiles;
+    let config = AgentsConfig::builtin().unwrap().with_overrides(&overrides);
+    let profiles = fold_codergen_claude(config, claude_settings_args(&cfg))
+        .resolve()
+        .unwrap();
+    let expected = [
+        "--no-session-persistence",
+        "--dangerously-skip-permissions",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+        "--bare",
+        "--tools",
+        "Read",
+    ];
+    for name in ["claude", "claude-opus"] {
+        let profile = profiles.iter().find(|p| p.name == name).unwrap();
+        assert_eq!(profile.args, expected, "{name}");
+    }
+}
+
+#[test]
+fn the_fold_keeps_the_args_an_overridden_claude_inherits() {
+    use attractor_agent_handler::AgentsConfig;
+    let overrides = AgentsConfig::parse(
+        r#"
+        [profiles.base]
+        mechanism = "claude-p"
+        command = "claude"
+        args = ["--base"]
+
+        [profiles.claude]
+        inherit_from = "base"
+        "#,
+    )
+    .unwrap()
+    .profiles;
+    let config = AgentsConfig::builtin().unwrap().with_overrides(&overrides);
+    let profiles = fold_codergen_claude(config, vec!["--safe-mode".into()])
+        .resolve()
+        .unwrap();
+    let claude = profiles.iter().find(|p| p.name == "claude").unwrap();
+    assert_eq!(claude.args, ["--base", "--safe-mode"]);
 }
 
 #[test]
@@ -569,7 +625,7 @@ mod transcripts {
                 CodergenExecutionControls {
                     dry_run,
                     workdir: None,
-                    claude: ClaudeCliConfig::default(),
+                    claude: Some(ClaudeCliConfig::default()),
                     run_dir: run_dir.map(Path::to_path_buf),
                     program: Some(program),
                     events: None,
@@ -1011,7 +1067,7 @@ mod transcripts {
                 CodergenExecutionControls {
                     dry_run,
                     workdir: None,
-                    claude: ClaudeCliConfig::default(),
+                    claude: Some(ClaudeCliConfig::default()),
                     run_dir: run_dir.map(Path::to_path_buf),
                     program: Some(program),
                     events: Some(events),
@@ -1748,7 +1804,7 @@ mod stream_formats {
                 CodergenExecutionControls {
                     dry_run: false,
                     workdir: None,
-                    claude: ClaudeCliConfig::default(),
+                    claude: Some(ClaudeCliConfig::default()),
                     run_dir: None,
                     program: Some(program),
                     events: None,

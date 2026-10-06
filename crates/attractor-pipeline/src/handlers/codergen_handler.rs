@@ -27,7 +27,11 @@ use attractor_agent_process::{run_streaming, Transcript};
 mod claude;
 #[path = "codergen_provider.rs"]
 mod provider;
-use claude::{claude_extra_args, claude_outcome, invocation_usage, AgentAttempt, ClaudeCliConfig};
+pub use claude::{agent_profiles, CLAUDE_PROFILE};
+use claude::{
+    claude_node_args, claude_outcome, claude_settings_args, invocation_usage, AgentAttempt,
+    ClaudeCliConfig,
+};
 #[cfg(test)]
 use provider::{
     build_cli_command, parse_codex_output, parse_gemini_output, parse_gemini_stream_output,
@@ -74,13 +78,13 @@ impl CodergenHandler {
     }
 }
 
-/// The agent profile Claude nodes run with.
-const CLAUDE_PROFILE: &str = "claude";
-
 struct CodergenExecutionControls<'a> {
     dry_run: bool,
     workdir: Option<String>,
-    claude: ClaudeCliConfig,
+    /// The `[codergen.claude]` settings to pass as extra args, on the
+    /// compatibility path only; a configured run has them in the `claude`
+    /// profile (see [`agent_profiles`]).
+    claude: Option<ClaudeCliConfig>,
     /// Run folder that receives Transcripts; `None` writes no Transcript.
     run_dir: Option<PathBuf>,
     /// Executable to start instead of the provider's binary (test stubs).
@@ -603,7 +607,14 @@ impl CodergenHandler {
                     reasoning: None,
                 },
                 prompt,
-                extra_args: claude_extra_args(&controls.claude, node),
+                extra_args: controls
+                    .claude
+                    .as_ref()
+                    .map(claude_settings_args)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .chain(claude_node_args(node))
+                    .collect(),
                 workdir: PathBuf::from(controls.workdir.as_deref().unwrap_or(".")),
                 // None: the profile's timeout.
                 timeout: node.timeout,
@@ -770,7 +781,7 @@ impl ProviderNodeHandler for CodergenHandler {
             CodergenExecutionControls {
                 dry_run,
                 workdir,
-                claude,
+                claude: Some(claude),
                 run_dir: None,
                 program: None,
                 events: None,
@@ -807,27 +818,6 @@ impl CodergenHandler {
         program: Option<PathBuf>,
     ) -> Result<Outcome> {
         let config = execution.config();
-        let claude = ClaudeCliConfig {
-            settings_mode: *config.claude().settings_mode().value(),
-            setting_sources: config
-                .claude()
-                .setting_sources()
-                .value()
-                .iter()
-                .map(|source| source.as_str().to_owned())
-                .collect(),
-            settings: config.claude().settings().value().clone(),
-            tools: config.claude().tools().value().clone(),
-            agents: config.claude().agents().value().clone(),
-            plugin_dirs: config
-                .claude()
-                .plugin_dirs()
-                .value()
-                .iter()
-                .map(|path| path.to_string_lossy().into_owned())
-                .collect(),
-            mcp_config: config.claude().mcp_config().value().clone(),
-        };
         self.execute_with_controls(
             node,
             resolved,
@@ -836,7 +826,7 @@ impl CodergenHandler {
             CodergenExecutionControls {
                 dry_run: *config.dry_run().value(),
                 workdir: Some(config.workdir().value().to_string_lossy().into_owned()),
-                claude,
+                claude: None,
                 run_dir: execution.run_dir().map(Path::to_path_buf),
                 program,
                 events: execution.events(),
