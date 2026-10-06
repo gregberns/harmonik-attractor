@@ -116,10 +116,13 @@ Every Run writes a Run Journal under its Pipeline's logs folder and registers in
     console.log
     transcripts/<invocation-id>.jsonl   one per Model Invocation
     transcripts/<invocation-id>.stderr.log  its stderr (Claude nodes)
+    transcripts/<invocation-id>.prompt.txt  its prompt, argv and env names
     answers/<question-id>.json          Human Gate answers
     control/stop                        stop request
     final.json                          end-of-run report
 ```
+
+Every file and event, its format, when it is written and its version field: [run-folder.md](run-folder.md).
 
 #### End of run: `final.json`
 

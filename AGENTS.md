@@ -59,8 +59,7 @@ Detail in [docs/engineering.md](docs/engineering.md#testing).
 ## Zero framework cognition
 
 The engine provides structure (graph, routing, commits, process control)
-and never judgment; judgment belongs to agents and graph authors. Read
-[docs/concepts/zero-framework-cognition.md](docs/concepts/zero-framework-cognition.md).
+and never judgment; judgment belongs to agents and graph authors. Read [docs/concepts/zero-framework-cognition.md](docs/concepts/zero-framework-cognition.md).
 
 ## Git workflow
 
@@ -77,3 +76,4 @@ to `main` (fast-forward), then pushes it and removes the worktree. See
 - [docs/cli-reference.md](docs/cli-reference.md): CLI commands, flags, environment
 - [docs/task-verification.md](docs/task-verification.md): goal gates, edge routing, budget guards
 - [docs/execution-capabilities.md](docs/execution-capabilities.md): what the engine supports and rejects
+- [docs/run-folder.md](docs/run-folder.md): the run folder contract: every file and journal event
