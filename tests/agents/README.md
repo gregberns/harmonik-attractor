@@ -51,10 +51,12 @@ In `$FAKE_AGENT_SCENARIOS`:
 | File | Contents |
 |---|---|
 | `attempts.<scenario>` | how many times this scenario started |
-| `env.log` | per start: a `--- start` line, then the sorted `PAS_*`, `ANTHROPIC_*`, `OPENAI_*` and `CLAUDE_CODE_USE_*` environment variables |
+| `env.log` | per start: a `--- start` line, a `FAKE_PID=<pid>` line (the fake's own pid: PAS execs it directly, so this is the agent's pid), then the sorted `PAS_*`, `ANTHROPIC_*`, `OPENAI_*` and `CLAUDE_CODE_USE_*` environment variables |
 | `invocations.log` | per start: a `--- start` line, then each argument on its own line, without the `-p` value |
 | `prompts.log` | per start: a `--- start` line, then the full `-p` prompt |
 | `stdin.bytes` | written by `stdin`: how many bytes it read from stdin |
+| `go` | created by the test: lets `stderr_live` finish |
+| `term` | written by `hang_term` and `hang_ignore_term` when they get TERM (`hang_ignore_term` appends a line per TERM) |
 
 The counter is per scenario name, not per node, and its read-modify-write
 isn't atomic: use one `flaky` node per test and no parallel branches.
@@ -77,9 +79,17 @@ isn't atomic: use one `flaky` node per test and no parallel branches.
 | `flaky` | hangs while its start count is at most `fails` (default 1), then success | 0 |
 | `bad_result` | init, then `{"type":"result","subtype":"success","is_error":false,"num_turns":"many"}`, a result line that doesn't deserialize (`num_turns` is a string) | `exit` (default 0) |
 | `stdin` | reads stdin to the end, writes the byte count to `stdin.bytes`, then success | 0 |
+| `stderr_live` | init, `fake-claude: working` on stderr, waits for the file `go` (polled every 0.05 s, at most 10 s, else exit 2), then `fake-claude: done` on stderr and success | 0 |
+| `hang_term` | traps TERM (writes `term`, exits 143), init, then `sleep 30 & wait` | 143 on TERM |
+| `hang_ignore_term` | traps TERM (appends to `term`, carries on), init, then loops `sleep 1 & wait` forever (killed only by KILL) | - |
 
 `flaky` fails by hanging because a timeout is the only error PAS retries
 today.
+
+`hang_term` and `hang_ignore_term` don't `exec` their `sleep`, so the shell
+itself gets TERM and runs its trap. A TERM sent to the process group (as
+PAS sends it) also hits the backgrounded `sleep`; `hang_term` exits anyway,
+and `hang_ignore_term`'s loop just starts another `sleep`.
 
 ## Adding a scenario
 

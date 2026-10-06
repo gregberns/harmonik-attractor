@@ -13,9 +13,10 @@ die() {
 [ -d "$FAKE_AGENT_SCENARIOS" ] || die "FAKE_AGENT_SCENARIOS is not a directory: $FAKE_AGENT_SCENARIOS"
 log="$FAKE_AGENT_SCENARIOS/invocations.log"
 
-# Log the environment PAS gives the agent. grep finding nothing is fine.
+# Log the environment PAS gives the agent, and this process's pid (the fake
+# is exec'd directly, so $$ is the agent's pid). grep finding nothing is fine.
 {
-    printf '%s\n' '--- start'
+    printf '%s\n' '--- start' "FAKE_PID=$$"
     env | grep -E '^(PAS_|ANTHROPIC_|OPENAI_|CLAUDE_CODE_USE_)' | sort
 } >>"$FAKE_AGENT_SCENARIOS/env.log"
 
@@ -123,6 +124,16 @@ hang() {
     exec sleep "${FAKE_HANG_SECS:-30}"
 }
 
+# wait_for_go: poll every 0.05 s for the file go, for at most 10 s by the
+# clock (a count of sleeps would overrun where starting `sleep` is slow).
+wait_for_go() {
+    start=$(date +%s)
+    while [ ! -f "$FAKE_AGENT_SCENARIOS/go" ]; do
+        [ $(($(date +%s) - start)) -lt 10 ] || die "no go file after 10 s"
+        sleep 0.05
+    done
+}
+
 case $scenario in
     success)
         succeed 'fake-claude: success'
@@ -159,6 +170,28 @@ case $scenario in
     silent) ;;
     hang)
         hang
+        ;;
+    stderr_live)
+        init
+        printf '%s\n' 'fake-claude: working' >&2
+        wait_for_go
+        printf '%s\n' 'fake-claude: done' >&2
+        assistant 'fake-claude: success'
+        result success false 'fake-claude: success'
+        ;;
+    hang_term)
+        trap 'echo term >"$FAKE_AGENT_SCENARIOS/term"; exit 143' TERM
+        init
+        sleep 30 &
+        wait $!
+        ;;
+    hang_ignore_term)
+        trap 'echo term >>"$FAKE_AGENT_SCENARIOS/term"' TERM
+        init
+        while :; do
+            sleep 1 &
+            wait $!
+        done
         ;;
     slow)
         init
