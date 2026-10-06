@@ -67,6 +67,8 @@ eight hex digits. With `--logs <dir>`, `<dir>` is the Pipeline folder.
     transcripts/<inv>.jsonl                agent stdout
     transcripts/<inv>.stderr.log           agent stderr
     transcripts/<inv>.prompt.txt           prompt, argv, env names
+    pi-sessions/                           Pi's session files (pi profiles only)
+    pi-agent/<inv>/                        Pi's agent dir, only while the invocation runs
     answers/<question-id>.json             Human Gate answer
     answers/<question-id>.json.rejected    an unusable answer, moved aside
     control/stop                           stop request
@@ -96,6 +98,8 @@ per Pipeline.
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.jsonl` | the agent's stdout, as written (`stream-json` lines for `claude -p`, JSONL for `codex exec --json`, `json`/`stream-json` for Gemini) | the agent process runner, created when the agent process starts, streamed while it runs | created once, then appended | none (the provider's format) |
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.stderr.log` | text | the agent process runner, as above, for stderr | created once, then appended | none |
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.prompt.txt` | text, see below | the agent registry (`Agents::run`), before the handler is called | written once | first line `pas prompt file v1` |
+| `<stem>-<hash>/runs/<run-id>/pi-sessions/` | Pi's own session files | Pi (`--session-dir`), for `pi` profiles | Pi's | none (Pi's format) |
+| `<stem>-<hash>/runs/<run-id>/pi-agent/<inv>/models.json`, `settings.json` | JSON, mode 0600, in a 0700 folder | the `pi` handler, before Pi starts; the folder is removed when the invocation ends | written once (created 0600) | none (Pi's format) |
 | `<stem>-<hash>/runs/<run-id>/answers/<question-id>.json` | JSON, one line | `pas answer`, the Monitor (through `pas answer`), or `pas run`'s terminal prompt | written once; the first writer wins | `v` (1) |
 | `<stem>-<hash>/runs/<run-id>/answers/<question-id>.json.rejected` | as found | `pas run`, when an answer file is complete but unusable (wrong question, unknown choice, not JSON) | renamed; replaces an older one | as found |
 | `<stem>-<hash>/runs/<run-id>/control/stop` | JSON, one line | `pas stop` or the Monitor; removed by `pas run` at the start of the next Attempt | written once; a repeat is a no-op | `v` (1) |
@@ -189,6 +193,17 @@ Both files are created only once the agent process has started, so a
 reader can match a growing transcript to its `LlmStarted` event and tell a
 silent agent from its file's size and modification time. `LlmStarted`
 and `LlmInvoked` record the paths relative to the Run folder.
+
+### `pi-sessions/` and `pi-agent/<inv>/`
+
+Only `pi` profiles (the `pi` mechanism) make these. `pi-sessions/` is
+Pi's `--session-dir`: Pi writes a session file per session id there, and a
+node that runs again continues its session from it. `pi-agent/<inv>/` is
+Pi's `PI_CODING_AGENT_DIR` for one invocation: `models.json` holds the
+provider settings and the API key, so the folder is mode 0700 and both
+files are created mode 0600, and the folder is removed when the invocation
+ends, however it ends. Only a SIGKILL of `pas` can leave one behind; delete
+it by hand. Readers should not read `pi-agent/`.
 
 ### `answers/<question-id>.json`
 

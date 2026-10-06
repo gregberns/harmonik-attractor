@@ -194,6 +194,7 @@ supported provider CLI versions:
 |--------------|---------------------------|------------------------|--------------------------------|
 | Claude Code (`claude`) | 2.1.282 | `--output-format stream-json --verbose` | Final text, actual model, input and output tokens, cost |
 | Codex CLI (`codex`) | 0.151.0 | `exec --json` | Final text, input and output tokens. Codex reports no model name and no cost. |
+| Pi (`pi`) | Not pinned: whatever `pi` is installed (needs Node 22.19+); built against 1.0.3 | `--mode json` (from the profile) | Final text, actual model, input and output tokens, cost |
 | Gemini CLI (`gemini`) | 0.11.0 for `stream-json`; older versions use `json` | `--output-format stream-json`, or `--output-format json` when `gemini --help` does not list `stream-json` | Final text, actual model, input and output tokens. Gemini reports no cost. |
 
 - The Claude Code and Codex CLI minimums are the versions PAS was verified
@@ -278,6 +279,52 @@ records the profile name as `provider`.
 > Never put a key in `env.set`: its values are literal and committed with
 > `pas.toml`, so they land in git and in every Run's worktree.
 
+#### The `pi` mechanism
+
+The `pi` handler runs the Pi coding agent (`pi --mode json`) against an
+OpenAI-compatible provider: DeepSeek, Z.ai's GLM, or your own hosted
+model. There is no built-in `pi` profile; copy the ones you need from
+[`docs/examples/pi-agents.toml`](examples/pi-agents.toml) (`deepseek`,
+`glm`, `qwen`) into `pas.toml`. A `pi` profile takes four more fields:
+
+| Field | Meaning |
+|-------|---------|
+| `provider` | Required. Pi's provider name: a built-in one (`deepseek`, `zai`) or your own. |
+| `base_url` | The provider's API URL. Leave it out to keep a built-in provider's. |
+| `api_key_env` | The environment variable holding the API key. |
+| `limits` | `{ context = <tokens>, max_output = <tokens> }`: the model's limits, for a provider Pi doesn't know. Without it Pi uses the provider's own model list. |
+
+`model` is required too, and `pas validate` refuses a `pi` profile without
+`provider` or `model`, with `model_args` (the handler passes the model
+itself), or with a zero limit. Another mechanism refuses these four fields.
+
+The command is the profile's `command` and `args` (`pi --mode json`), the
+reasoning args (`--thinking <level>`), then the handler's `--model
+<provider>/<model>`, `--session-dir <run folder>/pi-sessions`,
+`--session-id <id>` and the prompt, last. A session id both starts and
+continues a Pi session, so `pi` profiles resume with no resume form and
+default to `fidelity="full"`.
+
+**The API key.** PAS reads the variable `api_key_env` names from the
+profile's `env.set`, else its own environment; naming it lets it through
+even when `env.remove` lists it (the default list has `OPENAI_API_KEY`).
+PAS writes the key into a `models.json` in a per-invocation
+`PI_CODING_AGENT_DIR` in the run folder (`pi-agent/<inv>/`, folder 0700,
+files created 0600), with an empty `settings.json`, and removes the folder
+when the invocation ends. The key is never on Pi's command line (where `ps`
+shows it) and never in its environment: the variable is removed from it. A
+named variable that is unset or empty fails the node to launch
+("API key variable <NAME> is not set") without starting Pi. If `pas` itself
+is killed with SIGKILL, the folder and its key stay in the run folder until
+you delete them. Pi also gets `PI_TELEMETRY=0`, `PI_OFFLINE=1` and
+`PI_SKIP_VERSION_CHECK=1`.
+
+**Outcomes.** Pi exits 0 even when the provider fails, so PAS reads the last
+assistant message's `stopReason`: `stop` completes with its text; `error`
+or `aborted` fails as reported, with Pi's `errorMessage`; any other reason
+(`toolUse`, `length`, or a new one) fails as no result, naming it. No
+assistant message is a crash after a non-zero exit, else no result.
+
 #### Agent sessions
 
 A node that runs again (a retry, or a loop back to it) continues its agent's
@@ -296,7 +343,8 @@ session by default (design §1):
   `pas validate` lists each agent node's effective fidelity.
 - **Ids:** PAS mints a session id for a new session (`{session_id}`,
   `PAS_SESSION_ID`) and records the id the agent reports: Claude's
-  `session_id`, Codex's `thread_id` (Codex can't be given an id). It shows
+  `session_id`, Codex's `thread_id` (Codex can't be given an id); Pi
+  keeps the id PAS passes. It shows
   in `LlmStarted.session_id`, `LlmInvoked.agent_session_id` and
   `continued`, and the `Pas-Session` trailer of the attempt commit.
 - **Profile fields:** `session_args` (added when starting a new session),
