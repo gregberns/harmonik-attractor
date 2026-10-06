@@ -66,7 +66,7 @@ isn't atomic: use one `flaky` node per test and no parallel branches.
 | Name | Behaviour | Exit |
 |---|---|---|
 | `success` | result `success`, text `fake-claude: success` | 0 |
-| `fail` | result `error_during_execution` with `is_error:true` | 1 |
+| `fail` | result `error_during_execution` with `is_error:true`; with `label=<L>`, its text ends with `<L>` on its own line | 1 |
 | `error_max_turns` | result `error_max_turns` with `is_error:false` | 0 |
 | `label` | success whose last line is the `label=` token | 0 |
 | `crash` | init and an assistant line, `fake-claude: crashed` on stderr, no result | 3 |

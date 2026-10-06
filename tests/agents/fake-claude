@@ -139,9 +139,13 @@ case $scenario in
         succeed 'fake-claude: success'
         ;;
     fail)
+        # With label=<L>, the failure text ends with the label on its own
+        # line, as a diamond agent's would.
+        text='fake-claude: failed'
+        [ -n "$label" ] && text="$text\\n$label"
         init
         assistant 'fake-claude: failed'
-        result error_during_execution true 'fake-claude: failed'
+        result error_during_execution true "$text"
         exit 1
         ;;
     error_max_turns)
