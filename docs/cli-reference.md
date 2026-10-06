@@ -112,6 +112,7 @@ Every Run writes a Run Journal under its Pipeline's logs folder and registers in
     events.jsonl               Events (Run Journal)
     console.log
     transcripts/<invocation-id>.jsonl   one per Model Invocation
+    transcripts/<invocation-id>.stderr.log  its stderr (Claude nodes)
     answers/<question-id>.json          Human Gate answers
     control/stop                        stop request
 ```
@@ -1185,6 +1186,16 @@ with stdin from `/dev/null` (it never reads `pas`'s stdin). Its environment is
   - `PAS_ATTEMPT`: the attempt at this node, from 1.
   - `PAS_INVOCATION_ID`: this Model Invocation's id, the same as
     `LlmInvoked.invocation_id` and the Transcript's file name.
+
+Its stderr is written, as it arrives, to `transcripts/<invocation-id>.stderr.log`
+next to the Transcript, and kept after the process ends (or crashes).
+
+**Stopping it.** On the node's timeout, or when the Run is stopped (SIGTERM to
+`pas run`, as `pas kill` sends), PAS sends TERM to the agent's process group,
+waits a grace period (10 s), then sends KILL. A stopped Run starts no new stage,
+waits for the agent to exit, journals `AttemptEnded` with reason `stopped` and
+exits 143; the stopped stage records no `StageFailed`, and resuming the Run runs
+it again.
 
 Codex and Gemini nodes still inherit `pas`'s environment and stdin unchanged.
 

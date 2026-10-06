@@ -940,7 +940,11 @@ Each provider has different CLI flags and output formats. PAS handles this autom
 - **Codex**: Uses `codex exec --json --yolo` with the prompt as a positional argument. Returns streaming JSONL events; PAS extracts the last completed agent-message item.
 - **Gemini**: Uses `--output-format json --approval-mode yolo` with the prompt as a positional argument. When `gemini --help` lists `stream-json` (Gemini CLI 0.11.0 and later), PAS passes `--output-format stream-json` in place of `json`. PAS does not pass a `--sandbox` flag to Gemini. Returns structured JSON, or streaming JSON events from which PAS joins the assistant messages.
 
-During `pas run`, every provider invocation's raw stdout is also copied, line by line as it arrives, to a Transcript at `runs/<run-id>/transcripts/<invocation-id>.jsonl` in the Pipeline's log folder.
+During `pas run`, every provider invocation's raw stdout is also copied, line by line as it arrives, to a Transcript at `runs/<run-id>/transcripts/<invocation-id>.jsonl` in the Pipeline's log folder. A Claude invocation's stderr is written the same way to `transcripts/<invocation-id>.stderr.log`.
+
+When a Claude agent process starts, before any of its output reaches the Transcript, PAS appends an `LlmStarted` Event: `invocation_id`, `spawn` (1 for the first process of the invocation), `node_id`, `attempt` (from 1), `profile` (`claude`), the requested `model` (left out when none), `host`, `pid` and `pgid` of the agent process, and the `transcript` and `stderr` paths relative to the Run folder. To find which node and process a growing Transcript belongs to, look up the `LlmStarted` with the same `invocation_id` (the Transcript's file name). A Claude CLI that cannot be started records no `LlmStarted`.
+
+On a timeout or a stop, a Claude agent gets TERM, a 10 s grace, then KILL. A stopped invocation's `LlmInvoked` has status `timeout`.
 
 When the provider process exits, fails, or times out, PAS appends one `LlmInvoked` Event for that invocation to the Run Journal (`runs/<run-id>/events.jsonl`). It records the provider (`claude`, `codex` or `gemini`), the requested model (the node's `llm_model`, else the graph's `model`; left out when neither is set), the model, input and output tokens, and cost that the provider's output reported (each left out when unknown), `duration_ms`, the Transcript path relative to the Run folder, and a `status` of `success`, `failed` or `timeout`. A dry run, or a provider CLI that cannot be started, records no `LlmInvoked`.
 
