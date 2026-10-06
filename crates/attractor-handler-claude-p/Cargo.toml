@@ -1,0 +1,17 @@
+[package]
+name = "attractor-handler-claude-p"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+description = "The claude-p agent handler: Claude Code -p with stream-json output"
+
+[dependencies]
+attractor-agent-handler = { path = "../attractor-agent-handler" }
+attractor-agent-process = { path = "../attractor-agent-process" }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = "3"

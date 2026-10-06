@@ -9,6 +9,7 @@ members = [
     "crates/attractor-agent",
     "crates/attractor-agent-handler",
     "crates/attractor-agent-process",
+    "crates/attractor-handler-claude-p",
     "crates/attractor-pipeline",
     "crates/attractor-quality",
     "crates/attractor-cli",
