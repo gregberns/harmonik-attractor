@@ -250,8 +250,10 @@ resume, the engine-owned run ref and history-rewrite detection; merging,
   research/claude-resume-check.md): `--session-id` sets the id, `-p
   --resume` keeps it and the context, and a missing session is an
   `is_error` result (`error_during_execution`).
-- `codex exec resume` with `--json`, `-m` and the bypass flag works on the
-  ChatGPT login: help text only. Same kind of manual check.
+- `codex exec resume` verified on the ChatGPT login (harmonik-v3
+  research/claude-resume-check.md): it keeps the `thread_id` and the
+  context; a missing thread exits 1 with no JSON and "no rollout found" on
+  stderr. `-m` on resume is still untested.
 - Pi's `settings.json` keys for its retry window (low-priority ticket):
   read Pi's source when that ticket starts.
 - A worktree nested under the project's `.pas/` behaves with every git
@@ -282,8 +284,8 @@ checkpoint resume is good enough (Q43); shell fakes are portable enough
 **Irreversible or outward-facing steps:** none in the tickets. Pushing the
 fork to GitHub is allowed at any time (Q61).
 
-**Resolve first:** nothing outstanding; the `claude -p --resume` check is
-done (Q62). Next is the `codex exec resume` check, before ticket 08.
+**Resolve first:** nothing outstanding; the `claude -p --resume` and
+`codex exec resume` checks are done (Q62).
 
 ## Tickets
 
