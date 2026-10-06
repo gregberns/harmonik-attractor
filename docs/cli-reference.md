@@ -1144,6 +1144,26 @@ Quick way to compare node counts and structure between pipeline revisions.
 - **`PAS_STATE_DIR`** — Folder for machine-wide PAS state: the Run Index (`runs.jsonl`) and Monitor Plan workspaces (`plans/<plan-id>/`). Default `$XDG_STATE_HOME/pas`, else `~/.local/state/pas`.
 - **`RUST_LOG`** — Override log level (e.g. `RUST_LOG=debug pas run ...`). The `-v` flag sets this to `debug` automatically.
 
+### What a Claude agent process gets
+
+Each `claude` node starts `claude` in the workdir, in its own process group,
+with stdin from `/dev/null` (it never reads `pas`'s stdin). Its environment is
+`pas`'s own, with these changes:
+
+- **Removed**, so the agent runs on your Claude subscription and never on a key
+  it happened to inherit: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+  `ANTHROPIC_BASE_URL`, `OPENAI_API_KEY`, `CLAUDE_CODE_USE_BEDROCK`,
+  `CLAUDE_CODE_USE_VERTEX`. Variables whose name or value is not UTF-8 are not
+  passed either.
+- **Set** by PAS (any value `pas` itself had is replaced):
+  - `PAS_RUN_ID`: the Run's id (as in `run.json`); unset outside a Run.
+  - `PAS_NODE_ID`: the node's id.
+  - `PAS_ATTEMPT`: the attempt at this node, from 1.
+  - `PAS_INVOCATION_ID`: this Model Invocation's id, the same as
+    `LlmInvoked.invocation_id` and the Transcript's file name.
+
+Codex and Gemini nodes still inherit `pas`'s environment and stdin unchanged.
+
 ---
 
 ## Node-level Claude Code flags
@@ -1161,6 +1181,10 @@ Every node also gets:
 - `--output-format stream-json --verbose` — streamed JSON events; PAS parses the final `result` event
 - `--no-session-persistence` — each node is a fresh session
 - `--dangerously-skip-permissions` — allows file edits and bash execution
+- `--strict-mcp-config --disable-slash-commands` — only the MCP config PAS passes; no slash commands
+
+A final `result` event with `is_error` or a `subtype` starting `error` (such as
+`error_max_turns`) makes the node fail.
 
 ### Examples in DOT
 

@@ -227,9 +227,10 @@ State lives under `PAS_STATE_DIR` (default `~/.local/state/pas`). See [docs/cli-
 
 There is no implicit runtime provider. Every node whose resolved handler consumes a provider must
 select `claude`, `codex`, or `gemini` with `llm_provider`. Claude-backed nodes
-use your local Claude Code installation and can run on your Claude subscription
-without a separate API key; Codex- and Gemini-backed nodes use their respective
-local CLI authentication.
+use your local Claude Code installation and run on your Claude subscription:
+PAS removes `ANTHROPIC_API_KEY` and the other provider keys from the agent's
+environment (see [cli-reference.md](docs/cli-reference.md#what-a-claude-agent-process-gets)).
+Codex- and Gemini-backed nodes use their respective local CLI authentication.
 
 For direct API calls via the `attractor-llm` crate (OpenAI, Anthropic, or Gemini handlers), set the relevant keys:
 
@@ -250,6 +251,9 @@ Set `PAS_STATE_DIR` to relocate the Run Index and Monitor Plan workspaces (defau
 | `attractor-llm` | Unified LLM client (OpenAI, Anthropic, Gemini) |
 | `attractor-tools` | Tool trait, registry, built-in tools, execution environment |
 | `attractor-agent` | Agent session loop with steering and loop detection |
+| `attractor-agent-handler` | The agent handler interface, agent profiles and `Agents`, the registry the engine runs agents through |
+| `attractor-agent-process` | Runs an agent as a local process: environment, stdin, process group, Transcript, timeout |
+| `attractor-handler-claude-p` | The `claude-p` handler: Claude Code `-p` with stream-json output and its failure table |
 | `attractor-pipeline` | Pipeline graph, engine, handlers, validation, stylesheets |
 | `attractor-cli` | CLI binary — `pas` (`run`, `validate`, `info`, `plan`, `decompose`, `scaffold`, `generate`, `launch`, `runs`, `answer`, `stop`, `kill`, `monitor`) |
 | `attractor-journal` | Run Journal, Run folder layout and Run Index |
