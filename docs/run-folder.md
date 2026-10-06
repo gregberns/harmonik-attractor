@@ -26,6 +26,9 @@ journal (`StageCompleted`, `StageFailed`).
 The run folder is **not for secrets**. A prompt file or a transcript holds
 what the agent got and said, including anything the graph author put in a
 prompt. Environment variable values are never written; their names are.
+The argv in a prompt file is recorded as is, so a secret passed as an
+argument (for example an MCP server token inside `--mcp-config` or
+`--settings` JSON from `[codergen.claude]`) appears in it.
 
 The worktree and the branch are **not** in the run folder. A Run works in
 `<worktree-root>/<run-id>` (default `<project-root>/.pas/worktrees/<run-id>`)
