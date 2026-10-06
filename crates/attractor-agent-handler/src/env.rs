@@ -11,6 +11,7 @@ const PAS_VARS: &[&str] = &[
     "PAS_NODE_ID",
     "PAS_ATTEMPT",
     "PAS_INVOCATION_ID",
+    "PAS_SESSION_ID",
 ];
 
 /// The parent environment minus the profile's `env.remove` and any `PAS_*`
@@ -21,6 +22,7 @@ pub fn child_env(
     parent: &BTreeMap<String, String>,
     profile_env: &ProfileEnv,
     record: &Record,
+    session_id: &str,
 ) -> BTreeMap<String, String> {
     let removed = |key: &str| profile_env.remove.iter().any(|r| r == key);
     let mut env: BTreeMap<String, String> = parent
@@ -35,6 +37,7 @@ pub fn child_env(
     env.insert("PAS_NODE_ID".into(), record.node_id.clone());
     env.insert("PAS_ATTEMPT".into(), record.attempt.to_string());
     env.insert("PAS_INVOCATION_ID".into(), record.invocation_id.clone());
+    env.insert("PAS_SESSION_ID".into(), session_id.to_string());
     env
 }
 
@@ -80,7 +83,7 @@ mod tests {
             .collect();
         pairs.push(("PATH", "/bin"));
         pairs.push(("HOME", "/home/x"));
-        let env = child_env(&parent(&pairs), &defaults, &record(Some("run-1")));
+        let env = child_env(&parent(&pairs), &defaults, &record(Some("run-1")), "sess-1");
         for key in &defaults.remove {
             assert!(!env.contains_key(key), "{key} was passed through");
         }
@@ -96,6 +99,7 @@ mod tests {
             &parent(&[("ANTHROPIC_API_KEY", "k"), ("X", "x")]),
             &env(&["X"], &[]),
             &record(None),
+            "sess-1",
         );
         assert_eq!(env.get("ANTHROPIC_API_KEY").map(String::as_str), Some("k"));
         assert!(!env.contains_key("X"));
@@ -107,6 +111,7 @@ mod tests {
             &parent(&[("K", "parent")]),
             &env(&["K"], &[("K", "profile"), ("PAS_NODE_ID", "mine")]),
             &record(None),
+            "sess-1",
         );
         assert_eq!(env.get("K").map(String::as_str), Some("profile"));
         assert_eq!(env.get("PAS_NODE_ID").map(String::as_str), Some("work"));
@@ -118,6 +123,7 @@ mod tests {
             &parent(&[("PAS_NODE_ID", "stale")]),
             &default_env(),
             &record(Some("run-1")),
+            "sess-1",
         );
         assert_eq!(env.get("PAS_RUN_ID").map(String::as_str), Some("run-1"));
         assert_eq!(env.get("PAS_NODE_ID").map(String::as_str), Some("work"));
@@ -125,6 +131,10 @@ mod tests {
         assert_eq!(
             env.get("PAS_INVOCATION_ID").map(String::as_str),
             Some("inv-1")
+        );
+        assert_eq!(
+            env.get("PAS_SESSION_ID").map(String::as_str),
+            Some("sess-1")
         );
     }
 
@@ -134,6 +144,7 @@ mod tests {
             &parent(&[("PAS_RUN_ID", "outer")]),
             &default_env(),
             &record(None),
+            "sess-1",
         );
         assert!(!env.contains_key("PAS_RUN_ID"));
         assert_eq!(env.get("PAS_NODE_ID").map(String::as_str), Some("work"));

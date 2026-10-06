@@ -10,7 +10,7 @@ use attractor_dot::AttributeValue;
 
 use crate::graph::PipelineGraph;
 use crate::parse_condition;
-use crate::{ExecutionPlan, ProviderAlias, SemanticDiagnostic, SemanticDiagnosticKind};
+use crate::{ExecutionPlan, Fidelity, ProviderAlias, SemanticDiagnostic, SemanticDiagnosticKind};
 
 // ---------------------------------------------------------------------------
 // Diagnostic types
@@ -244,6 +244,25 @@ pub fn check_agents(
             }
         })
         .collect();
+    // `fidelity="full"` needs a profile that can continue a session.
+    for session in agent_sessions(plan, agents) {
+        if session.explicit && session.fidelity == Fidelity::Full && !session.can_resume {
+            diagnostics.push(Diagnostic {
+                rule: "agent_session".into(),
+                severity: Severity::Error,
+                message: format!(
+                    "Node '{}': fidelity=\"full\" needs a profile that can resume, and profile '{}' can't",
+                    session.node_id, session.profile
+                ),
+                node_id: Some(session.node_id.clone()),
+                edge: None,
+                fix: Some(
+                    "Use fidelity=\"fresh\", or give the profile resume_args or resume_command"
+                        .into(),
+                ),
+            });
+        }
+    }
     // `allowed_tools` and `max_budget_usd` reach the agent as `claude-p`
     // flags, so only a `claude-p` profile takes them.
     for (node_id, selection) in &nodes {
@@ -274,6 +293,45 @@ pub fn check_agents(
         }
     }
     diagnostics
+}
+
+/// How an agent node uses sessions, as `pas validate` shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSession {
+    pub node_id: String,
+    pub profile: String,
+    /// The fidelity the node runs with.
+    pub fidelity: Fidelity,
+    /// Whether the node sets `fidelity` itself (else it is the default).
+    pub explicit: bool,
+    pub can_resume: bool,
+    /// Its thread key: `thread_id`, else the node id.
+    pub thread_key: String,
+}
+
+/// Every agent node's session use, by node id. Pure. An unknown profile
+/// counts as one that can't resume (`check_agents` reports it).
+pub fn agent_sessions(
+    plan: &ExecutionPlan,
+    agents: &attractor_agent_handler::Agents,
+) -> Vec<AgentSession> {
+    let mut sessions: Vec<AgentSession> = plan
+        .all_nodes()
+        .filter_map(|node| {
+            let profile = node.profile()?.to_string();
+            let can_resume = agents.can_resume(&profile).unwrap_or(false);
+            Some(AgentSession {
+                node_id: node.node_id.clone(),
+                fidelity: Fidelity::effective(node.fidelity, can_resume),
+                explicit: node.fidelity.is_some(),
+                can_resume,
+                thread_key: node.thread_key().to_string(),
+                profile,
+            })
+        })
+        .collect();
+    sessions.sort_by(|a, b| a.node_id.cmp(&b.node_id));
+    sessions
 }
 
 /// The handler whose argv takes the node flags `allowed_tools` and

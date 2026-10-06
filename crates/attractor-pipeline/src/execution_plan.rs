@@ -120,9 +120,47 @@ pub struct ResolvedNode {
     /// Codex and Gemini nodes, which keep today's path.
     pub agent: Option<Selection>,
     pub invocation: NodeInvocationPolicy,
+    /// The node's own `fidelity`, if it sets one (agent nodes only).
+    pub fidelity: Option<Fidelity>,
+    /// The node's `thread_id`, if it sets one (agent nodes only).
+    pub thread_id: Option<String>,
+}
+
+/// Whether an agent node that runs again continues its session (design §1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fidelity {
+    /// Continue the thread's session (default for profiles that can resume).
+    Full,
+    /// Start a new session every time.
+    Fresh,
+}
+
+impl Fidelity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Fresh => "fresh",
+        }
+    }
+
+    /// The fidelity an agent node runs with: its own, else `full` when its
+    /// profile can resume, else `fresh`.
+    pub fn effective(explicit: Option<Self>, can_resume: bool) -> Self {
+        match (explicit, can_resume) {
+            (Some(fidelity), _) => fidelity,
+            (None, true) => Self::Full,
+            (None, false) => Self::Fresh,
+        }
+    }
 }
 
 impl ResolvedNode {
+    /// The key a node's agent session is recorded under: its `thread_id`,
+    /// else its node id. Nodes with one key share one session.
+    pub fn thread_key(&self) -> &str {
+        self.thread_id.as_deref().unwrap_or(&self.node_id)
+    }
+
     /// The agent profile's name, if the node runs an agent.
     pub fn profile(&self) -> Option<&str> {
         self.agent.as_ref().map(|agent| agent.profile.as_str())
@@ -707,7 +745,9 @@ fn validate_unsupported_attributes(
     let mut nodes = graph.all_nodes().collect::<Vec<_>>();
     nodes.sort_by(|left, right| left.id.cmp(&right.id));
     for node in nodes {
-        for attribute in ["fidelity", "auto_status", "allow_partial", "thread_id"] {
+        // `fidelity` and `thread_id` are checked where the node's agent is
+        // known (resolve_node); edges still reject them below.
+        for attribute in ["auto_status", "allow_partial"] {
             if node.raw_attrs.contains_key(attribute) {
                 diagnostics.push(unsupported_node_capability(
                     &node.id,
@@ -1077,6 +1117,7 @@ fn resolve_node(
             model: node.llm_model.clone(),
             reasoning: string_attr(&node.raw_attrs, "reasoning_effort"),
         });
+    let (fidelity, thread_id) = resolve_session_attributes(node, agent.is_some())?;
 
     Ok((
         ResolvedNode {
@@ -1085,9 +1126,70 @@ fn resolve_node(
             handler,
             agent,
             invocation,
+            fidelity,
+            thread_id,
         },
         defaulted,
     ))
+}
+
+/// A node's `fidelity` (`full` or `fresh`) and `thread_id` (non-empty).
+/// Both are for agent nodes only; other fidelities (`truncate`, `compact`,
+/// `summary:*`) stay unsupported.
+fn resolve_session_attributes(
+    node: &PipelineNode,
+    is_agent: bool,
+) -> Result<(Option<Fidelity>, Option<String>), Vec<SemanticDiagnostic>> {
+    let mut diagnostics = Vec::new();
+    let not_on_this_node = |attribute: &str| {
+        unsupported_node_capability(
+            &node.id,
+            attribute,
+            &format!("Remove '{attribute}': it applies to agent nodes only"),
+        )
+    };
+    let fidelity = match node.raw_attrs.get("fidelity") {
+        None => None,
+        Some(_) if !is_agent => {
+            diagnostics.push(not_on_this_node("fidelity"));
+            None
+        }
+        Some(AttributeValue::String(value)) => match value.as_str() {
+            "full" => Some(Fidelity::Full),
+            "fresh" => Some(Fidelity::Fresh),
+            _ => {
+                diagnostics.push(unsupported_node_capability(
+                    &node.id,
+                    "fidelity",
+                    &format!(
+                        "Use fidelity=\"full\" or fidelity=\"fresh\"; '{value}' is not supported"
+                    ),
+                ));
+                None
+            }
+        },
+        Some(value) => {
+            diagnostics.push(invalid_attribute_type(Some(&node.id), "fidelity", value));
+            None
+        }
+    };
+    let thread_id = match node.raw_attrs.get("thread_id") {
+        None => None,
+        Some(_) if !is_agent => {
+            diagnostics.push(not_on_this_node("thread_id"));
+            None
+        }
+        Some(AttributeValue::String(value)) if !value.trim().is_empty() => Some(value.clone()),
+        Some(value) => {
+            diagnostics.push(invalid_attribute_type(Some(&node.id), "thread_id", value));
+            None
+        }
+    };
+    if diagnostics.is_empty() {
+        Ok((fidelity, thread_id))
+    } else {
+        Err(diagnostics)
+    }
 }
 
 /// The profile a provider-consuming node runs with: `agent=` wins over
@@ -1521,6 +1623,53 @@ mod tests {
     }
 
     #[test]
+    fn agent_nodes_take_fidelity_full_or_fresh_and_a_thread_id() {
+        let source = r#"digraph G {
+            start [shape="Mdiamond"]
+            a [shape="box", prompt="a", llm_provider="claude", fidelity="fresh"]
+            b [shape="box", prompt="b", llm_provider="claude", fidelity="full", thread_id="t"]
+            c [shape="box", prompt="c", llm_provider="claude"]
+            done [shape="Msquare"]
+            start -> a -> b -> c -> done
+        }"#;
+        let plan = ExecutionPlan::compile(graph(source)).unwrap();
+        let node = |id: &str| plan.node(id).unwrap();
+        assert_eq!(node("a").fidelity, Some(Fidelity::Fresh));
+        assert_eq!(node("a").thread_key(), "a");
+        assert_eq!(node("b").fidelity, Some(Fidelity::Full));
+        assert_eq!(node("b").thread_key(), "t");
+        assert_eq!(node("c").fidelity, None);
+        assert_eq!(node("c").thread_key(), "c");
+    }
+
+    #[test]
+    fn an_empty_thread_id_is_invalid() {
+        let source = r#"digraph G { start [shape="Mdiamond"] work [shape="box", prompt="w", llm_provider="claude", thread_id=""] done [shape="Msquare"] start -> work -> done }"#;
+        let error = ExecutionPlan::compile(graph(source)).unwrap_err();
+        assert!(
+            error.diagnostics.iter().any(|d| {
+                d.kind == SemanticDiagnosticKind::InvalidAttributeType
+                    && d.message.contains("thread_id")
+            }),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn effective_fidelity_defaults_by_whether_the_profile_can_resume() {
+        assert_eq!(Fidelity::effective(None, true), Fidelity::Full);
+        assert_eq!(Fidelity::effective(None, false), Fidelity::Fresh);
+        assert_eq!(
+            Fidelity::effective(Some(Fidelity::Fresh), true),
+            Fidelity::Fresh
+        );
+        assert_eq!(
+            Fidelity::effective(Some(Fidelity::Full), false),
+            Fidelity::Full
+        );
+    }
+
+    #[test]
     fn recognized_unsupported_execution_capabilities_fail_closed() {
         let cases = [
             (
@@ -1543,9 +1692,15 @@ mod tests {
                 r#"work [shape="box", prompt="work", llm_provider="claude", allow_partial=true]"#,
                 "allow_partial",
             ),
+            // Ticket 08: `thread_id` and `fidelity="full"|"fresh"` are
+            // accepted on agent nodes; on any other node they do nothing.
             (
-                r#"work [shape="box", prompt="work", llm_provider="claude", thread_id="thread"]"#,
+                r#"work [shape="parallelogram", tool_command="true", thread_id="thread"]"#,
                 "thread_id",
+            ),
+            (
+                r#"work [shape="parallelogram", tool_command="true", fidelity="fresh"]"#,
+                "fidelity",
             ),
             (r#"work [shape="house"]"#, "manager-loop"),
             (
@@ -1667,6 +1822,37 @@ mod tests {
         assert!(has("tools", "allowed_tools"), "{diagnostics:?}");
         assert!(has("budget", "max_budget_usd"), "{diagnostics:?}");
         assert_eq!(diagnostics.len(), 4, "{diagnostics:?}");
+    }
+
+    #[test]
+    fn fidelity_full_on_a_profile_that_cant_resume_fails_the_profile_check() {
+        let plan = ExecutionPlan::compile(graph(
+            r#"digraph G {
+                start [shape="Mdiamond"]
+                full [shape="box", prompt="p", llm_provider="gemini", fidelity="full"]
+                fresh [shape="box", prompt="p", llm_provider="gemini", fidelity="fresh"]
+                claude [shape="box", prompt="p", llm_provider="claude", fidelity="full", thread_id="t"]
+                plain [shape="box", prompt="p", llm_provider="gemini"]
+                done [shape="Msquare"]
+                start -> full -> fresh -> claude -> plain -> done
+            }"#,
+        ))
+        .unwrap();
+        let agents = crate::handlers::tests::stub_agents(std::path::Path::new("never-run"));
+        let diagnostics = crate::validation::check_agents(&plan, &agents);
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(diagnostics[0].node_id.as_deref(), Some("full"));
+        assert!(
+            diagnostics[0].message.contains("profile 'gemini' can't"),
+            "{diagnostics:?}"
+        );
+
+        let sessions = crate::validation::agent_sessions(&plan, &agents);
+        let of = |node: &str| sessions.iter().find(|s| s.node_id == node).unwrap();
+        assert_eq!(of("plain").fidelity, Fidelity::Fresh);
+        assert!(!of("plain").explicit);
+        assert_eq!(of("claude").fidelity, Fidelity::Full);
+        assert_eq!(of("claude").thread_key, "t");
     }
 
     #[test]

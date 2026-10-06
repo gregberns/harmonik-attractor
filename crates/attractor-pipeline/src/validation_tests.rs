@@ -179,12 +179,14 @@ fn validate_or_raise_errors_for_invalid_graph() {
     assert!(result.is_err());
 }
 
+// `full` and `fresh` are accepted on agent nodes (ticket 08); anything else
+// is still unsupported.
 #[test]
-fn fidelity_is_rejected_as_unsupported() {
+fn fidelity_other_than_full_or_fresh_is_rejected_as_unsupported() {
     let pg = parse_and_build(
         r#"digraph G {
         start [shape="Mdiamond"]
-        a [fidelity="garbage"]
+        a [llm_provider="claude", fidelity="garbage"]
         done [shape="Msquare"]
         start -> a -> done
     }"#,

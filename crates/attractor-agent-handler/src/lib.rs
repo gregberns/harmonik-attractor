@@ -17,11 +17,14 @@ pub use config::{
     builtin_profiles, parse_duration, AgentsConfig, CommandLine, EnvConfig, ProfileConfig,
 };
 pub use env::child_env;
-pub use profile::{argv, fill, selected_model, selected_reasoning, Profile, ProfileEnv};
+pub use profile::{
+    argv, fill, resolve_argv, selected_model, selected_reasoning, Profile, ProfileEnv,
+    ResolvedArgv, Resume,
+};
 pub use prompt_file::prompt_file_text;
 pub use registry::{AgentHandler, AgentObserver, Agents, ConfigError, HARD_DEADLINE_MARGIN};
 pub use tokio_util::sync::CancellationToken;
 pub use types::{
     AgentRequest, AgentResult, AgentStatus, ExitInfo, FailureClass, Invocation, Record, Selection,
-    Spawned, Started, Usage,
+    Session, Spawned, Started, Usage,
 };

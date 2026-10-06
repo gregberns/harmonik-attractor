@@ -151,6 +151,7 @@ pub fn classify(invocation_id: &str, out: &Exited<'_>, duration: Duration) -> Ag
         duration,
         usage: summarize(out.stdout),
         stderr_tail: stderr_tail(out.stderr),
+        agent_session_id: codex_thread_id(out.stdout),
         ..AgentResult::failed(invocation_id, FailureClass::NoResult, "")
     };
     if !out.status.success() && !has_final_result(out.stdout) {
@@ -185,6 +186,20 @@ pub fn classify(invocation_id: &str, out: &Exited<'_>, duration: Duration) -> Ag
         text: parsed.text,
         ..base
     }
+}
+
+/// The `thread_id` of the first `thread.started` event: the Codex session
+/// (thread) the run used, which `exec resume` continues. `None` without one.
+pub fn codex_thread_id(stdout: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct ThreadStarted {
+        #[serde(rename = "type")]
+        kind: Option<String>,
+        thread_id: Option<String>,
+    }
+    json_lines::<ThreadStarted>(stdout)
+        .find(|line| line.kind.as_deref() == Some("thread.started"))
+        .and_then(|line| line.thread_id)
 }
 
 /// Each line of `stdout` that parses as `T`; anything else is skipped.
@@ -304,6 +319,42 @@ mod tests {
         for stdout in ["", "   \n", "not json at all", torn, wrong_types, "[1,2]"] {
             assert_eq!(summarize(stdout), Usage::default(), "{stdout:?}");
         }
+    }
+
+    const STARTED: &str = r#"{"type":"thread.started","thread_id":"thread-7"}"#;
+
+    #[test]
+    fn the_thread_id_comes_from_thread_started() {
+        assert_eq!(codex_thread_id(STARTED).as_deref(), Some("thread-7"));
+        let stream = format!("not json\n{STARTED}\n{MESSAGE}\n");
+        assert_eq!(codex_thread_id(&stream).as_deref(), Some("thread-7"));
+        for stdout in [
+            "",
+            MESSAGE,
+            r#"{"type":"thread.started"}"#,
+            r#"{"type":"turn.started","thread_id":"no"}"#,
+            "{\"type\":\"thread.started\",\"thread_id\":\"t",
+        ] {
+            assert_eq!(codex_thread_id(stdout), None, "{stdout:?}");
+        }
+    }
+
+    #[test]
+    fn every_row_of_the_table_keeps_the_thread_id() {
+        let cases = [
+            (0, format!("{STARTED}\n{MESSAGE}\n")),
+            (1, format!("{STARTED}\n{FAILED}\n")),
+            (0, format!("{STARTED}\n")),
+        ];
+        for (code, stdout) in cases {
+            let result = classified(code, &stdout, "");
+            assert_eq!(
+                result.agent_session_id.as_deref(),
+                Some("thread-7"),
+                "{stdout:?}"
+            );
+        }
+        assert_eq!(classified(1, "", "no rollout").agent_session_id, None);
     }
 
     // --- The failure table, row by row ---

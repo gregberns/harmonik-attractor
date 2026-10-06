@@ -150,7 +150,6 @@ fn llm_provider_codex_runs_the_built_in_profile_with_todays_argv() {
         "--json",
         "--yolo",
         "--skip-git-repo-check",
-        "--ephemeral",
         "--model",
         "o3",
         "--cd",

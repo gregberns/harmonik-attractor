@@ -144,7 +144,11 @@ fn human_output_unchanged_without_json() {
     let dir = tempfile::tempdir().unwrap();
     let out = pas(&[], &write(&dir, VALID));
     assert!(out.status.success());
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "Pipeline is valid\n");
+    // Ticket 08: a valid pipeline also lists each agent node's session use.
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "Pipeline is valid\nAgent sessions:\n  work: profile codex, fidelity full (default)\n"
+    );
 
     let out = pas(&[], &write(&dir, INVALID));
     assert_eq!(out.status.code(), Some(1));

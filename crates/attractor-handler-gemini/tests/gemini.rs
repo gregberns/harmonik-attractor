@@ -38,6 +38,8 @@ fn profile(command: Vec<String>) -> Profile {
         kill_grace: Duration::from_secs(1),
         env: ProfileEnv::default(),
         test_only: false,
+        session_args: vec![],
+        resume: None,
     }
 }
 
@@ -112,6 +114,7 @@ impl Fixture {
                 transcript: Some(self.dir.path().join("t.jsonl")),
                 stderr: Some(self.dir.path().join("t.stderr.log")),
                 prompt_file: Some(self.prompt_file()),
+                session: attractor_agent_handler::Session::New("sess-1".into()),
                 observer: None,
                 cancel: CancellationToken::new(),
             })
@@ -273,4 +276,32 @@ async fn the_prompt_file_records_the_spawned_argv_with_the_probed_format() {
         fx.prompt_file_argv()[1..3],
         ["--output-format", "stream-json"]
     );
+}
+
+#[tokio::test]
+async fn gemini_reports_no_session_id() {
+    let fx = Fixture::new();
+    for help in ["stream", "json"] {
+        fx.help(help);
+        let agents = fx.agents(Gemini::default(), vec![fake_gemini()]);
+        let result = fx.run_with(&agents, "scenario=success", None).await;
+        assert_eq!(result.status, AgentStatus::Completed, "{}", result.detail);
+        assert_eq!(result.agent_session_id, None, "{help}");
+        assert!(!result.continued);
+    }
+}
+
+#[tokio::test]
+async fn the_start_counter_counts_runs_but_not_the_probe() {
+    let fx = Fixture::new();
+    fs::write(fx.scenarios().join("work@2"), "scenario=crash\n").unwrap();
+    let agents = fx.agents(Gemini::default(), vec![fake_gemini()]);
+    let first = fx.run_with(&agents, "scenario=success", None).await;
+    let second = fx.run_with(&agents, "scenario=success", None).await;
+    assert_eq!(first.status, AgentStatus::Completed, "{}", first.detail);
+    assert_eq!(second.status, AgentStatus::Failed(FailureClass::Crash));
+    assert_eq!(fx.read("probes.log").lines().count(), 1);
+    assert_eq!(fx.read("starts.work"), "2\n");
+    assert_eq!(fx.read("prompt.work@1"), "Task (work): do it\n");
+    assert_eq!(fx.read("prompt.work@2"), "Task (work): do it\n");
 }

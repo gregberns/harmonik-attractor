@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::profile::{Profile, ProfileEnv};
+use crate::profile::{Profile, ProfileEnv, Resume};
 use crate::registry::ConfigError;
 
 /// The built-in profiles and defaults, compiled into the binary.
@@ -33,6 +33,13 @@ pub struct ProfileConfig {
     pub kill_grace: Option<String>,
     pub env: Option<EnvConfig>,
     pub test_only: Option<bool>,
+    /// Added when starting a new session; `{session_id}` is the minted id.
+    pub session_args: Option<Vec<String>>,
+    /// Continues a session; replaces only `session_args`.
+    pub resume_args: Option<Vec<String>>,
+    /// Continues a session; replaces `command` and `args` (`{command}`
+    /// expands to the command). At most one of the two resume forms.
+    pub resume_command: Option<Vec<String>>,
 }
 
 /// `command = "claude"` or `command = ["claude", "--sub"]`.
@@ -162,6 +169,7 @@ fn resolve_one(
 /// `child` with each field it leaves unset taken from `parent`. A set
 /// field replaces the parent's whole value; lists are not merged.
 fn overlay(child: ProfileConfig, parent: &ProfileConfig) -> ProfileConfig {
+    let child_resumes = child.resume_args.is_some() || child.resume_command.is_some();
     let env = match (child.env, &parent.env) {
         (Some(c), Some(p)) => Some(EnvConfig {
             remove: c.remove.or_else(|| p.remove.clone()),
@@ -184,6 +192,19 @@ fn overlay(child: ProfileConfig, parent: &ProfileConfig) -> ProfileConfig {
         kill_grace: child.kill_grace.or_else(|| parent.kill_grace.clone()),
         env,
         test_only: child.test_only.or(parent.test_only),
+        session_args: child.session_args.or_else(|| parent.session_args.clone()),
+        // The resume form is inherited as one field: a child that sets
+        // either form replaces the parent's.
+        resume_args: if child_resumes {
+            child.resume_args
+        } else {
+            parent.resume_args.clone()
+        },
+        resume_command: if child_resumes {
+            child.resume_command
+        } else {
+            parent.resume_command.clone()
+        },
     }
 }
 
@@ -207,6 +228,16 @@ fn into_profile(name: &str, config: ProfileConfig) -> Result<Profile, ConfigErro
         .filter(|argv| argv.first().is_some_and(|program| !program.is_empty()))
         .ok_or_else(|| missing("command"))?;
     let env = config.env.unwrap_or_default();
+    let resume = match (config.resume_args, config.resume_command) {
+        (Some(_), Some(_)) => {
+            return Err(ConfigError::TwoResumeForms {
+                profile: name.to_string(),
+            })
+        }
+        (Some(args), None) => Some(Resume::Args(args)),
+        (None, Some(command)) => Some(Resume::Command(command)),
+        (None, None) => None,
+    };
     Ok(Profile {
         name: name.to_string(),
         mechanism: config.mechanism.ok_or_else(|| missing("mechanism"))?,
@@ -223,6 +254,8 @@ fn into_profile(name: &str, config: ProfileConfig) -> Result<Profile, ConfigErro
             set: env.set.unwrap_or_default(),
         },
         test_only: config.test_only.unwrap_or(false),
+        session_args: config.session_args.unwrap_or_default(),
+        resume,
     })
 }
 
@@ -282,11 +315,16 @@ mod tests {
         assert_eq!(
             claude.args,
             [
-                "--no-session-persistence",
                 "--dangerously-skip-permissions",
                 "--strict-mcp-config",
                 "--disable-slash-commands",
             ]
+        );
+        // Ticket 08: sessions persist; a retry resumes.
+        assert_eq!(claude.session_args, ["--session-id", "{session_id}"]);
+        assert_eq!(
+            claude.resume,
+            Some(Resume::Args(vec!["--resume".into(), "{session_id}".into()]))
         );
         assert_eq!(claude.model, None);
         assert_eq!(claude.model_args, ["--model", "{model}"]);
@@ -316,13 +354,24 @@ mod tests {
         assert_eq!(codex.command, ["codex"]);
         assert_eq!(
             codex.args,
-            [
-                "exec",
-                "--json",
-                "--yolo",
-                "--skip-git-repo-check",
-                "--ephemeral"
-            ]
+            ["exec", "--json", "--yolo", "--skip-git-repo-check"]
+        );
+        assert!(codex.session_args.is_empty());
+        assert_eq!(
+            codex.resume,
+            Some(Resume::Command(
+                [
+                    "{command}",
+                    "exec",
+                    "resume",
+                    "{session_id}",
+                    "--json",
+                    "--skip-git-repo-check",
+                    "--dangerously-bypass-approvals-and-sandbox",
+                ]
+                .map(String::from)
+                .to_vec()
+            ))
         );
         assert_eq!(codex.model_args, ["--model", "{model}"]);
         assert!(codex.reasoning_args.is_empty());
@@ -331,11 +380,66 @@ mod tests {
         assert_eq!(gemini.command, ["gemini"]);
         assert_eq!(gemini.args, ["--approval-mode", "yolo"]);
         assert_eq!(gemini.model_args, ["--model", "{model}"]);
+        assert!(!gemini.can_resume());
         // Both get the defaults, OPENAI_API_KEY in the strip list included.
         for p in [codex, gemini] {
             assert_eq!(p.timeout, Duration::from_secs(600));
             assert!(p.env.remove.contains(&"OPENAI_API_KEY".to_string()));
         }
+    }
+
+    #[test]
+    fn a_profile_with_both_resume_forms_is_refused() {
+        let error = config(
+            r#"
+            [defaults]
+            timeout = "1m"
+            kill_grace = "1s"
+            [profiles.x]
+            mechanism = "m"
+            command = "x"
+            resume_args = ["--resume", "{session_id}"]
+            resume_command = ["{command}", "resume"]
+            "#,
+        )
+        .resolve()
+        .unwrap_err();
+        assert_eq!(
+            error,
+            ConfigError::TwoResumeForms {
+                profile: "x".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_child_setting_one_resume_form_replaces_the_parents_other() {
+        let profiles = builtin_profiles_with(
+            r#"
+            [mine]
+            inherit_from = "claude"
+            resume_command = ["{command}", "--continue-as", "{session_id}"]
+            "#,
+        );
+        let mine = profile(&profiles, "mine");
+        assert_eq!(
+            mine.resume,
+            Some(Resume::Command(
+                ["{command}", "--continue-as", "{session_id}"]
+                    .map(String::from)
+                    .to_vec()
+            ))
+        );
+        // session_args still inherited.
+        assert_eq!(mine.session_args, ["--session-id", "{session_id}"]);
+    }
+
+    fn builtin_profiles_with(text: &str) -> Vec<Profile> {
+        AgentsConfig::builtin()
+            .unwrap()
+            .with_overrides(&overrides(text))
+            .resolve()
+            .unwrap()
     }
 
     #[test]

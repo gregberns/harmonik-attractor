@@ -7,7 +7,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use attractor_agent_handler::{
     AgentObserver, AgentRequest, AgentResult, AgentStatus, Agents, CancellationToken, FailureClass,
-    Record, Selection, Started,
+    Record, Selection, Session, Started,
 };
 use attractor_dot::AttributeValue;
 use attractor_quality::{
@@ -16,9 +16,13 @@ use attractor_quality::{
 use attractor_types::{AttractorError, Context, Outcome, Result, StageStatus};
 
 use crate::events::PipelineEvent;
-use crate::execution_plan::{HandlerIdentity, ProviderAlias, ResolvedNode, ResolvedNodeKind};
+use crate::execution_plan::{
+    Fidelity, HandlerIdentity, ProviderAlias, ResolvedNode, ResolvedNodeKind,
+};
 use crate::graph::{PipelineGraph, PipelineNode};
-use crate::handler::{EventSink, HandlerExecutionContext, NodeHandler, ProviderNodeHandler};
+use crate::handler::{
+    EventSink, HandlerExecutionContext, NodeHandler, ProviderNodeHandler, SessionContext,
+};
 
 #[path = "codergen_claude.rs"]
 mod claude;
@@ -83,6 +87,8 @@ struct CodergenExecutionControls<'a> {
     cancel: CancellationToken,
     /// Set for the attempt after an interrupted one; added to the prompt.
     resume_note: Option<String>,
+    /// The attempt's session context from the engine; `None` outside it.
+    session: Option<SessionContext<'a>>,
 }
 
 /// `LlmInvoked.status` values (spec C3).
@@ -105,6 +111,10 @@ struct LlmInvocation<'a> {
     /// `codex` or `gemini`).
     provider: String,
     model_requested: Option<String>,
+    /// Whether the invocation continues an earlier session.
+    continued: bool,
+    /// The session id the agent reported, once known.
+    agent_session_id: Option<String>,
     started: Instant,
     emitted: bool,
 }
@@ -145,6 +155,8 @@ impl LlmInvocation<'_> {
             duration_ms: u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX),
             transcript: attractor_journal::transcript_rel_path(&self.invocation_id),
             status: status.to_owned(),
+            agent_session_id: self.agent_session_id.clone(),
+            continued: self.continued,
         });
     }
 }
@@ -155,6 +167,20 @@ impl Drop for LlmInvocation<'_> {
             let usage = self.transcript_usage();
             self.emit(INVOKED_TIMEOUT, usage);
         }
+    }
+}
+
+/// The session an agent attempt runs in (design §1): `full` continues the
+/// thread's recorded session if there is one; otherwise, and always for
+/// `fresh`, a new session with a newly minted id.
+fn choose_session(
+    fidelity: Fidelity,
+    prior: Option<&str>,
+    mint: impl FnOnce() -> String,
+) -> Session {
+    match (fidelity, prior) {
+        (Fidelity::Full, Some(id)) => Session::Continue(id.to_string()),
+        (Fidelity::Full, None) | (Fidelity::Fresh, _) => Session::New(mint()),
     }
 }
 
@@ -175,6 +201,7 @@ impl AgentObserver for StartedJournal<'_> {
             profile: started.profile.clone(),
             model: started.model.clone(),
             host: started.host.clone(),
+            session_id: started.session_id.clone(),
             pid: started.pid,
             pgid: started.pgid,
             transcript: attractor_journal::transcript_rel_path(&started.invocation_id),
@@ -223,6 +250,8 @@ impl NodeHandler for CodergenHandler {
                 reasoning: None,
             }),
             invocation: Default::default(),
+            fidelity: None,
+            thread_id: None,
         };
         ProviderNodeHandler::execute_resolved(self, node, &resolved, context, graph).await
     }
@@ -368,6 +397,13 @@ impl CodergenHandler {
     ) -> Result<Outcome> {
         let profile_name = selection.profile.clone();
         let profile = self.agents.profile(&profile_name);
+        let can_resume = profile.is_some_and(|p| p.can_resume());
+        let session = choose_session(
+            Fidelity::effective(resolved.fidelity, can_resume),
+            controls.session.and_then(|s| s.prior),
+            || uuid::Uuid::new_v4().to_string(),
+        );
+        let continued = session.is_continue();
         // One id names the Model Invocation everywhere: `LlmInvoked`, the
         // Transcript file and `PAS_INVOCATION_ID`.
         let invocation_id = attractor_journal::new_invocation_id();
@@ -396,6 +432,8 @@ impl CodergenHandler {
                 node_id: node.id.clone(),
                 provider: profile_name.clone(),
                 model_requested: selection.model.clone(),
+                continued,
+                agent_session_id: None,
                 started: Instant::now(),
                 emitted: false,
             }),
@@ -427,13 +465,19 @@ impl CodergenHandler {
                 transcript,
                 stderr,
                 prompt_file,
+                session,
                 observer: journal_starts
                     .as_ref()
                     .map(|observer| observer as &dyn AgentObserver),
                 cancel: controls.cancel.clone(),
             })
             .await;
-        if let Some(invocation) = invocation {
+        // The engine records the reported id for the node's thread.
+        if let (Some(context), Some(id)) = (controls.session, &result.agent_session_id) {
+            let _ = context.reported.set(id.clone());
+        }
+        if let Some(mut invocation) = invocation {
+            invocation.agent_session_id = result.agent_session_id.clone();
             match result.status {
                 AgentStatus::Failed(FailureClass::Launch) => invocation.disarm(),
                 AgentStatus::Completed => {
@@ -621,6 +665,7 @@ impl ProviderNodeHandler for CodergenHandler {
                 attempt: 1,
                 cancel: CancellationToken::new(),
                 resume_note: None,
+                session: None,
             },
         )
         .await
@@ -649,6 +694,7 @@ impl ProviderNodeHandler for CodergenHandler {
                 attempt: execution.attempt(),
                 cancel: execution.cancel().clone(),
                 resume_note: execution.resume_note().map(str::to_owned),
+                session: execution.session(),
             },
         )
         .await

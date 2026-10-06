@@ -10,9 +10,10 @@
 //! user's `PATH`; [`FakeAgent::shim_claude_on_path`] replaces the `claude`
 //! stub with the fake (the `llm_provider="claude"` alias), and
 //! `shim_codex_on_path`/`shim_gemini_on_path` do the same for `codex` and
-//! `gemini`. The `pas.toml` also has `fake-codex` and `fake-gemini`
-//! profiles (the built-in `codex`/`gemini` profiles with the fakes as
-//! command, `test_only`).
+//! `gemini`. The `pas.toml` also has `fake-codex`, `fake-gemini` and
+//! `fake-claude` profiles (the built-in `codex`/`gemini`/`claude` profiles
+//! with the fakes as command, `test_only`; `fake-claude` resumes sessions,
+//! `fake` doesn't).
 //! Git ignores the developer's global and system config (hooks, templates).
 
 use std::collections::BTreeMap;
@@ -45,7 +46,7 @@ impl FakeAgent {
         let fake = Self {
             dir: tempfile::tempdir().unwrap(),
         };
-        for dir in [fake.bin(), fake.scenarios(), fake.repo()] {
+        for dir in [fake.bin(), fake.scenarios(), fake.repo(), fake.home()] {
             fs::create_dir_all(dir).unwrap();
         }
         for agent in BLOCKED_AGENTS {
@@ -71,6 +72,7 @@ impl FakeAgent {
                 "[project]\nname = \"fake-test\"\n\n\
                  [agents.fake-codex]\ninherit_from = \"codex\"\ncommand = {codex:?}\ntest_only = true\n\n\
                  [agents.fake-gemini]\ninherit_from = \"gemini\"\ncommand = {gemini:?}\ntest_only = true\n\n\
+                 [agents.fake-claude]\ninherit_from = \"claude\"\ncommand = {fake:?}\ntest_only = true\n\n\
                  [agents.fake]\nmechanism = \"claude-p\"\ncommand = {fake:?}\ntest_only = true\n{agents}\n"
             ),
         )
@@ -132,6 +134,11 @@ impl FakeAgent {
 
     fn bin(&self) -> PathBuf {
         self.path().join("bin")
+    }
+
+    /// `HOME` for `pas` and its agents: an empty folder in the test's.
+    pub fn home(&self) -> PathBuf {
+        self.path().join("home")
     }
 
     /// `FAKE_AGENT_SCENARIOS`: where the fake keeps its state.
@@ -199,6 +206,10 @@ impl FakeAgent {
             .env("PATH", std::env::join_paths(paths).unwrap())
             .env("FAKE_AGENT_SCENARIOS", self.scenarios())
             .env("PAS_STATE_DIR", self.path().join("state"))
+            // Agents' session files (`~/.claude`, `~/.codex`) and anything
+            // else under home stay in the test's folder, never the real one.
+            .env("HOME", self.home())
+            .env("CODEX_HOME", self.home().join(".codex"))
             .env("GIT_CEILING_DIRECTORIES", self.path())
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_NOSYSTEM", "1")

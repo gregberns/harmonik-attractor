@@ -30,6 +30,16 @@ pub struct HandlerExecutionContext<'a> {
     attempt: u32,
     cancel: &'a CancellationToken,
     resume_note: Option<&'a str>,
+    session: Option<SessionContext<'a>>,
+}
+
+/// An agent attempt's session (design §1): the session id recorded for its
+/// thread, if any, and where the handler puts the id the agent reported.
+/// Scoped to one attempt; the engine records `reported` afterwards.
+#[derive(Clone, Copy)]
+pub struct SessionContext<'a> {
+    pub prior: Option<&'a str>,
+    pub reported: &'a std::sync::OnceLock<String>,
 }
 
 impl<'a> HandlerExecutionContext<'a> {
@@ -53,7 +63,19 @@ impl<'a> HandlerExecutionContext<'a> {
             attempt,
             cancel,
             resume_note,
+            session: None,
         }
+    }
+
+    /// The same context for an agent attempt with `session`.
+    pub(crate) fn with_session(self, session: Option<SessionContext<'a>>) -> Self {
+        Self { session, ..self }
+    }
+
+    /// The attempt's session context; `None` outside the engine or for a
+    /// node without an agent.
+    pub fn session(self) -> Option<SessionContext<'a>> {
+        self.session
     }
 
     /// For the attempt after an interrupted one: a note for the agent naming
@@ -272,7 +294,8 @@ impl DynHandler {
             execution.attempt(),
             execution.cancel(),
             execution.resume_note(),
-        );
+        )
+        .with_session(execution.session());
         let mut outcome = match self.0.provider_handler() {
             Some(handler) => {
                 handler

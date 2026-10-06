@@ -235,6 +235,9 @@ pub enum EventData {
         model: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         host: Option<String>,
+        /// The agent session id the invocation was started with.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
         pid: u32,
         pgid: u32,
         /// Transcript path relative to the Run folder.
@@ -260,6 +263,12 @@ pub enum EventData {
         /// Transcript path relative to the Run folder.
         transcript: String,
         status: String,
+        /// The session id the agent reported, if any.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_session_id: Option<String>,
+        /// Whether the invocation continued an earlier session.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        continued: bool,
     },
     CommitsCreated {
         node_id: String,
@@ -580,6 +589,7 @@ mod tests {
                 profile: s("claude"),
                 model: Some(s("opus")),
                 host: Some(s("local")),
+                session_id: Some(s("sess")),
                 pid: 42,
                 pgid: 42,
                 transcript: s("transcripts/i.jsonl"),
@@ -597,6 +607,8 @@ mod tests {
                 duration_ms: 100,
                 transcript: s("transcripts/i.jsonl"),
                 status: s("success"),
+                agent_session_id: Some(s("sess")),
+                continued: true,
             },
             EventData::CommitsCreated {
                 node_id: s("a"),

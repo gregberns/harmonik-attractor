@@ -28,10 +28,14 @@ struct DiagnosticJson {
     fix: Option<String>,
 }
 
-fn check(
-    path: &std::path::Path,
-    allow_test_agents: bool,
-) -> Result<Vec<Diagnostic>, ValidateError> {
+/// What `pas validate` found: the diagnostics, and how each agent node uses
+/// sessions (shown when the pipeline is valid).
+struct Checked {
+    diagnostics: Vec<Diagnostic>,
+    sessions: Vec<attractor_pipeline::AgentSession>,
+}
+
+fn check(path: &std::path::Path, allow_test_agents: bool) -> Result<Checked, ValidateError> {
     let source = std::fs::read_to_string(path).map_err(|e| ValidateError {
         code: "io",
         message: e.to_string(),
@@ -44,10 +48,16 @@ fn check(
             message: e.to_string(),
         })?;
     let mut diagnostics = attractor_pipeline::validate(&graph);
+    let mut sessions = Vec::new();
     if diagnostics.iter().all(|d| d.severity != Severity::Error) {
-        diagnostics.extend(check_agents(graph, allow_test_agents)?);
+        let (agent_diagnostics, agent_sessions) = check_agents(graph, allow_test_agents)?;
+        diagnostics.extend(agent_diagnostics);
+        sessions = agent_sessions;
     }
-    Ok(diagnostics)
+    Ok(Checked {
+        diagnostics,
+        sessions,
+    })
 }
 
 /// Every agent profile the pipeline uses, checked against the profiles of
@@ -55,7 +65,7 @@ fn check(
 fn check_agents(
     graph: attractor_pipeline::PipelineGraph,
     allow_test_agents: bool,
-) -> Result<Vec<Diagnostic>, ValidateError> {
+) -> Result<(Vec<Diagnostic>, Vec<attractor_pipeline::AgentSession>), ValidateError> {
     let invalid_config = |message: String| ValidateError {
         code: "invalid_config",
         message,
@@ -68,15 +78,49 @@ fn check_agents(
         .map_err(|e| invalid_config(e.to_string()))?;
     let agents = crate::agents::agents(profiles, allow_test_agents)
         .map_err(|e| invalid_config(e.to_string()))?;
-    Ok(attractor_pipeline::check_agents(configured.plan(), &agents))
+    Ok((
+        attractor_pipeline::check_agents(configured.plan(), &agents),
+        attractor_pipeline::agent_sessions(configured.plan(), &agents),
+    ))
 }
 
-fn print_human(result: Result<Vec<Diagnostic>, ValidateError>) -> anyhow::Result<()> {
-    let diagnostics =
-        result.map_err(|error| anyhow::anyhow!("Validation failed: {}", error.message))?;
+/// One line per agent node: its profile, fidelity and thread.
+fn session_lines(sessions: &[attractor_pipeline::AgentSession]) -> Vec<String> {
+    sessions
+        .iter()
+        .map(|s| {
+            let fidelity = if s.explicit {
+                s.fidelity.as_str().to_string()
+            } else {
+                format!("{} (default)", s.fidelity.as_str())
+            };
+            let thread = if s.thread_key == s.node_id {
+                String::new()
+            } else {
+                format!(", thread {}", s.thread_key)
+            };
+            format!(
+                "  {}: profile {}, fidelity {fidelity}{thread}",
+                s.node_id, s.profile
+            )
+        })
+        .collect()
+}
+
+fn print_human(result: Result<Checked, ValidateError>) -> anyhow::Result<()> {
+    let Checked {
+        diagnostics,
+        sessions,
+    } = result.map_err(|error| anyhow::anyhow!("Validation failed: {}", error.message))?;
 
     if diagnostics.is_empty() {
         println!("Pipeline is valid");
+        if !sessions.is_empty() {
+            println!("Agent sessions:");
+            for line in session_lines(&sessions) {
+                println!("{line}");
+            }
+        }
         return Ok(());
     }
 
@@ -86,9 +130,9 @@ fn print_human(result: Result<Vec<Diagnostic>, ValidateError>) -> anyhow::Result
     Ok(())
 }
 
-fn print_json(result: Result<Vec<Diagnostic>, ValidateError>) -> anyhow::Result<()> {
+fn print_json(result: Result<Checked, ValidateError>) -> anyhow::Result<()> {
     match result {
-        Ok(diagnostics) => {
+        Ok(Checked { diagnostics, .. }) => {
             let valid = !diagnostics.iter().any(|d| d.severity == Severity::Error);
             let payload = ValidateJson {
                 v: 1,
@@ -144,6 +188,29 @@ pub fn cmd_validate(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_lines_show_profile_fidelity_and_a_shared_thread() {
+        let session =
+            |node: &str, fidelity, explicit, thread: &str| attractor_pipeline::AgentSession {
+                node_id: node.into(),
+                profile: "claude".into(),
+                fidelity,
+                explicit,
+                can_resume: true,
+                thread_key: thread.into(),
+            };
+        assert_eq!(
+            session_lines(&[
+                session("a", attractor_pipeline::Fidelity::Full, false, "a"),
+                session("b", attractor_pipeline::Fidelity::Fresh, true, "t"),
+            ]),
+            [
+                "  a: profile claude, fidelity full (default)",
+                "  b: profile claude, fidelity fresh, thread t",
+            ]
+        );
+    }
 
     /// A runtime node with no explicit `llm_provider` must block `pas
     /// validate` with a non-zero exit (an `Err` here, which main.rs turns

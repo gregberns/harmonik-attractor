@@ -16,9 +16,12 @@ use serde::Deserialize;
 struct ClaudeOutput {
     #[serde(default)]
     result: String,
+    // Read only to check their types, as before D7.
     #[serde(default)]
+    #[allow(dead_code)]
     is_error: bool,
     #[serde(default)]
+    #[allow(dead_code)]
     subtype: String,
     #[serde(default)]
     num_turns: u32,
@@ -100,8 +103,11 @@ pub fn claude_result_line(stdout: &str) -> Option<&str> {
 
 /// The `claude-p` failure table, first match wins (the cancelled, timeout
 /// and launch rows are decided before there is any output):
+/// - a final result line with `is_error: true` or a `subtype` starting
+///   `error`: `Reported`, whatever its other fields (design D7: Claude's
+///   "No conversation found" line may lack `result` or `num_turns`), with
+///   its `errors` joined with "; " as `detail`, else its `result`;
 /// - a final result line that doesn't deserialize: `NoResult`, whatever the exit;
-/// - a final result line with `is_error` or a `subtype` starting `error`: `Reported`;
 /// - any other final result line: `Completed`, even after a non-zero exit;
 /// - no result line and a non-zero exit or a signal: `Crash`, with the exit
 ///   status as `detail` (the stderr is in `stderr_tail`);
@@ -120,6 +126,7 @@ pub fn classify(invocation_id: &str, out: &Exited<'_>, duration: Duration) -> Ag
         duration,
         usage,
         stderr_tail: stderr_tail(out.stderr),
+        agent_session_id: claude_session_id(out.stdout),
         ..AgentResult::failed(invocation_id, FailureClass::NoResult, "")
     };
     if result_line.is_none() && !out.status.success() {
@@ -138,7 +145,20 @@ pub fn classify(invocation_id: &str, out: &Exited<'_>, duration: Duration) -> Ag
             ..base
         };
     }
-    match serde_json::from_str::<ClaudeOutput>(result_line.unwrap_or(out.stdout)) {
+    let line = result_line.unwrap_or(out.stdout);
+    if let Some(error) = reported_error(line) {
+        return AgentResult {
+            status: AgentStatus::Failed(FailureClass::Reported),
+            text: error.text,
+            detail: error.detail,
+            usage: Usage {
+                turns: error.turns,
+                ..base.usage.clone()
+            },
+            ..base
+        };
+    }
+    match serde_json::from_str::<ClaudeOutput>(line) {
         Err(e) => AgentResult {
             detail: format!(
                 "Failed to parse Claude output: {} — raw: {}",
@@ -147,28 +167,85 @@ pub fn classify(invocation_id: &str, out: &Exited<'_>, duration: Duration) -> Ag
             ),
             ..base
         },
-        Ok(parsed) => {
-            let reported = parsed.is_error || parsed.subtype.starts_with("error");
-            AgentResult {
-                status: if reported {
-                    AgentStatus::Failed(FailureClass::Reported)
-                } else {
-                    AgentStatus::Completed
-                },
-                detail: if reported {
-                    parsed.result.clone()
-                } else {
-                    String::new()
-                },
-                text: parsed.result,
-                usage: Usage {
-                    turns: Some(parsed.num_turns),
-                    ..base.usage.clone()
-                },
-                ..base
-            }
-        }
+        // `reported_error` has taken every error line: this one succeeded.
+        Ok(parsed) => AgentResult {
+            status: AgentStatus::Completed,
+            detail: String::new(),
+            text: parsed.result,
+            usage: Usage {
+                turns: Some(parsed.num_turns),
+                ..base.usage.clone()
+            },
+            ..base
+        },
     }
+}
+
+/// An error the agent reported on its result line.
+struct ReportedError {
+    text: String,
+    detail: String,
+    turns: Option<u32>,
+}
+
+/// The error a result line reports, read field by field so a line with
+/// missing or odd fields is still the agent's error: `is_error: true` or a
+/// `subtype` starting `error`. `None` for any other line (or non-JSON).
+fn reported_error(line: &str) -> Option<ReportedError> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    let is_error = value.get("is_error").and_then(serde_json::Value::as_bool) == Some(true);
+    let error_subtype = value
+        .get("subtype")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|subtype| subtype.starts_with("error"));
+    if !is_error && !error_subtype {
+        return None;
+    }
+    let result = value
+        .get("result")
+        .and_then(serde_json::Value::as_str)
+        .map(String::from);
+    let errors: Vec<&str> = value
+        .get("errors")
+        .and_then(serde_json::Value::as_array)
+        .map(|errors| {
+            errors
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect()
+        })
+        .unwrap_or_default();
+    let detail = if errors.is_empty() {
+        result.clone().unwrap_or_default()
+    } else {
+        errors.join("; ")
+    };
+    let turns = match value.get("num_turns") {
+        None => Some(0),
+        Some(turns) => turns.as_u64().and_then(|n| u32::try_from(n).ok()),
+    };
+    Some(ReportedError {
+        text: result.unwrap_or_else(|| detail.clone()),
+        detail,
+        turns,
+    })
+}
+
+/// The `session_id` of the first `system`/`init` line: the session the
+/// agent runs in (new or continued). `None` when there is no such line.
+pub fn claude_session_id(stdout: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct InitLine {
+        #[serde(rename = "type")]
+        kind: Option<String>,
+        subtype: Option<String>,
+        session_id: Option<String>,
+    }
+    json_lines::<InitLine>(stdout)
+        .find(|line| {
+            line.kind.as_deref() == Some("system") && line.subtype.as_deref() == Some("init")
+        })
+        .and_then(|line| line.session_id)
 }
 
 /// Each line of `stdout` that parses as `T`. Blank lines, non-JSON lines, a
@@ -454,6 +531,83 @@ mod tests {
         let stream =
             format!("{CLAUDE_RESULT_LINE}\nnot json\n{{\"type\":\"rate_limit_event\"}}\nlast");
         assert_eq!(claude_result_line(&stream), Some(CLAUDE_RESULT_LINE));
+    }
+
+    const NOT_FOUND: &str = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["No conversation found with session ID: x"]}"#;
+
+    #[test]
+    fn a_minimal_not_found_line_is_reported_with_the_errors_as_detail() {
+        for code in [0, 1] {
+            let result = run(
+                NOT_FOUND,
+                "No conversation found with session ID: x\n",
+                code,
+            );
+            assert_eq!(
+                result.status,
+                AgentStatus::Failed(FailureClass::Reported),
+                "exit {code}"
+            );
+            assert_eq!(result.detail, "No conversation found with session ID: x");
+        }
+    }
+
+    #[test]
+    fn several_errors_are_joined_with_semicolons() {
+        let line = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["one","two"],"result":"ignored"}"#;
+        assert_eq!(run(line, "", 1).detail, "one; two");
+    }
+
+    #[test]
+    fn an_error_line_is_reported_before_its_other_fields_are_checked() {
+        // `num_turns` has the wrong type: a success line like this is
+        // NoResult, but an error line is still the agent's reported error.
+        for line in [
+            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":"many","result":"boom"}"#,
+            r#"{"type":"result","subtype":"error_max_turns","num_turns":"many","result":"boom"}"#,
+        ] {
+            let result = run(line, "", 1);
+            assert_eq!(
+                result.status,
+                AgentStatus::Failed(FailureClass::Reported),
+                "{line}"
+            );
+            assert_eq!(result.detail, "boom");
+            assert_eq!(result.text, "boom");
+        }
+    }
+
+    #[test]
+    fn the_session_id_comes_from_the_init_line_whatever_the_end() {
+        let init = r#"{"type":"system","subtype":"init","session_id":"sess-9","model":"m"}"#;
+        let cases = [
+            (format!("{init}\n{CLAUDE_RESULT_LINE}\n"), 0),
+            (format!("{init}\n{NOT_FOUND}\n"), 1),
+            (format!("{init}\n"), 3),
+            (format!("{init}\n"), 0),
+            (format!("{init}\nnot json\n"), 0),
+        ];
+        for (stdout, code) in cases {
+            assert_eq!(
+                run(&stdout, "", code).agent_session_id.as_deref(),
+                Some("sess-9"),
+                "{stdout:?} exit {code}"
+            );
+        }
+    }
+
+    #[test]
+    fn session_id_reads_only_the_init_line() {
+        assert_eq!(claude_session_id(""), None);
+        assert_eq!(claude_session_id(CLAUDE_RESULT_LINE), None);
+        let other = r#"{"type":"assistant","session_id":"not-this"}"#;
+        assert_eq!(claude_session_id(other), None);
+        let no_id = r#"{"type":"system","subtype":"init"}"#;
+        assert_eq!(claude_session_id(no_id), None);
+        let torn = "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s";
+        assert_eq!(claude_session_id(torn), None);
+        let two = "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"a\"}\n{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"b\"}";
+        assert_eq!(claude_session_id(two).as_deref(), Some("a"));
     }
 
     #[test]

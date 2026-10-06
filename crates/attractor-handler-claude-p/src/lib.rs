@@ -13,7 +13,7 @@ use attractor_agent_handler::{
 };
 use attractor_agent_process::{run_local, LocalRun, Spawn};
 
-pub use parse::{classify, claude_result_line, summarize, Exited};
+pub use parse::{classify, claude_result_line, claude_session_id, summarize, Exited};
 
 /// The handler for profiles with mechanism `claude-p`.
 #[derive(Debug, Default, Clone, Copy)]
@@ -82,27 +82,29 @@ impl AgentHandler for ClaudeP {
                     started.elapsed(),
                 )
             }
-            LocalRun::TimedOut => AgentResult {
-                usage: partial_usage(&inv),
-                ..AgentResult::failed(
+            LocalRun::TimedOut => with_partial_output(
+                &inv,
+                AgentResult::failed(
                     id,
                     FailureClass::Timeout,
                     format!("timed out after {}ms", inv.timeout.as_millis()),
-                )
-            },
-            LocalRun::Cancelled => AgentResult {
-                status: AgentStatus::Cancelled,
-                usage: partial_usage(&inv),
-                ..AgentResult::failed(id, FailureClass::Crash, "cancelled")
-            },
-            LocalRun::WaitFailed(error) => AgentResult {
-                usage: partial_usage(&inv),
-                ..AgentResult::failed(
+                ),
+            ),
+            LocalRun::Cancelled => with_partial_output(
+                &inv,
+                AgentResult {
+                    status: AgentStatus::Cancelled,
+                    ..AgentResult::failed(id, FailureClass::Crash, "cancelled")
+                },
+            ),
+            LocalRun::WaitFailed(error) => with_partial_output(
+                &inv,
+                AgentResult::failed(
                     id,
                     FailureClass::Crash,
                     format!("execution failed: {error}"),
-                )
-            },
+                ),
+            ),
             LocalRun::LaunchFailed(error) => AgentResult {
                 launch_error: Some(error.kind()),
                 ..AgentResult::failed(id, FailureClass::Launch, error.to_string())
@@ -119,11 +121,18 @@ impl AgentHandler for ClaudeP {
     }
 }
 
-/// Usage from the transcript written so far, for a run that ended without
-/// its full output (timeout, cancel, or a failed wait).
-fn partial_usage(inv: &Invocation<'_>) -> Usage {
-    inv.transcript
+/// `result` with the usage and session id read from the transcript written
+/// so far, for a run that ended without its full output (timeout, cancel,
+/// or a failed wait).
+fn with_partial_output(inv: &Invocation<'_>, result: AgentResult) -> AgentResult {
+    let partial = inv
+        .transcript
         .and_then(|path| std::fs::read(path).ok())
-        .map(|bytes| summarize(&String::from_utf8_lossy(&bytes)))
-        .unwrap_or_default()
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .unwrap_or_default();
+    AgentResult {
+        usage: summarize(&partial),
+        agent_session_id: claude_session_id(&partial),
+        ..result
+    }
 }

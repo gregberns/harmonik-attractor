@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use attractor_agent_handler::{
     builtin_profiles, AgentObserver, AgentRequest, AgentResult, AgentStatus, Agents,
-    CancellationToken, FailureClass, Profile, Record, Selection, Started,
+    CancellationToken, FailureClass, Profile, Record, Selection, Session, Started,
 };
 use attractor_handler_claude_p::{claude_result_line, ClaudeP};
 
@@ -151,6 +151,7 @@ impl Fixture {
             transcript: Some(self.transcript()),
             stderr: Some(self.stderr()),
             prompt_file: None,
+            session: Session::New("sess-1".into()),
             observer: None,
             cancel: CancellationToken::new(),
         }
@@ -347,10 +348,11 @@ async fn argv_is_profile_args_extra_args_model_then_handler_flags() {
     assert_eq!(
         args,
         [
-            "--no-session-persistence",
             "--dangerously-skip-permissions",
             "--strict-mcp-config",
             "--disable-slash-commands",
+            "--session-id",
+            "sess-1",
             "--allowedTools",
             "Read",
             "--max-budget-usd",
@@ -657,4 +659,151 @@ async fn a_launch_failure_still_leaves_the_prompt_file() {
 
     assert_eq!(result.status, AgentStatus::Failed(FailureClass::Launch));
     assert!(path.is_file());
+}
+
+/// The fake's argv per start, without the program.
+fn invocations(fx: &Fixture) -> Vec<Vec<String>> {
+    fx.read("invocations.log")
+        .split("--- start\n")
+        .skip(1)
+        .map(|block| block.lines().map(String::from).collect())
+        .collect()
+}
+
+/// The profile's args, the session flags, then the request's extra args,
+/// the model and the handler's flags.
+fn argv_with(session: [&str; 2]) -> Vec<String> {
+    [
+        "--dangerously-skip-permissions",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+        session[0],
+        session[1],
+        "--allowedTools",
+        "Read",
+        "--max-budget-usd",
+        "1",
+        "--model",
+        "x",
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+    ]
+    .map(String::from)
+    .to_vec()
+}
+
+#[tokio::test]
+async fn a_new_session_passes_session_id_and_reports_the_init_lines_id() {
+    let fx = Fixture::new();
+    let result = fx.run("scenario=success").await;
+    assert_eq!(result.status, AgentStatus::Completed, "{}", result.detail);
+    assert_eq!(invocations(&fx), [argv_with(["--session-id", "sess-1"])]);
+    assert_eq!(result.agent_session_id.as_deref(), Some("sess-1"));
+    assert!(!result.continued);
+    assert!(fx.read("env.log").contains("PAS_SESSION_ID=sess-1\n"));
+}
+
+#[tokio::test]
+async fn continuing_passes_resume_in_place_of_session_id_and_keeps_the_other_args() {
+    let fx = Fixture::new();
+    fx.scenario("scenario=success");
+    let mut req = fx.request(Duration::from_secs(20));
+    req.session = Session::Continue("sess-0".into());
+    let result = fx.agents(fake_claude(), &[]).run(req).await;
+    assert_eq!(result.status, AgentStatus::Completed, "{}", result.detail);
+    assert_eq!(invocations(&fx), [argv_with(["--resume", "sess-0"])]);
+    assert_eq!(result.agent_session_id.as_deref(), Some("sess-0"));
+    assert!(result.continued);
+}
+
+#[tokio::test]
+async fn a_session_that_is_not_found_is_reported_with_the_reason() {
+    let fx = Fixture::new();
+    fx.scenario("scenario=session_not_found");
+    let mut req = fx.request(Duration::from_secs(20));
+    req.session = Session::Continue("gone-1".into());
+    let result = fx.agents(fake_claude(), &[]).run(req).await;
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::Reported));
+    assert_eq!(
+        result.detail,
+        "No conversation found with session ID: gone-1"
+    );
+    assert_eq!(
+        result.stderr_tail,
+        "No conversation found with session ID: gone-1"
+    );
+    assert_eq!(result.exit.and_then(|e| e.code), Some(1));
+    assert_eq!(result.agent_session_id, None);
+    assert!(result.continued);
+}
+
+#[tokio::test]
+async fn a_timed_out_attempt_still_reports_the_init_lines_id() {
+    let fx = Fixture::new();
+    fx.scenario("scenario=hang");
+    let result = fx
+        .agents(fake_claude(), &[])
+        .run(fx.request(Duration::from_secs(1)))
+        .await;
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::Timeout));
+    assert_eq!(result.agent_session_id.as_deref(), Some("sess-1"));
+}
+
+#[tokio::test]
+async fn a_cancelled_attempt_still_reports_the_init_lines_id() {
+    let fx = Fixture::new();
+    fx.scenario("scenario=hang_term");
+    let agents = fx.agents(fake_claude(), &[]);
+    let mut req = fx.request(Duration::from_secs(20));
+    let cancel = CancellationToken::new();
+    req.cancel = cancel.clone();
+    let transcript = fx.transcript();
+
+    let (result, ()) = tokio::join!(agents.run(req), async {
+        wait_until("the init line", || {
+            fs::read_to_string(&transcript).is_ok_and(|s| s.contains("init"))
+        })
+        .await;
+        cancel.cancel();
+    });
+
+    assert_eq!(result.status, AgentStatus::Cancelled);
+    assert_eq!(result.agent_session_id.as_deref(), Some("sess-1"));
+}
+
+#[tokio::test]
+async fn node_files_by_start_count_come_first_then_by_attempt_then_the_node() {
+    let fx = Fixture::new();
+    // Every run below is attempt 2 of node `work`.
+    fs::write(fx.scenarios().join("work@1"), "scenario=success\n").unwrap();
+    fs::write(fx.scenarios().join("work@3"), "scenario=fail\n").unwrap();
+    fs::write(fx.scenarios().join("work.2"), "scenario=crash\n").unwrap();
+    fx.scenario("scenario=garbage");
+    let agents = fx.agents(fake_claude(), &[]);
+
+    let mut statuses = Vec::new();
+    for _ in 0..3 {
+        statuses.push(agents.run(fx.request(Duration::from_secs(20))).await.status);
+    }
+    assert_eq!(
+        statuses,
+        [
+            AgentStatus::Completed,
+            AgentStatus::Failed(FailureClass::Crash),
+            AgentStatus::Failed(FailureClass::Reported),
+        ]
+    );
+    assert_eq!(fx.read("starts.work"), "3\n");
+    for k in 1..=3 {
+        assert_eq!(fx.read(&format!("prompt.work@{k}")), "do the work\n");
+    }
+    assert_eq!(fx.read("prompt.work.2"), "do the work\n");
+
+    // Without a start or attempt file, the node file decides.
+    fs::remove_file(fx.scenarios().join("work.2")).unwrap();
+    let result = agents.run(fx.request(Duration::from_secs(20))).await;
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::NoResult));
+    assert_eq!(fx.read("starts.work"), "4\n");
 }

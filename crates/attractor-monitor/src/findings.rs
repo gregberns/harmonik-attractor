@@ -444,6 +444,8 @@ mod tests {
             duration_ms: 1,
             transcript: "t".into(),
             status: "ok".into(),
+            agent_session_id: None,
+            continued: false,
         }
     }
 

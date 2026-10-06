@@ -33,6 +33,28 @@ pub struct Record {
     pub invocation_id: String,
 }
 
+/// The agent session an invocation runs in (design §1 Sessions).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Session {
+    /// Start a new session; the id is minted by the engine (`{session_id}`,
+    /// `PAS_SESSION_ID`).
+    New(String),
+    /// Continue the session with this id, as the agent reported it.
+    Continue(String),
+}
+
+impl Session {
+    pub fn id(&self) -> &str {
+        match self {
+            Self::New(id) | Self::Continue(id) => id,
+        }
+    }
+
+    pub fn is_continue(&self) -> bool {
+        matches!(self, Self::Continue(_))
+    }
+}
+
 /// One request from the engine to [`crate::Agents::run`].
 pub struct AgentRequest<'a> {
     pub selection: Selection,
@@ -55,6 +77,8 @@ pub struct AgentRequest<'a> {
     pub stderr: Option<PathBuf>,
     /// Where `Agents::run` writes the prompt file before the handler starts.
     pub prompt_file: Option<PathBuf>,
+    /// A new session, or the one to continue.
+    pub session: Session,
     /// Told when each process starts and once when the invocation ends.
     pub observer: Option<&'a dyn AgentObserver>,
     /// Cancelled when the Run is stopped: the handler stops the agent
@@ -75,6 +99,9 @@ pub struct Invocation<'a> {
     pub command_len: usize,
     /// The complete child environment; the handler uses exactly this map.
     pub env: BTreeMap<String, String>,
+    /// The session: `argv` already carries its flags (`session_args`,
+    /// `resume_args` or `resume_command`).
+    pub session: Session,
     pub prompt: &'a str,
     pub workdir: &'a Path,
     /// The request's timeout, else the profile's.
@@ -96,6 +123,7 @@ impl std::fmt::Debug for Invocation<'_> {
             .field("argv", &self.argv)
             .field("command_len", &self.command_len)
             .field("env", &self.env)
+            .field("session", &self.session)
             .field("prompt", &self.prompt)
             .field("workdir", &self.workdir)
             .field("timeout", &self.timeout)
@@ -125,6 +153,8 @@ pub struct Started {
     pub attempt: u32,
     pub profile: String,
     pub model: Option<String>,
+    /// The session id the invocation was started with (new or continued).
+    pub session_id: Option<String>,
     pub pid: u32,
     pub pgid: u32,
     pub host: Option<String>,
@@ -191,6 +221,11 @@ pub struct AgentResult {
     pub duration: Duration,
     /// For `Failed(Launch)` from a spawn error, the error's kind.
     pub launch_error: Option<io::ErrorKind>,
+    /// The session id the agent reported (Claude's `session_id`, Codex's
+    /// `thread_id`); `None` when it reported none.
+    pub agent_session_id: Option<String>,
+    /// Whether the invocation continued an earlier session.
+    pub continued: bool,
 }
 
 impl AgentResult {
@@ -210,6 +245,8 @@ impl AgentResult {
             exit: None,
             duration: Duration::ZERO,
             launch_error: None,
+            agent_session_id: None,
+            continued: false,
         }
     }
 }

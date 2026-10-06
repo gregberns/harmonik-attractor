@@ -83,6 +83,9 @@ pub enum PipelineEvent {
         model: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         host: Option<String>,
+        /// The agent session id the invocation was started with.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
         pid: u32,
         pgid: u32,
         transcript: String,
@@ -107,6 +110,12 @@ pub enum PipelineEvent {
         duration_ms: u64,
         transcript: String,
         status: String,
+        /// The session id the agent reported, if any.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_session_id: Option<String>,
+        /// Whether the invocation continued an earlier session.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        continued: bool,
     },
     /// `beads.select` read the Epic and all of its children (spec C3).
     EpicSnapshot {
@@ -236,6 +245,7 @@ impl PipelineEvent {
                 profile,
                 model,
                 host,
+                session_id,
                 pid,
                 pgid,
                 transcript,
@@ -248,6 +258,7 @@ impl PipelineEvent {
                 profile,
                 model,
                 host,
+                session_id,
                 pid,
                 pgid,
                 transcript,
@@ -265,6 +276,8 @@ impl PipelineEvent {
                 duration_ms,
                 transcript,
                 status,
+                agent_session_id,
+                continued,
             } => EventData::LlmInvoked {
                 invocation_id,
                 node_id,
@@ -277,6 +290,8 @@ impl PipelineEvent {
                 duration_ms,
                 transcript,
                 status,
+                agent_session_id,
+                continued,
             },
             Self::EpicSnapshot {
                 epic_id,
@@ -550,6 +565,7 @@ mod tests {
                 profile: "claude".into(),
                 model: Some("sonnet".into()),
                 host: Some("local".into()),
+                session_id: Some("sess-1".into()),
                 pid: 4321,
                 pgid: 4321,
                 transcript: "transcripts/inv.jsonl".into(),
@@ -563,6 +579,7 @@ mod tests {
                 profile: "codex".into(),
                 model: None,
                 host: None,
+                session_id: None,
                 pid: 4400,
                 pgid: 4400,
                 transcript: "transcripts/inv2.jsonl".into(),
@@ -580,6 +597,8 @@ mod tests {
                 duration_ms: 1200,
                 transcript: "transcripts/inv.jsonl".into(),
                 status: "success".into(),
+                agent_session_id: Some("sess-1".into()),
+                continued: true,
             },
             PipelineEvent::LlmInvoked {
                 invocation_id: "inv".into(),
@@ -593,6 +612,8 @@ mod tests {
                 duration_ms: 3000,
                 transcript: "transcripts/inv.jsonl".into(),
                 status: "timeout".into(),
+                agent_session_id: None,
+                continued: false,
             },
             PipelineEvent::EpicSnapshot {
                 epic_id: "e".into(),

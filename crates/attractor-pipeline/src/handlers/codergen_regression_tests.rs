@@ -575,6 +575,8 @@ fn stage(provider: ProviderAlias, labels: Option<[&str; 2]>) -> Stage {
             node.llm_model.clone(),
         ),
         invocation: Default::default(),
+        fidelity: None,
+        thread_id: None,
     };
     let graph = PipelineGraph::from_dot(attractor_dot::parse(&dot).unwrap()).unwrap();
     Stage {
@@ -624,6 +626,7 @@ async fn run_both(
                 attempt: 1,
                 cancel: CancellationToken::new(),
                 resume_note: None,
+                session: None,
             },
         )
         .await;

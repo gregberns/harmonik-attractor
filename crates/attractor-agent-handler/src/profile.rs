@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use crate::types::AgentRequest;
+use crate::types::{AgentRequest, Session};
 
 /// A named way to run an agent: which handler (`mechanism`), which command
 /// line, and its limits and environment. Built from config by
@@ -31,6 +31,36 @@ pub struct Profile {
     pub env: ProfileEnv,
     /// Refused unless the run allows test agents.
     pub test_only: bool,
+    /// Added (after `args`) when starting a new session; `{session_id}` is
+    /// the minted id.
+    pub session_args: Vec<String>,
+    /// How to continue a session; `None`: the profile can't resume.
+    pub resume: Option<Resume>,
+}
+
+/// A profile's resume form (design §2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Resume {
+    /// Replaces only `session_args`.
+    Args(Vec<String>),
+    /// Replaces `command` and `args`; a `{command}` element expands to the
+    /// profile's command.
+    Command(Vec<String>),
+}
+
+impl Profile {
+    /// Whether the profile can continue a session.
+    pub fn can_resume(&self) -> bool {
+        self.resume.is_some()
+    }
+}
+
+/// An invocation's argv and how many leading words are the program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedArgv {
+    pub argv: Vec<String>,
+    /// For a handler that puts a flag right after the program.
+    pub command_len: usize,
 }
 
 /// The child environment's changes: `remove` from the parent's, then `set`.
@@ -70,27 +100,63 @@ pub fn selected_reasoning<'a>(profile: &'a Profile, req: &'a AgentRequest<'_>) -
         .or(profile.reasoning.as_deref())
 }
 
-/// The profile's command, its args, the request's extra args, then the
-/// filled model args and reasoning args when a model and a reasoning level
-/// are selected. The handler appends its own flags after these.
+/// The argv for `req` (design §1, §2), before the handler's own flags:
+/// - a new session: command, args, filled `session_args`;
+/// - continuing with `resume_args`: command, args, filled `resume_args`;
+/// - continuing with `resume_command`: the filled `resume_command` (its
+///   `{command}` element expands to the profile's command);
+///
+/// then the request's extra args, the filled model args and reasoning args.
+pub fn resolve_argv(profile: &Profile, req: &AgentRequest<'_>) -> ResolvedArgv {
+    let id = req.session.id();
+    let fill_id = |t: &String| fill(t, "session_id", id);
+    let (mut argv, command_len): (Vec<String>, usize) = match (&req.session, &profile.resume) {
+        (Session::Continue(_), Some(Resume::Command(template))) => {
+            let mut argv = Vec::new();
+            let mut command_len = None;
+            for element in template {
+                if element == "{command}" {
+                    argv.extend(profile.command.iter().cloned());
+                    command_len = Some(argv.len());
+                } else {
+                    argv.push(fill_id(element));
+                }
+            }
+            let len = command_len.unwrap_or(argv.len());
+            (argv, len)
+        }
+        (session, resume) => {
+            let session_args = match (session, resume) {
+                (Session::Continue(_), Some(Resume::Args(args))) => args.as_slice(),
+                _ => profile.session_args.as_slice(),
+            };
+            let argv = profile
+                .command
+                .iter()
+                .chain(&profile.args)
+                .cloned()
+                .chain(session_args.iter().map(fill_id))
+                .collect();
+            (argv, profile.command.len())
+        }
+    };
+    argv.extend(req.extra_args.iter().cloned());
+    argv.extend(filled(
+        &profile.model_args,
+        "model",
+        selected_model(profile, req),
+    ));
+    argv.extend(filled(
+        &profile.reasoning_args,
+        "reasoning",
+        selected_reasoning(profile, req),
+    ));
+    ResolvedArgv { argv, command_len }
+}
+
+/// [`resolve_argv`]'s argv.
 pub fn argv(profile: &Profile, req: &AgentRequest<'_>) -> Vec<String> {
-    profile
-        .command
-        .iter()
-        .chain(&profile.args)
-        .chain(&req.extra_args)
-        .cloned()
-        .chain(filled(
-            &profile.model_args,
-            "model",
-            selected_model(profile, req),
-        ))
-        .chain(filled(
-            &profile.reasoning_args,
-            "reasoning",
-            selected_reasoning(profile, req),
-        ))
-        .collect()
+    resolve_argv(profile, req).argv
 }
 
 #[cfg(test)]
@@ -123,6 +189,7 @@ mod tests {
             transcript: None,
             stderr: None,
             prompt_file: None,
+            session: Session::New("sess-1".into()),
             observer: None,
             cancel: tokio_util::sync::CancellationToken::new(),
         }
@@ -142,7 +209,160 @@ mod tests {
             kill_grace: Duration::from_secs(10),
             env: ProfileEnv::default(),
             test_only: false,
+            session_args: vec![],
+            resume: None,
         }
+    }
+
+    fn with_session(session: Session) -> AgentRequest<'static> {
+        AgentRequest {
+            session,
+            ..request(Some("opus"), None, &["--x"])
+        }
+    }
+
+    fn sessioned(resume: Option<Resume>) -> Profile {
+        Profile {
+            session_args: vec!["--session-id".into(), "{session_id}".into()],
+            resume,
+            ..profile()
+        }
+    }
+
+    #[test]
+    fn a_new_session_adds_the_filled_session_args_after_args() {
+        let got = resolve_argv(
+            &sessioned(Some(Resume::Args(vec![
+                "--resume".into(),
+                "{session_id}".into(),
+            ]))),
+            &with_session(Session::New("abc".into())),
+        );
+        assert_eq!(
+            got.argv,
+            [
+                "bin/claude",
+                "--sub",
+                "--a",
+                "--session-id",
+                "abc",
+                "--x",
+                "--model",
+                "m=opus"
+            ]
+        );
+        assert_eq!(got.command_len, 2);
+    }
+
+    #[test]
+    fn continuing_with_resume_args_replaces_only_the_session_args() {
+        let got = resolve_argv(
+            &sessioned(Some(Resume::Args(vec![
+                "--resume".into(),
+                "{session_id}".into(),
+            ]))),
+            &with_session(Session::Continue("abc".into())),
+        );
+        assert_eq!(
+            got.argv,
+            [
+                "bin/claude",
+                "--sub",
+                "--a",
+                "--resume",
+                "abc",
+                "--x",
+                "--model",
+                "m=opus"
+            ]
+        );
+        assert_eq!(got.command_len, 2);
+    }
+
+    #[test]
+    fn continuing_with_resume_command_replaces_command_and_args() {
+        let template = |t: &[&str]| t.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // `{command}` expands in place to every command element.
+        let got = resolve_argv(
+            &sessioned(Some(Resume::Command(template(&[
+                "{command}",
+                "exec",
+                "resume",
+                "{session_id}",
+            ])))),
+            &with_session(Session::Continue("t-1".into())),
+        );
+        assert_eq!(
+            got.argv,
+            [
+                "bin/claude",
+                "--sub",
+                "exec",
+                "resume",
+                "t-1",
+                "--x",
+                "--model",
+                "m=opus"
+            ]
+        );
+        assert_eq!(got.command_len, 2);
+        // Without `{command}`, the whole resume command counts as the program.
+        let got = resolve_argv(
+            &sessioned(Some(Resume::Command(template(&[
+                "other",
+                "resume",
+                "{session_id}",
+            ])))),
+            &with_session(Session::Continue("t-1".into())),
+        );
+        assert_eq!(&got.argv[..3], ["other", "resume", "t-1"]);
+        assert_eq!(got.command_len, 3);
+    }
+
+    #[test]
+    fn a_profile_that_cant_resume_starts_new_args_even_if_asked_to_continue() {
+        let got = resolve_argv(
+            &sessioned(None),
+            &with_session(Session::Continue("abc".into())),
+        );
+        assert_eq!(&got.argv[3..5], ["--session-id", "abc"]);
+    }
+
+    #[test]
+    fn built_in_codex_inherited_with_a_command_resumes_with_that_command() {
+        let profiles = crate::AgentsConfig::builtin()
+            .unwrap()
+            .with_overrides(
+                &toml::from_str(
+                    r#"
+                    [mine]
+                    inherit_from = "codex"
+                    command = ["X", "--flag"]
+                    "#,
+                )
+                .unwrap(),
+            )
+            .resolve()
+            .unwrap();
+        let mine = profiles.iter().find(|p| p.name == "mine").unwrap();
+        let got = resolve_argv(mine, &with_session(Session::Continue("th-9".into())));
+        assert_eq!(
+            got.argv,
+            [
+                "X",
+                "--flag",
+                "exec",
+                "resume",
+                "th-9",
+                "--json",
+                "--skip-git-repo-check",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--x",
+                "--model",
+                "opus"
+            ]
+        );
+        assert_eq!(got.command_len, 2);
     }
 
     #[test]

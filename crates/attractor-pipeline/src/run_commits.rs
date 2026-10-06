@@ -70,6 +70,8 @@ pub(crate) struct AttemptCommit<'a> {
     pub node: &'a str,
     pub attempt: u32,
     pub record: AttemptRecord,
+    /// The agent session the attempt ran in, as the agent reported it.
+    pub session: Option<&'a str>,
 }
 
 /// `pas(<run-id>): <node> attempt <n> (<status>)`, a blank line, then the
@@ -85,6 +87,9 @@ pub(crate) fn attempt_message(commit: &AttemptCommit<'_>) -> String {
     );
     if let Some(class) = commit.record.class {
         message.push_str(&format!("Pas-Failure-Class: {}\n", class.as_str()));
+    }
+    if let Some(session) = commit.session {
+        message.push_str(&format!("Pas-Session: {session}\n"));
     }
     message
 }
@@ -379,6 +384,7 @@ mod tests {
                 status: AttemptStatus::Fail,
                 class: Some(FailureKind::Timeout),
             },
+            session: Some("sess-9"),
         };
         assert_eq!(
             attempt_message(&commit),
@@ -387,7 +393,8 @@ mod tests {
              Pas-Node: work\n\
              Pas-Attempt: 2\n\
              Pas-Status: fail\n\
-             Pas-Failure-Class: timeout\n"
+             Pas-Failure-Class: timeout\n\
+             Pas-Session: sess-9\n"
         );
         let success = AttemptCommit {
             record: AttemptRecord {

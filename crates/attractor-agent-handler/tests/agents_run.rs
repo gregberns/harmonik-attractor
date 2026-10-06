@@ -58,6 +58,8 @@ impl AgentHandler for Recorder {
             exit: None,
             duration: Duration::ZERO,
             launch_error: None,
+            agent_session_id: None,
+            continued: false,
         }
     }
 
@@ -121,6 +123,8 @@ fn profile(name: &str, mechanism: &str) -> Profile {
             set: BTreeMap::new(),
         },
         test_only: false,
+        session_args: vec![],
+        resume: None,
     }
 }
 
@@ -144,6 +148,7 @@ fn request<'a>(profile: &str, observer: Option<&'a dyn AgentObserver>) -> AgentR
         transcript: Some(PathBuf::from("/run/transcripts/inv-1.jsonl")),
         stderr: Some(PathBuf::from("/run/transcripts/inv-1.stderr.log")),
         prompt_file: None,
+        session: attractor_agent_handler::Session::New("sess-1".into()),
         observer,
         cancel: CancellationToken::new(),
     }
@@ -299,6 +304,7 @@ async fn started_reports_each_spawn_with_the_request_ids_and_paths() {
             attempt: 1,
             profile: "p".into(),
             model: Some("m1".into()),
+            session_id: Some("sess-1".into()),
             pid: 4242,
             pgid: 4242,
             host: Some("host-1".into()),

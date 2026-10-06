@@ -249,8 +249,9 @@ mcp_config_json = "{\"mcpServers\":{}}"
 
     assert_success(&output);
     let plugin = fs::canonicalize(fake.repo()).unwrap().join("plug");
+    // The minted session id, as the agent's environment had it.
+    let session = fake.env_logs()[0]["PAS_SESSION_ID"].clone();
     let expected = [
-        "--no-session-persistence",
         "--dangerously-skip-permissions",
         "--strict-mcp-config",
         "--disable-slash-commands",
@@ -266,6 +267,8 @@ mcp_config_json = "{\"mcpServers\":{}}"
         "{\"r\":{}}",
         "--plugin-dir",
         plugin.to_str().unwrap(),
+        "--session-id",
+        session.as_str(),
         "--allowedTools",
         "Read",
         "--max-budget-usd",

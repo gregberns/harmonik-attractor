@@ -73,6 +73,8 @@ struct ExecutionProgress {
     /// Set when resuming a checkpoint with an attempt in progress; consumed
     /// the first time that node is entered in this process.
     resuming_attempt: bool,
+    /// Thread key -> agent session id, as recorded in the checkpoint.
+    agent_sessions: std::collections::BTreeMap<String, String>,
 }
 
 struct CheckpointData<'a> {
@@ -111,6 +113,7 @@ impl CheckpointData<'_> {
         checkpoint.active_node_attempts = progress.active_node_attempts;
         checkpoint.active_attempt_number = progress.active_attempt_number;
         checkpoint.active_attempt_head = progress.active_attempt_head.clone();
+        checkpoint.agent_sessions = progress.agent_sessions.clone();
         save_checkpoint(&checkpoint, logs_root).await?;
         self.observers.emit(PipelineEvent::CheckpointSaved {
             node_id: current_node_id.to_string(),
@@ -603,6 +606,19 @@ impl PipelineExecutor {
                 handler_type: handler_type.to_string(),
             });
             let attempt_started = Instant::now();
+            // An agent node's session: the id recorded for its thread, and
+            // a cell for the id this attempt's agent reports.
+            let reported_session = std::sync::OnceLock::new();
+            let session = resolved
+                .agent
+                .is_some()
+                .then(|| crate::handler::SessionContext {
+                    prior: progress
+                        .agent_sessions
+                        .get(resolved.thread_key())
+                        .map(String::as_str),
+                    reported: &reported_session,
+                });
 
             let execution = handler.execute_configured(
                 node,
@@ -617,7 +633,8 @@ impl PipelineExecutor {
                     &self.cancel,
                     // Only the first attempt after an interrupted one.
                     resume_note.as_deref().filter(|_| attempt == first_attempt),
-                ),
+                )
+                .with_session(session),
                 configured.plan().graph(),
             );
             let result = if resolved.runs_through_agents() {
@@ -655,10 +672,27 @@ impl PipelineExecutor {
             .or(task_before);
             self.emit_run_commits(&node.id, workdir, head_before, task_id)
                 .await;
+            // Record the session the agent reported, whatever the attempt's
+            // result (Ok, Err or Cancelled), so a retry, a loop-back or a
+            // resume continues it.
+            let session_id = reported_session.into_inner();
+            if let Some(id) = &session_id {
+                progress
+                    .agent_sessions
+                    .insert(resolved.thread_key().to_string(), id.clone());
+                checkpoint.save(&node.id, progress).await?;
+            }
             // Record the attempt, whatever its result, as one commit in the
             // Run's worktree (after the agent's own commits).
             if let Some(sha) = self
-                .commit_attempt(configured, resolved, &node.id, attempt_number, &result)
+                .commit_attempt(
+                    configured,
+                    resolved,
+                    &node.id,
+                    attempt_number,
+                    &result,
+                    session_id.as_deref(),
+                )
                 .await?
             {
                 // The attempt is recorded: a resume compares against this
@@ -804,6 +838,7 @@ impl PipelineExecutor {
                 status: run_commits::AttemptStatus::Interrupted,
                 class: None,
             },
+            session: None,
         };
         let interrupted = run_commits::commit_attempt(&worktree.root, &commit)
             .await
@@ -825,6 +860,7 @@ impl PipelineExecutor {
         node_id: &str,
         attempt: u32,
         result: &Result<Outcome>,
+        session: Option<&str>,
     ) -> Result<Option<String>> {
         let Some(worktree) = configured.controls().run_worktree() else {
             return Ok(None);
@@ -843,6 +879,7 @@ impl PipelineExecutor {
             node: node_id,
             attempt,
             record,
+            session,
         };
         match run_commits::commit_attempt(&worktree.root, &commit).await {
             Ok(sha) => Ok(Some(sha)),
@@ -1044,6 +1081,7 @@ impl PipelineExecutor {
                 progress.active_node_attempts = cp.active_node_attempts;
                 progress.active_attempt_number = cp.active_attempt_number;
                 progress.active_attempt_head = cp.active_attempt_head;
+                progress.agent_sessions = cp.agent_sessions;
                 quality_loop_counters = cp.quality_loop_counters;
                 quality_last_footprint = cp.quality_last_footprint;
                 prev_node_id = cp.previous_node_id;

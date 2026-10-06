@@ -19,23 +19,39 @@ remove = [
     "CLAUDE_CODE_USE_VERTEX",
 ]
 
+# A node that runs again continues its session (design §1): the first run
+# gets `--session-id`, a retry or loop-back `--resume` with the same id.
+# Session files persist under `~/.claude`.
 [profiles.claude]
 mechanism = "claude-p"
 command = ["claude"]
 args = [
-    "--no-session-persistence",
     "--dangerously-skip-permissions",
     "--strict-mcp-config",
     "--disable-slash-commands",
 ]
+session_args = ["--session-id", "{session_id}"]
+resume_args = ["--resume", "{session_id}"]
 model_args = ["--model", "{model}"]
 reasoning_args = ["--effort", "{reasoning}"]
 
-# `codex-exec` appends `--cd <workdir>` and the prompt (positional, last).
+# `codex-exec` appends `--cd <workdir>` (not when continuing: `exec resume`
+# takes none) and the prompt (positional, last). Codex can't be given a
+# session id; it reports its `thread_id`, which a retry resumes. Session
+# files persist under `~/.codex`.
 [profiles.codex]
 mechanism = "codex-exec"
 command = ["codex"]
-args = ["exec", "--json", "--yolo", "--skip-git-repo-check", "--ephemeral"]
+args = ["exec", "--json", "--yolo", "--skip-git-repo-check"]
+resume_command = [
+    "{command}",
+    "exec",
+    "resume",
+    "{session_id}",
+    "--json",
+    "--skip-git-repo-check",
+    "--dangerously-bypass-approvals-and-sandbox",
+]
 model_args = ["--model", "{model}"]
 
 # `gemini` puts `--output-format <json|stream-json>` (probed with `--help`)

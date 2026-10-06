@@ -9,8 +9,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use attractor_agent_handler::{
-    AgentRequest, AgentResult, AgentStatus, Agents, CancellationToken, FailureClass, Profile,
-    ProfileEnv, Record, Selection,
+    builtin_profiles, AgentRequest, AgentResult, AgentStatus, Agents, CancellationToken,
+    FailureClass, Profile, Record, Selection, Session,
 };
 use attractor_handler_codex_exec::CodexExec;
 
@@ -21,32 +21,17 @@ fn fake_codex() -> PathBuf {
         .unwrap()
 }
 
-/// The built-in `codex` profile's shape, run with the fake.
+/// The built-in `codex` profile, run with the fake.
 fn profile() -> Profile {
+    let builtin = builtin_profiles()
+        .unwrap()
+        .into_iter()
+        .find(|p| p.name == "codex")
+        .unwrap();
     Profile {
-        name: "codex".into(),
-        mechanism: "codex-exec".into(),
         command: vec![fake_codex().to_string_lossy().into_owned()],
-        args: [
-            "exec",
-            "--json",
-            "--yolo",
-            "--skip-git-repo-check",
-            "--ephemeral",
-        ]
-        .map(String::from)
-        .to_vec(),
-        model: None,
-        model_args: vec!["--model".into(), "{model}".into()],
-        reasoning: None,
-        reasoning_args: vec![],
-        timeout: Duration::from_secs(600),
         kill_grace: Duration::from_secs(1),
-        env: ProfileEnv {
-            remove: vec!["OPENAI_API_KEY".into()],
-            set: BTreeMap::new(),
-        },
-        test_only: false,
+        ..builtin
     }
 }
 
@@ -87,6 +72,17 @@ impl Fixture {
     }
 
     async fn run(&self, scenario: &str, model: Option<&str>, timeout: Duration) -> AgentResult {
+        self.run_in(scenario, model, timeout, Session::New("sess-1".into()))
+            .await
+    }
+
+    async fn run_in(
+        &self,
+        scenario: &str,
+        model: Option<&str>,
+        timeout: Duration,
+        session: Session,
+    ) -> AgentResult {
         fs::write(self.scenarios().join("work"), format!("{scenario}\n")).unwrap();
         self.agents()
             .run(AgentRequest {
@@ -108,6 +104,7 @@ impl Fixture {
                 transcript: Some(self.dir.path().join("t.jsonl")),
                 stderr: Some(self.dir.path().join("t.stderr.log")),
                 prompt_file: Some(self.dir.path().join("t.prompt.txt")),
+                session,
                 observer: None,
                 cancel: CancellationToken::new(),
             })
@@ -187,7 +184,6 @@ async fn argv_is_todays_with_cd_and_the_prompt_last() {
             "--json",
             "--yolo",
             "--skip-git-repo-check",
-            "--ephemeral",
             "--model",
             "o3",
             "--cd",
@@ -229,10 +225,132 @@ async fn the_prompt_file_records_the_spawned_argv() {
             "--json",
             "--yolo",
             "--skip-git-repo-check",
-            "--ephemeral",
             "--cd",
             workdir.as_str(),
             "<prompt>",
         ]
     );
+}
+
+/// The argv section of the prompt file: what was spawned, program first.
+fn spawned_argv(fx: &Fixture) -> Vec<String> {
+    let text = fs::read_to_string(fx.dir.path().join("t.prompt.txt")).unwrap();
+    let start = text.find("argv:\n").unwrap() + "argv:\n".len();
+    let end = text[start..].find("\n\n").unwrap() + start;
+    text[start..end].lines().map(String::from).collect()
+}
+
+#[tokio::test]
+async fn a_new_session_reports_the_thread_id_codex_printed() {
+    let fx = Fixture::new();
+    let result = fx.run("scenario=success", None, LONG).await;
+    assert_eq!(result.status, AgentStatus::Completed, "{}", result.detail);
+    let pid: u32 = fx
+        .read("env.log")
+        .lines()
+        .find_map(|l| l.strip_prefix("FAKE_PID="))
+        .unwrap()
+        .parse()
+        .unwrap();
+    // The fake makes a fresh id from its pid; PAS can't choose Codex's.
+    let expected = format!("00000000-0000-4000-8000-{pid:012}");
+    assert_eq!(result.agent_session_id.as_deref(), Some(expected.as_str()));
+    assert!(!result.continued);
+    assert!(fx.read("env.log").contains("PAS_SESSION_ID=sess-1\n"));
+}
+
+#[tokio::test]
+async fn continuing_runs_exec_resume_with_the_profiles_program_and_no_cd() {
+    let fx = Fixture::new();
+    let result = fx
+        .run_in(
+            "scenario=success",
+            Some("o3"),
+            LONG,
+            Session::Continue("thread-0".into()),
+        )
+        .await;
+    assert_eq!(result.status, AgentStatus::Completed, "{}", result.detail);
+    let fake = fake_codex().to_string_lossy().into_owned();
+    assert_eq!(
+        spawned_argv(&fx),
+        [
+            fake.as_str(),
+            "exec",
+            "resume",
+            "thread-0",
+            "--json",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--model",
+            "o3",
+            "<prompt>",
+        ]
+    );
+    // The fake itself ran (its log has the start), with that argv.
+    let argv: Vec<String> = fx
+        .read("invocations.log")
+        .lines()
+        .skip(1)
+        .map(String::from)
+        .collect();
+    assert_eq!(argv, spawned_argv(&fx)[1..]);
+    assert_eq!(result.agent_session_id.as_deref(), Some("thread-0"));
+    assert!(result.continued);
+}
+
+#[tokio::test]
+async fn a_thread_that_is_not_found_is_a_crash_with_the_reason_on_stderr() {
+    let fx = Fixture::new();
+    let result = fx
+        .run_in(
+            "scenario=thread_not_found",
+            None,
+            LONG,
+            Session::Continue("thread-0".into()),
+        )
+        .await;
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::Crash));
+    assert_eq!(result.detail, "exited with exit status: 1");
+    assert!(
+        result
+            .stderr_tail
+            .contains("no rollout found for thread id thread-0"),
+        "{}",
+        result.stderr_tail
+    );
+    assert_eq!(result.agent_session_id, None);
+}
+
+#[tokio::test]
+async fn a_timed_out_attempt_still_reports_the_thread_id() {
+    let fx = Fixture::new();
+    let result = fx
+        .run_in(
+            "scenario=hang",
+            None,
+            Duration::from_millis(500),
+            Session::Continue("thread-0".into()),
+        )
+        .await;
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::Timeout));
+    assert_eq!(result.agent_session_id.as_deref(), Some("thread-0"));
+}
+
+#[tokio::test]
+async fn node_files_by_start_count_select_the_scenario() {
+    let fx = Fixture::new();
+    fs::write(fx.scenarios().join("work@2"), "scenario=crash\n").unwrap();
+    let first = fx.run("scenario=success", None, LONG).await;
+    let second = fx.run("scenario=success", None, LONG).await;
+    assert_eq!(first.status, AgentStatus::Completed, "{}", first.detail);
+    assert_eq!(second.status, AgentStatus::Failed(FailureClass::Crash));
+    assert_eq!(fx.read("starts.work"), "2\n");
+    for k in 1..=2 {
+        assert_eq!(
+            fx.read(&format!("prompt.work@{k}")),
+            "line one\nTask (work): do it\n"
+        );
+    }
+    assert_eq!(fx.read("prompt.work.1"), "line one\nTask (work): do it\n");
 }

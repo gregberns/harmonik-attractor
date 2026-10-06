@@ -3551,6 +3551,8 @@ impl crate::handler::ProviderNodeHandler for InvokingProvider {
             duration_ms: 5,
             transcript: attractor_journal::transcript_rel_path(&format!("inv-{}", node.id)),
             status: "success".into(),
+            agent_session_id: None,
+            continued: false,
         });
         Ok(Outcome::success("invoked"))
     }

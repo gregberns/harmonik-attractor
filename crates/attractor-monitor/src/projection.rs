@@ -473,6 +473,7 @@ impl RunView {
                 duration_ms,
                 transcript,
                 status,
+                ..
             } => {
                 self.cost_usd += cost_usd.unwrap_or(0.0);
                 self.invocations.push(InvocationView {
@@ -593,6 +594,8 @@ mod tests {
             duration_ms: 5,
             transcript: format!("t/{id}.jsonl"),
             status: "ok".into(),
+            agent_session_id: None,
+            continued: false,
         }
     }
 

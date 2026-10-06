@@ -33,16 +33,16 @@ pub use edge_selection::select_edge;
 pub use engine::{open_journal, PipelineExecutor, PipelineResult, DEFAULT_MAX_BUDGET_USD};
 pub use events::{EventEmitter, PipelineEvent};
 pub use execution_plan::{
-    ExecutionPlan, HandlerIdentity, MissingProviderPolicy, NodeInvocationPolicy, PlanCompilation,
-    ProviderAlias, ResolvedNode, ResolvedNodeKind, SemanticDiagnostic, SemanticDiagnosticKind,
-    SemanticError,
+    ExecutionPlan, Fidelity, HandlerIdentity, MissingProviderPolicy, NodeInvocationPolicy,
+    PlanCompilation, ProviderAlias, ResolvedNode, ResolvedNodeKind, SemanticDiagnostic,
+    SemanticDiagnosticKind, SemanticError,
 };
 pub use goal_gate::{check_goal_gates, enforce_goal_gates, GoalGateResult};
 pub use graph::{PipelineEdge, PipelineGraph, PipelineNode};
 pub use handler::{
     default_registry, default_registry_with_agents, default_registry_with_interviewer,
     ConditionalHandler, DynHandler, ExitHandler, HandlerExecutionContext, HandlerRegistry,
-    NodeHandler, ProviderNodeHandler, ResolvedNodeHandler, StartHandler,
+    NodeHandler, ProviderNodeHandler, ResolvedNodeHandler, SessionContext, StartHandler,
 };
 pub use handlers::wait_human::WaitHumanHandler;
 pub use handlers::{
@@ -66,6 +66,6 @@ pub use run_configuration::{
 pub use stylesheet::{apply_stylesheet, parse_stylesheet, Declaration, Rule, Selector, Stylesheet};
 pub use transforms::{apply_transforms, expand_variables};
 pub use validation::{
-    check_agents, validate, validate_beads_available, validate_or_raise, validate_plan, Diagnostic,
-    LintRule, Severity,
+    agent_sessions, check_agents, validate, validate_beads_available, validate_or_raise,
+    validate_plan, AgentSession, Diagnostic, LintRule, Severity,
 };

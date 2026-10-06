@@ -5,7 +5,7 @@
 //! the pipeline can resume from the last completed node instead of starting
 //! over.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -78,6 +78,11 @@ pub struct PipelineCheckpoint {
     /// against to tell whether the interrupted attempt left work.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_attempt_head: Option<String>,
+    /// Thread key (a node's `thread_id`, else its id) -> the agent session id
+    /// its agent last reported, so a node that runs again continues it
+    /// (ticket 08). Older checkpoints read it as empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub agent_sessions: BTreeMap<String, String>,
     /// Fingerprint of the compiled execution plan this checkpoint belongs to.
     ///
     /// On resume the engine recomputes the fingerprint of the current plan
@@ -119,6 +124,7 @@ impl PipelineCheckpoint {
             active_node_attempts: 0,
             active_attempt_number: None,
             active_attempt_head: None,
+            agent_sessions: BTreeMap::new(),
             execution_fingerprint: None,
         }
     }
@@ -157,6 +163,7 @@ impl PipelineCheckpoint {
             active_node_attempts: 0,
             active_attempt_number: None,
             active_attempt_head: None,
+            agent_sessions: BTreeMap::new(),
             execution_fingerprint,
         }
     }

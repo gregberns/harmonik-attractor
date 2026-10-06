@@ -1,6 +1,8 @@
 //! The `codex-exec` agent handler: runs the Codex CLI's `exec --json` (the
-//! profile holds `exec --json ...`) with `--cd <workdir> <prompt>` appended,
-//! as a local process, and classifies its end with [`parse::classify`].
+//! profile holds `exec --json ...`, or `exec resume <id> --json ...` when
+//! continuing) with `--cd <workdir>` (new sessions only) and the prompt
+//! appended, as a local process, and classifies its end with
+//! [`parse::classify`].
 
 mod parse;
 
@@ -13,7 +15,7 @@ use attractor_agent_handler::{
 };
 use attractor_agent_process::{run_local, LocalRun, Spawn};
 
-pub use parse::{classify, has_final_result, parse, summarize, Exited, Parsed};
+pub use parse::{classify, codex_thread_id, has_final_result, parse, summarize, Exited, Parsed};
 
 /// The handler for profiles with mechanism `codex-exec`.
 #[derive(Debug, Default, Clone, Copy)]
@@ -32,13 +34,17 @@ impl AgentHandler for CodexExec {
 
     /// The invocation's argv, then `--cd <workdir>` and the prompt, which
     /// Codex takes as its last, positional argument (`-p` is `--profile`).
+    /// Continuing leaves out `--cd`: `exec resume` takes none, and the
+    /// process already runs in the workdir.
     fn argv(&self, inv: &Invocation<'_>) -> Vec<String> {
         let mut argv = inv.argv.clone();
-        argv.extend([
-            "--cd".to_string(),
-            inv.workdir.to_string_lossy().into_owned(),
-            inv.prompt.to_string(),
-        ]);
+        if !inv.session.is_continue() {
+            argv.extend([
+                "--cd".to_string(),
+                inv.workdir.to_string_lossy().into_owned(),
+            ]);
+        }
+        argv.push(inv.prompt.to_string());
         argv
     }
 
@@ -87,27 +93,29 @@ impl AgentHandler for CodexExec {
                     started.elapsed(),
                 )
             }
-            LocalRun::TimedOut => AgentResult {
-                usage: partial_usage(&inv),
-                ..AgentResult::failed(
+            LocalRun::TimedOut => with_partial_output(
+                &inv,
+                AgentResult::failed(
                     id,
                     FailureClass::Timeout,
                     format!("timed out after {}ms", inv.timeout.as_millis()),
-                )
-            },
-            LocalRun::Cancelled => AgentResult {
-                status: AgentStatus::Cancelled,
-                usage: partial_usage(&inv),
-                ..AgentResult::failed(id, FailureClass::Crash, "cancelled")
-            },
-            LocalRun::WaitFailed(error) => AgentResult {
-                usage: partial_usage(&inv),
-                ..AgentResult::failed(
+                ),
+            ),
+            LocalRun::Cancelled => with_partial_output(
+                &inv,
+                AgentResult {
+                    status: AgentStatus::Cancelled,
+                    ..AgentResult::failed(id, FailureClass::Crash, "cancelled")
+                },
+            ),
+            LocalRun::WaitFailed(error) => with_partial_output(
+                &inv,
+                AgentResult::failed(
                     id,
                     FailureClass::Crash,
                     format!("execution failed: {error}"),
-                )
-            },
+                ),
+            ),
             LocalRun::LaunchFailed(error) => AgentResult {
                 launch_error: Some(error.kind()),
                 ..AgentResult::failed(id, FailureClass::Launch, error.to_string())
@@ -124,11 +132,18 @@ impl AgentHandler for CodexExec {
     }
 }
 
-/// Usage from the transcript written so far, for a run that ended without
-/// its full output (timeout, cancel, or a failed wait).
-fn partial_usage(inv: &Invocation<'_>) -> Usage {
-    inv.transcript
+/// `result` with the usage and thread id read from the transcript written
+/// so far, for a run that ended without its full output (timeout, cancel,
+/// or a failed wait).
+fn with_partial_output(inv: &Invocation<'_>, result: AgentResult) -> AgentResult {
+    let partial = inv
+        .transcript
         .and_then(|path| std::fs::read(path).ok())
-        .map(|bytes| summarize(&String::from_utf8_lossy(&bytes)))
-        .unwrap_or_default()
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .unwrap_or_default();
+    AgentResult {
+        usage: summarize(&partial),
+        agent_session_id: codex_thread_id(&partial),
+        ..result
+    }
 }

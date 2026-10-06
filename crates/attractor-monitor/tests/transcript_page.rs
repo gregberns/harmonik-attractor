@@ -414,5 +414,7 @@ fn llm(id: &str, node: &str) -> EventData {
         duration_ms: 1,
         transcript: format!("transcripts/{id}.jsonl"),
         status: "ok".into(),
+        agent_session_id: None,
+        continued: false,
     }
 }

@@ -9,10 +9,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::env::child_env;
-use crate::profile::{argv, selected_model, Profile};
+use crate::profile::{resolve_argv, selected_model, Profile};
 use crate::prompt_file::{prompt_file_text, write_prompt_file};
 use crate::types::{
-    AgentRequest, AgentResult, FailureClass, Invocation, Selection, Spawned, Started, Usage,
+    AgentRequest, AgentResult, AgentStatus, FailureClass, Invocation, Selection, Spawned, Started,
+    Usage,
 };
 
 /// How long past `timeout + kill_grace` `Agents` waits for a handler that
@@ -90,6 +91,10 @@ pub enum ConfigError {
         /// A `pas.toml` profile replaced the built-in one of this name.
         replaced_builtin: bool,
     },
+    /// A profile sets both `resume_args` and `resume_command`.
+    TwoResumeForms {
+        profile: String,
+    },
     BadDuration {
         profile: String,
         field: &'static str,
@@ -139,6 +144,10 @@ impl fmt::Display for ConfigError {
                 }
                 Ok(())
             }
+            Self::TwoResumeForms { profile } => write!(
+                f,
+                "agent profile {profile} sets both resume_args and resume_command; keep one"
+            ),
             Self::BadDuration {
                 profile,
                 field,
@@ -231,6 +240,12 @@ impl Agents {
 
     /// The longest `kill_grace` of any profile: how long a stopped agent
     /// may take to exit.
+    /// Whether `profile` can continue a session; `None` for an unknown
+    /// profile.
+    pub fn can_resume(&self, profile: &str) -> Option<bool> {
+        self.profiles.get(profile).map(Profile::can_resume)
+    }
+
     pub fn max_kill_grace(&self) -> Duration {
         self.profiles
             .values()
@@ -322,11 +337,18 @@ impl Agents {
                         observer.started(&started(&req, profile, index, spawn));
                     }
                 };
+                let resolved = resolve_argv(profile, &req);
                 let inv = Invocation {
                     invocation_id: &req.record.invocation_id,
-                    argv: argv(profile, &req),
-                    command_len: profile.command.len(),
-                    env: child_env(&self.parent_env, &profile.env, &req.record),
+                    argv: resolved.argv,
+                    command_len: resolved.command_len,
+                    env: child_env(
+                        &self.parent_env,
+                        &profile.env,
+                        &req.record,
+                        req.session.id(),
+                    ),
+                    session: req.session.clone(),
                     prompt: &req.prompt,
                     workdir: &req.workdir,
                     timeout,
@@ -373,6 +395,13 @@ impl Agents {
                 error.to_string(),
             ),
         };
+        // A Launch failure before any process started continued nothing.
+        let continued = req.session.is_continue()
+            && !matches!(result.status, AgentStatus::Failed(FailureClass::Launch));
+        let result = AgentResult {
+            continued,
+            ..result
+        };
         if let Some(observer) = req.observer {
             observer.finished(&result);
         }
@@ -415,6 +444,7 @@ fn started(req: &AgentRequest<'_>, profile: &Profile, spawn: u32, process: Spawn
         attempt: req.record.attempt,
         profile: profile.name.clone(),
         model: selected_model(profile, req).map(str::to_owned),
+        session_id: Some(req.session.id().to_string()),
         pid: process.pid,
         pgid: process.pgid,
         host: process.host,

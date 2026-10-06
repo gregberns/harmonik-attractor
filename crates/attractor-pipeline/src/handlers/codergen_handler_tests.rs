@@ -66,6 +66,7 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
         transcript: None,
         stderr: None,
         prompt_file: None,
+        session: attractor_agent_handler::Session::New("sess-1".into()),
         observer: None,
         cancel: CancellationToken::new(),
     };
@@ -78,6 +79,7 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
             argv: argv(&claude, &request),
             command_len: claude.command.len(),
             env: Default::default(),
+            session: request.session.clone(),
             prompt: "test prompt",
             workdir: Path::new("."),
             timeout: claude.timeout,
@@ -97,11 +99,12 @@ fn claude_argv_has_todays_flags_with_stream_json_output() {
         args,
         [
             "claude",
-            "--no-session-persistence",
             "--dangerously-skip-permissions",
             "--strict-mcp-config",
             "--disable-slash-commands",
             "--safe-mode",
+            "--session-id",
+            "sess-1",
             "--model",
             "sonnet",
             "-p",
@@ -208,7 +211,6 @@ fn codergen_claude_flags_fold_into_the_end_of_the_claude_profiles_args() {
         .resolve()
         .unwrap();
     let expected = [
-        "--no-session-persistence",
         "--dangerously-skip-permissions",
         "--strict-mcp-config",
         "--disable-slash-commands",
@@ -219,6 +221,12 @@ fn codergen_claude_flags_fold_into_the_end_of_the_claude_profiles_args() {
     for name in ["claude", "claude-opus"] {
         let profile = profiles.iter().find(|p| p.name == name).unwrap();
         assert_eq!(profile.args, expected, "{name}");
+        // The session flags stay their own field, after the folded args.
+        assert_eq!(
+            profile.session_args,
+            ["--session-id", "{session_id}"],
+            "{name}"
+        );
     }
 }
 
@@ -338,6 +346,8 @@ async fn codergen_dry_run_includes_provider() {
             node.llm_model.clone(),
         ),
         invocation: Default::default(),
+        fidelity: None,
+        thread_id: None,
     };
 
     let outcome = handler
@@ -366,6 +376,8 @@ async fn codergen_rejects_missing_provider_even_in_dry_run() {
         handler: crate::HandlerIdentity::Codergen,
         agent: crate::handlers::codergen_handler::test_agent(None, node.llm_model.clone()),
         invocation: Default::default(),
+        fidelity: None,
+        thread_id: None,
     };
 
     let error = handler
@@ -476,6 +488,8 @@ mod transcripts {
                 node.llm_model.clone(),
             ),
             invocation: Default::default(),
+            fidelity: None,
+            thread_id: None,
         };
         CodergenHandler::new(crate::handlers::tests::stub_agents(&program))
             .execute_with_controls(
@@ -493,6 +507,7 @@ mod transcripts {
                     attempt: 1,
                     cancel: CancellationToken::new(),
                     resume_note: None,
+                    session: None,
                 },
             )
             .await
@@ -922,6 +937,8 @@ mod transcripts {
                 node.llm_model.clone(),
             ),
             invocation: Default::default(),
+            fidelity: None,
+            thread_id: None,
         };
         CodergenHandler::new(crate::handlers::tests::stub_agents(&program))
             .execute_with_controls(
@@ -939,6 +956,7 @@ mod transcripts {
                     attempt: 1,
                     cancel: CancellationToken::new(),
                     resume_note: None,
+                    session: None,
                 },
             )
             .await
@@ -1419,6 +1437,8 @@ mod stream_formats {
                 node.llm_model.clone(),
             ),
             invocation: Default::default(),
+            fidelity: None,
+            thread_id: None,
         };
         CodergenHandler::new(crate::handlers::tests::stub_agents(&program))
             .execute_with_controls(
@@ -1436,6 +1456,7 @@ mod stream_formats {
                     attempt: 1,
                     cancel: CancellationToken::new(),
                     resume_note: None,
+                    session: None,
                 },
             )
             .await
@@ -1522,6 +1543,8 @@ mod claude_outcomes {
                 node.llm_model.clone(),
             ),
             invocation: Default::default(),
+            fidelity: None,
+            thread_id: None,
         };
         agent_outcome(
             result,
@@ -1787,4 +1810,21 @@ mod claude_outcomes {
             handler_error("Failed to spawn Claude Code: unknown agent profile claude")
         );
     }
+}
+
+#[test]
+fn choose_session_continues_only_full_with_a_recorded_id() {
+    let mint = || "minted".to_string();
+    assert_eq!(
+        choose_session(Fidelity::Full, Some("prior"), mint),
+        Session::Continue("prior".into())
+    );
+    assert_eq!(
+        choose_session(Fidelity::Full, None, mint),
+        Session::New("minted".into())
+    );
+    assert_eq!(
+        choose_session(Fidelity::Fresh, Some("prior"), mint),
+        Session::New("minted".into())
+    );
 }
