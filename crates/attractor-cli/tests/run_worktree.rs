@@ -467,3 +467,102 @@ fn second_run_of_same_pipeline_is_refused_before_any_worktree() {
     fs::write(wt.join("go"), "").unwrap();
     assert!(a.wait().success());
 }
+
+/// `edit` (fake `edit_commit`) -> `gate` (waits for `go`) -> `check`
+/// (sees the edit, writes `seen`).
+fn edit_gate_check() -> String {
+    format!(
+        r#"digraph G {{
+            start [shape="Mdiamond"]
+            edit [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=edit_commit"]
+            gate [shape="parallelogram", tool_command="touch at-gate; {wait}"]
+            check [shape="parallelogram", tool_command="test -f fake-edit.txt && echo ok > seen"]
+            done [shape="Msquare"]
+            start -> edit -> gate -> check -> done
+        }}"#,
+        wait = wait_for_go!()
+    )
+}
+
+/// Starts `pas run` with `extra`, waits for `gate`, stops the Run and lets
+/// `gate` finish; returns the worktree the Run stopped in.
+fn run_until_stopped_at_gate(fake: &FakeAgent, extra: &[&str]) -> PathBuf {
+    let mut run = Spawned(fake.command(&edit_gate_check(), extra).spawn().unwrap());
+    let wt = wait_for_worktree(fake);
+    wait_until("gate to start", || {
+        wt.join("at-gate").exists().then_some(())
+    });
+    let run_id = fake.run_meta()["run_id"].as_str().unwrap().to_string();
+    let stop = std::process::Command::new(env!("CARGO_BIN_EXE_pas"))
+        .args(["stop", &run_id])
+        .env("PAS_STATE_DIR", fake.root().join("state"))
+        .current_dir(fake.root())
+        .output()
+        .unwrap();
+    assert!(stop.status.success(), "{}", stderr(&stop));
+    fs::write(wt.join("go"), "").unwrap();
+    assert_eq!(run.wait().code(), Some(0), "a stopped Run exits 0");
+    assert!(!wt.join("seen").exists(), "check ran before the stop");
+    wt
+}
+
+#[test]
+fn resume_continues_in_the_same_worktree() {
+    let fake = FakeAgent::new();
+    let wt = run_until_stopped_at_gate(&fake, &[]);
+    let before = fake.run_meta();
+    // Dirt after the Run started: a resume does not check it again.
+    fs::write(fake.repo().join("later"), "dirt\n").unwrap();
+
+    let output = fake.run_with(&edit_gate_check(), &[]);
+    assert_success(&output);
+
+    assert_eq!(fake.run_meta(), before, "run.json is unchanged");
+    assert!(
+        !stderr(&output).contains("uncommitted"),
+        "{}",
+        stderr(&output)
+    );
+    assert_eq!(fake.worktree(), wt);
+    assert_eq!(fs::read_to_string(wt.join("seen")).unwrap(), "ok\n");
+    assert_eq!(
+        fs::read_dir(fake.repo().join(".pas/worktrees"))
+            .unwrap()
+            .count(),
+        1
+    );
+    assert_eq!(fake.attempts("edit_commit"), 1);
+    assert_eq!(
+        fake.git_in(&wt, &["log", "--format=%s"])
+            .matches("fake-claude edit")
+            .count(),
+        1
+    );
+    assert_eq!(fake.events_of("RunStarted").len(), 1);
+}
+
+#[test]
+fn resume_ignores_a_changed_worktree_root() {
+    let fake = FakeAgent::new();
+    let root = fake.root().join("first-root");
+    let wt = run_until_stopped_at_gate(&fake, &["--worktree-root", root.to_str().unwrap()]);
+    assert!(wt.starts_with(canonical(&root)), "{}", wt.display());
+
+    let output = fake.run_with(&edit_gate_check(), &[]);
+    assert_success(&output);
+
+    assert_eq!(fake.worktree(), wt);
+    assert_eq!(fs::read_to_string(wt.join("seen")).unwrap(), "ok\n");
+    let err = stderr(&output);
+    assert!(
+        err.contains("worktree") && err.contains(wt.to_str().unwrap()),
+        "{err}"
+    );
+    assert!(!fake.repo().join(".pas/worktrees").exists());
+    assert_eq!(
+        fake.git(&["worktree", "list", "--porcelain"])
+            .matches("worktree ")
+            .count(),
+        2
+    );
+}

@@ -907,14 +907,15 @@ async fn prepare_run(
     }
 
     // Then the Run's worktree (created or reused), then its Worktree lock.
+    let request = run_worktree::PlaceRequest {
+        source: &workdir_abs,
+        run_id: &run_id,
+        base: invocation.base.as_deref(),
+        root: configured.controls().worktree_root().value().as_deref(),
+        dry_run: *configured.controls().dry_run().value(),
+    };
     let place = if is_new_run {
-        run_worktree::place_new_run(&run_worktree::PlaceRequest {
-            source: &workdir_abs,
-            run_id: &run_id,
-            base: invocation.base.as_deref().unwrap_or("HEAD"),
-            root: configured.controls().worktree_root().value().as_deref(),
-            dry_run: *configured.controls().dry_run().value(),
-        })
+        run_worktree::place_new_run(&request)
     } else {
         let recorded = attractor_journal::read_run_meta(run_dir.path()).map_err(|e| {
             setup(&format!(
@@ -922,7 +923,7 @@ async fn prepare_run(
                 run_dir.run_json().display()
             ))
         })?;
-        run_worktree::place_resumed_run(&workdir_abs, recorded_worktree(&recorded))
+        run_worktree::place_resumed_run(&request, recorded_worktree(&recorded))
     }
     .map_err(|e| SetupError::new(e.code(), e))?;
     // The default logs folder is `.pas/logs/..` under the cwd: keep it out

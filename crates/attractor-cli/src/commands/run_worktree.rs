@@ -12,6 +12,8 @@ use std::process::Command;
 const BRANCH_PREFIX: &str = "pas/run/";
 
 /// The folder pas keeps its own files in, at the project root.
+/// The base of a new Run's branch when `--base` is not given.
+pub(crate) const DEFAULT_BASE: &str = "HEAD";
 pub(crate) const PAS_DIR: &str = ".pas";
 
 /// Why the Run's worktree could not be prepared.
@@ -212,8 +214,8 @@ pub(crate) struct PlaceRequest<'a> {
     /// The caller's workdir, canonical.
     pub source: &'a Path,
     pub run_id: &'a str,
-    /// The base ref (`--base`, default `HEAD`).
-    pub base: &'a str,
+    /// `--base`; a new Run defaults to [`DEFAULT_BASE`].
+    pub base: Option<&'a str>,
     /// `--worktree-root` or `pas.toml`'s; `None` uses the default.
     pub root: Option<&'a Path>,
     /// A dry run starts no agent, so it works in place and creates nothing.
@@ -234,7 +236,8 @@ pub(crate) fn place_new_run(request: &PlaceRequest<'_>) -> Result<RunPlace, Work
     let Some(top) = source_top(request.source) else {
         return Ok(in_place(vec![not_a_repo_warning(request.source)]));
     };
-    let base_sha = resolve_base(&top, request.base)?;
+    let base = request.base.unwrap_or(DEFAULT_BASE);
+    let base_sha = resolve_base(&top, base)?;
     let mut warnings = Vec::new();
     if is_dirty(&top)? {
         warnings.push(dirty_warning(&top));
@@ -253,7 +256,7 @@ pub(crate) fn place_new_run(request: &PlaceRequest<'_>) -> Result<RunPlace, Work
     let wanted = RunWorktree {
         path: worktree_path(&root, request.run_id),
         branch: branch_name(request.run_id),
-        base: request.base.to_string(),
+        base: base.to_string(),
         base_sha,
     };
     let path = create_or_reuse(&top, &wanted)?;
@@ -267,9 +270,10 @@ pub(crate) fn place_new_run(request: &PlaceRequest<'_>) -> Result<RunPlace, Work
 /// Place a resumed Run in the worktree its `run.json` recorded, whatever
 /// the flags say now; a Run recorded without one works in place.
 pub(crate) fn place_resumed_run(
-    source: &Path,
+    request: &PlaceRequest<'_>,
     recorded: Option<RunWorktree>,
 ) -> Result<RunPlace, WorktreeError> {
+    let source = request.source;
     let Some(recorded) = recorded else {
         return Ok(RunPlace {
             workdir: source.to_path_buf(),
@@ -281,12 +285,46 @@ pub(crate) fn place_resumed_run(
         workdir: source.to_path_buf(),
         top: recorded.path.clone(),
     })?;
+    let root = request
+        .root
+        .map(canonical)
+        .unwrap_or_else(|| default_worktree_root(&top));
+    let warnings = resume_differences(
+        &recorded,
+        request.base,
+        &worktree_path(&root, request.run_id),
+    );
     let path = create_or_reuse(&top, &recorded)?;
     Ok(RunPlace {
         workdir: run_workdir(&path, &top, source)?,
         worktree: Some(RunWorktree { path, ..recorded }),
-        warnings: Vec::new(),
+        warnings,
     })
+}
+
+/// A resume keeps the Run's recorded worktree and base: one warning for
+/// each setting that now asks for something else. `base` is `None` when
+/// none was given.
+pub(crate) fn resume_differences(
+    recorded: &RunWorktree,
+    base: Option<&str>,
+    wanted_path: &Path,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if wanted_path != recorded.path {
+        warnings.push(format!(
+            "resuming in the Run's worktree {}, not {}",
+            recorded.path.display(),
+            wanted_path.display()
+        ));
+    }
+    if let Some(base) = base.filter(|base| *base != recorded.base) {
+        warnings.push(format!(
+            "resuming from the Run's base {} ({}), not {base}",
+            recorded.base, recorded.base_sha
+        ));
+    }
+    warnings
 }
 
 // --- the shell: `git` and the file system ---
@@ -539,5 +577,29 @@ mod tests {
             std::fs::read_to_string(pas.join(".gitignore")).unwrap(),
             "mine\n"
         );
+    }
+
+    fn recorded() -> RunWorktree {
+        RunWorktree {
+            path: PathBuf::from("/wt/r1"),
+            branch: BRANCH.to_string(),
+            base: "main".to_string(),
+            base_sha: "abc123".to_string(),
+        }
+    }
+
+    #[test]
+    fn resume_with_the_recorded_settings_has_no_warning() {
+        let warnings = resume_differences(&recorded(), Some("main"), Path::new("/wt/r1"));
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(resume_differences(&recorded(), None, Path::new("/wt/r1")).is_empty());
+    }
+
+    #[test]
+    fn resume_names_each_differing_setting() {
+        let warnings = resume_differences(&recorded(), Some("dev"), Path::new("/other/r1"));
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert!(warnings[0].contains("/wt/r1") && warnings[0].contains("/other/r1"));
+        assert!(warnings[1].contains("main") && warnings[1].contains("dev"));
     }
 }
