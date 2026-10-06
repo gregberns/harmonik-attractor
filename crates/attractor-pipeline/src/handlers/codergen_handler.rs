@@ -358,16 +358,17 @@ impl CodergenHandler {
             _ => None,
         };
         if let Some(agent) = &resolved.agent {
+            let profile_model = self
+                .agents
+                .profile(&agent.profile)
+                .and_then(|p| p.model.as_deref());
+            let selection = Selection {
+                profile: agent.profile.clone(),
+                model: select_model(agent.model.as_deref(), profile_model, graph_model),
+                reasoning: agent.reasoning.clone(),
+            };
             return self
-                .run_claude(
-                    node,
-                    resolved,
-                    graph,
-                    full_prompt,
-                    agent,
-                    graph_model,
-                    controls,
-                )
+                .run_claude(node, resolved, graph, full_prompt, selection, controls)
                 .await;
         }
         // Resolve model: node attribute, then graph-level fallback
@@ -574,23 +575,19 @@ impl CodergenHandler {
         ))
     }
 
-    /// An agent node: one invocation of its profile through `Agents`.
+    /// An agent node: one invocation of its profile through `Agents`, with
+    /// the model already resolved (see [`select_model`]).
     async fn run_claude(
         &self,
         node: &PipelineNode,
         resolved: &ResolvedNode,
         graph: &PipelineGraph,
         prompt: String,
-        agent: &Selection,
-        graph_model: Option<&str>,
+        selection: Selection,
         controls: CodergenExecutionControls<'_>,
     ) -> Result<Outcome> {
-        let profile = self.agents.profile(&agent.profile);
-        let model = select_model(
-            agent.model.as_deref(),
-            profile.and_then(|p| p.model.as_deref()),
-            graph_model,
-        );
+        let profile_name = selection.profile.clone();
+        let profile = self.agents.profile(&profile_name);
         // One id names the Model Invocation everywhere: `LlmInvoked`, the
         // Transcript file and `PAS_INVOCATION_ID`.
         let invocation_id = attractor_journal::new_invocation_id();
@@ -605,8 +602,9 @@ impl CodergenHandler {
             (Some(events), Some(_)) => Some(StartedJournal { events }),
             _ => None,
         };
-        let summarize =
-            |stdout: &str| invocation_usage(&self.agents.transcript_usage(&agent.profile, stdout));
+        let summarize = |stdout: &str| {
+            invocation_usage(&self.agents.transcript_usage(&profile_name, stdout))
+        };
         // Armed before the agent starts: if the engine's outer deadline drops
         // this future, `Drop` still emits `LlmInvoked` with status `timeout`.
         let invocation = match (controls.events, &controls.run_dir) {
@@ -617,7 +615,7 @@ impl CodergenHandler {
                 invocation_id: invocation_id.clone(),
                 node_id: node.id.clone(),
                 provider: LlmProvider::Claude,
-                model_requested: model.clone(),
+                model_requested: selection.model.clone(),
                 started: Instant::now(),
                 emitted: false,
             }),
@@ -627,11 +625,7 @@ impl CodergenHandler {
         let result = self
             .agents
             .run(AgentRequest {
-                selection: Selection {
-                    profile: agent.profile.clone(),
-                    model,
-                    reasoning: agent.reasoning.clone(),
-                },
+                selection,
                 prompt,
                 extra_args: controls
                     .claude
