@@ -225,15 +225,15 @@ impl FakeAgent {
 
     /// `pas run` like [`FakeAgent::run`], with `extra` arguments.
     pub fn run_with(&self, dot: &str, extra: &[&str]) -> Output {
-        self.command(dot, extra).output().unwrap()
+        self.command_with(dot, extra).output().unwrap()
     }
 
     /// The `pas run` command [`FakeAgent::run_with`] runs, to spawn it.
-    pub fn command(&self, dot: &str, extra: &[&str]) -> Command {
+    pub fn command_with(&self, dot: &str, extra: &[&str]) -> Command {
         self.command_in(dot, &self.repo(), extra)
     }
 
-    /// [`FakeAgent::command`] with `--workdir <workdir>`.
+    /// [`FakeAgent::command_with`] with `--workdir <workdir>`.
     pub fn command_in(&self, dot: &str, workdir: &Path, extra: &[&str]) -> Command {
         let mut command = self.pas_run(dot);
         command

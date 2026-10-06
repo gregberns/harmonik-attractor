@@ -483,7 +483,7 @@ fn wait_for_worktree(fake: &FakeAgent) -> PathBuf {
 fn second_run_of_same_pipeline_is_refused_before_any_worktree() {
     let fake = FakeAgent::new();
     let dot = tool_node(wait_for_go!());
-    let mut a = Spawned(fake.command(&dot, &[]).spawn().unwrap());
+    let mut a = Spawned(fake.command_with(&dot, &[]).spawn().unwrap());
     let wt = wait_for_worktree(&fake);
 
     let b = fake.run_with(&dot, &["--json"]);
@@ -532,7 +532,11 @@ fn edit_gate_check() -> String {
 /// Starts `pas run` with `extra`, waits for `gate`, stops the Run and lets
 /// `gate` finish; returns the worktree the Run stopped in.
 fn run_until_stopped_at_gate(fake: &FakeAgent, extra: &[&str]) -> PathBuf {
-    let mut run = Spawned(fake.command(&edit_gate_check(), extra).spawn().unwrap());
+    let mut run = Spawned(
+        fake.command_with(&edit_gate_check(), extra)
+            .spawn()
+            .unwrap(),
+    );
     let wt = wait_for_worktree(fake);
     wait_until("gate to start", || {
         wt.join("at-gate").exists().then_some(())
