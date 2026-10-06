@@ -198,8 +198,11 @@ supported provider CLI versions:
 - The Claude Code and Codex CLI minimums are the versions PAS was verified
   against. Older versions may work but are not supported.
 - Gemini CLI 0.11.0 is the first release with `--output-format stream-json`.
-  PAS runs `gemini --help` once per `pas` process to check for it. If the check
-  fails for any reason, PAS uses `--output-format json`.
+  PAS runs the profile's whole command with `--help` once per command per
+  `pas` process to check for it, as it runs the agent: in the workdir, with
+  the agent's environment, stdin from `/dev/null`, in its own process group
+  (killed after 10 s). If the check fails for any reason, PAS uses
+  `--output-format json`.
 - Input tokens include cached prompt tokens for every provider.
 - A value the provider does not report is recorded as unknown. A missing value
   never fails the stage.
@@ -239,10 +242,36 @@ gets them too. The argv is the same as before profiles existed.
 #### Agent profiles (`[agents.<name>]` in `pas.toml`)
 
 A codergen node runs through a named **agent profile**: `agent="<profile>"`
-on the node, or `llm_provider="claude"` (and its alias `anthropic`), which is
-the profile `claude`. Codex and Gemini nodes do not use profiles yet. PAS
-ships the profiles in its built-in `agents.toml`; today that is only
-`claude`. A project replaces a profile by name, or adds one, in `pas.toml`:
+on the node, or `llm_provider`, which names a built-in profile:
+`claude`/`anthropic` is `claude`, `codex`/`openai` is `codex`,
+`gemini`/`google` is `gemini`. PAS ships these three in its built-in
+`agents.toml`:
+
+| Profile | Mechanism (handler) | Command and args | The handler adds |
+|---------|---------------------|------------------|------------------|
+| `claude` | `claude-p` | `claude --no-session-persistence --dangerously-skip-permissions --strict-mcp-config --disable-slash-commands` (+ `[codergen.claude]` flags) | `-p <prompt> --output-format stream-json --verbose` |
+| `codex` | `codex-exec` | `codex exec --json --yolo --skip-git-repo-check --ephemeral` | `--cd <workdir> <prompt>` |
+| `gemini` | `gemini` | `gemini --approval-mode yolo` | `--output-format <json\|stream-json>` right after the command, and `<prompt>` last |
+
+A model is added as `--model <model>` for all three; only `claude` takes a
+reasoning level (`--effort <level>`). Every agent node runs the same way:
+stdin is `/dev/null`, the environment is the profile's (below; the
+`PAS_*` ids are added), stdout and stderr go to the Run's `transcripts/`,
+and a timeout or stop gets TERM, `kill_grace`, then KILL. `LlmInvoked`
+records the profile name as `provider`.
+
+> **Codex and `OPENAI_API_KEY`.** The default `env.remove` strips
+> `OPENAI_API_KEY`, so Codex bills the logged-in subscription, never an
+> inherited API key. A project that logs Codex in with an API key adds a
+> profile that sets it, and selects it with `agent="codex-api"`:
+>
+> ```toml
+> [agents.codex-api]
+> inherit_from = "codex"
+> env.set = { OPENAI_API_KEY = "sk-..." }
+> ```
+
+A project replaces a profile by name, or adds one, in `pas.toml`:
 
 ```toml
 [agents.claude-opus]
@@ -1316,7 +1345,8 @@ waits for the agent to exit, journals `AttemptEnded` with reason `stopped` and
 exits 143; the stopped stage records no `StageFailed`, and resuming the Run runs
 it again.
 
-Codex and Gemini nodes still inherit `pas`'s environment and stdin unchanged.
+Codex and Gemini nodes run the same way, through their profiles (see
+[Agent profiles](#agent-profiles-agentsname-in-pastoml)).
 
 ---
 

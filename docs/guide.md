@@ -936,17 +936,23 @@ digraph Pipeline {
 
 ### Provider-specific behavior
 
-Each provider has different CLI flags and output formats. PAS handles this automatically:
+Each provider runs through its built-in agent profile (`claude`, `codex`, `gemini`), whose handler knows the CLI's flags and output format:
 
-- **Claude**: Uses `--output-format stream-json --verbose` and `-p` for the prompt. Returns streaming JSON events; PAS uses the final `result` event.
-- **Codex**: Uses `codex exec --json --yolo` with the prompt as a positional argument. Returns streaming JSONL events; PAS extracts the last completed agent-message item.
-- **Gemini**: Uses `--output-format json --approval-mode yolo` with the prompt as a positional argument. When `gemini --help` lists `stream-json` (Gemini CLI 0.11.0 and later), PAS passes `--output-format stream-json` in place of `json`. PAS does not pass a `--sandbox` flag to Gemini. Returns structured JSON, or streaming JSON events from which PAS joins the assistant messages.
+- **Claude** (`claude-p`): Uses `--output-format stream-json --verbose` and `-p` for the prompt. Returns streaming JSON events; PAS uses the final `result` event.
+- **Codex** (`codex-exec`): Uses `codex exec --json --yolo --skip-git-repo-check --ephemeral --cd <workdir>` with the prompt as the last, positional argument. Returns streaming JSONL events; PAS extracts the last completed agent-message item.
+- **Gemini** (`gemini`): Uses `--output-format json --approval-mode yolo` with the prompt as a positional argument, last. When the profile's command with `--help` lists `stream-json` (Gemini CLI 0.11.0 and later), PAS passes `--output-format stream-json` in place of `json`. PAS does not pass a `--sandbox` flag to Gemini. Returns structured JSON, or streaming JSON events from which PAS joins the assistant messages.
 
-During `pas run`, every provider invocation's raw stdout is also copied, line by line as it arrives, to a Transcript at `runs/<run-id>/transcripts/<invocation-id>.jsonl` in the Pipeline's log folder. A Claude invocation's stderr is written the same way to `transcripts/<invocation-id>.stderr.log`.
+Every agent runs with stdin from `/dev/null` and the profile's environment: the default `env.remove` strips provider API keys (including `OPENAI_API_KEY`), so agents bill the logged-in subscription. See [Agent profiles](cli-reference.md#agent-profiles-agentsname-in-pastoml).
 
-When a Claude agent process starts, before any of its output reaches the Transcript, PAS appends an `LlmStarted` Event: `invocation_id`, `spawn` (1 for the first process of the invocation), `node_id`, `attempt` (from 1), `profile` (`claude`), the requested `model` (left out when none), `host`, `pid` and `pgid` of the agent process, and the `transcript` and `stderr` paths relative to the Run folder. To find which node and process a growing Transcript belongs to, look up the `LlmStarted` with the same `invocation_id` (the Transcript's file name). A Claude CLI that cannot be started records no `LlmStarted`.
+During `pas run`, every agent invocation's raw stdout is also copied, line by line as it arrives, to a Transcript at `runs/<run-id>/transcripts/<invocation-id>.jsonl` in the Pipeline's log folder, and its stderr the same way to `transcripts/<invocation-id>.stderr.log`.
 
-On a timeout or a stop, a Claude agent gets TERM, a 10 s grace, then KILL. A stopped invocation's `LlmInvoked` has status `timeout`.
+When an agent process starts, before any of its output reaches the Transcript, PAS appends an `LlmStarted` Event: `invocation_id`, `spawn` (1 for the first process of the invocation), `node_id`, `attempt` (from 1), `profile` (e.g. `claude`, `codex`), the requested `model` (left out when none), `host`, `pid` and `pgid` of the agent process, and the `transcript` and `stderr` paths relative to the Run folder. To find which node and process a growing Transcript belongs to, look up the `LlmStarted` with the same `invocation_id` (the Transcript's file name). An agent that cannot be started records no `LlmStarted`. `LlmInvoked`'s `provider` is the profile name.
+
+On a timeout or a stop, an agent gets TERM, its profile's `kill_grace` (built-in 10 s), then KILL. A stopped invocation's `LlmInvoked` has status `timeout`.
+
+### Adding an agent handler
+
+An agent mechanism is one crate implementing `AgentHandler` from `attractor-agent-handler` (see `attractor-handler-codex-exec` for a small one): `mechanism()` names it, `argv()` adds the handler's own flags to the profile's argv, `run()` starts the process (through `attractor-agent-process`'s `run_local`) and classifies its end with a failure table (`Completed`, `Reported`, `Timeout`, `Crash`, `NoResult`, `Launch`), and `transcript_usage()` reads tokens and cost from its output. Register it with one line in `handlers()` in `crates/attractor-cli/src/agents.rs`, and add a profile with `mechanism = "<name>"`, built in (`agents.toml`) or in a project's `pas.toml`.
 
 When the provider process exits, fails, or times out, PAS appends one `LlmInvoked` Event for that invocation to the Run Journal (`runs/<run-id>/events.jsonl`). It records the provider (`claude`, `codex` or `gemini`), the requested model (the node's `llm_model`, else the graph's `model`; left out when neither is set), the model, input and output tokens, and cost that the provider's output reported (each left out when unknown), `duration_ms`, the Transcript path relative to the Run folder, and a `status` of `success`, `failed` or `timeout`. A dry run, or a provider CLI that cannot be started, records no `LlmInvoked`.
 

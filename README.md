@@ -254,6 +254,8 @@ Set `PAS_STATE_DIR` to relocate the Run Index and Monitor Plan workspaces (defau
 | `attractor-agent-handler` | The agent handler interface, agent profiles and `Agents`, the registry the engine runs agents through |
 | `attractor-agent-process` | Runs an agent as a local process: environment, stdin, process group, Transcript, timeout |
 | `attractor-handler-claude-p` | The `claude-p` handler: Claude Code `-p` with stream-json output and its failure table |
+| `attractor-handler-codex-exec` | The `codex-exec` handler: Codex CLI `exec --json` with JSONL output and its failure table |
+| `attractor-handler-gemini` | The `gemini` handler: Gemini CLI with `json`/`stream-json` output (probed with `--help`) and its failure table |
 | `attractor-pipeline` | Pipeline graph, engine, handlers, validation, stylesheets |
 | `attractor-cli` | CLI binary — `pas` (`run`, `validate`, `info`, `plan`, `decompose`, `scaffold`, `generate`, `launch`, `runs`, `answer`, `stop`, `kill`, `monitor`) |
 | `attractor-journal` | Run Journal, Run folder layout and Run Index |

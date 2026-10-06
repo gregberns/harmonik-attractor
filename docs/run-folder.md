@@ -93,7 +93,7 @@ per Pipeline.
 | `<stem>-<hash>/runs/<run-id>/events.jsonl` | JSON Lines | `pas run`, through the Attempt, all Attempts in one file | appended | `v` (1) on every line |
 | `<stem>-<hash>/runs/<run-id>/console.log` | text | the Monitor, when it starts or resumes a Run: stdout and stderr of that `pas run` | appended | none |
 | `<stem>-<hash>/runs/<run-id>/final.json` | pretty JSON | `pas run`, at the end of each Attempt, after `AttemptEnded`; not after SIGKILL | replaced (temp file, rename) | `v` (1) |
-| `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.jsonl` | the agent's stdout, as written (`stream-json` lines for `claude -p`) | the agent process runner, created when the agent process starts, streamed while it runs | created once, then appended | none (the provider's format) |
+| `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.jsonl` | the agent's stdout, as written (`stream-json` lines for `claude -p`, JSONL for `codex exec --json`, `json`/`stream-json` for Gemini) | the agent process runner, created when the agent process starts, streamed while it runs | created once, then appended | none (the provider's format) |
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.stderr.log` | text | the agent process runner, as above, for stderr | created once, then appended | none |
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.prompt.txt` | text, see below | the agent registry (`Agents::run`), before the handler is called | written once | first line `pas prompt file v1` |
 | `<stem>-<hash>/runs/<run-id>/answers/<question-id>.json` | JSON, one line | `pas answer`, the Monitor (through `pas answer`), or `pas run`'s terminal prompt | written once; the first writer wins | `v` (1) |
