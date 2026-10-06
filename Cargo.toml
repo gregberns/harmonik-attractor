@@ -10,6 +10,7 @@ members = [
     "crates/attractor-agent-handler",
     "crates/attractor-agent-process",
     "crates/attractor-handler-claude-p",
+    "crates/attractor-handler-codex-exec",
     "crates/attractor-pipeline",
     "crates/attractor-quality",
     "crates/attractor-cli",

@@ -1,0 +1,128 @@
+#!/bin/sh
+# fake-codex: a digital twin of `codex exec --json` for PAS tests. It prints
+# scripted Codex JSONL for the scenario named in a scenario file for the node
+# or in the node's prompt. See README.md next to this script.
+
+die() {
+    printf 'fake-codex: %s\n' "$1" >&2
+    exit 2
+}
+
+[ -n "${FAKE_AGENT_SCENARIOS:-}" ] || die "FAKE_AGENT_SCENARIOS is not set"
+[ -d "$FAKE_AGENT_SCENARIOS" ] || die "FAKE_AGENT_SCENARIOS is not a directory: $FAKE_AGENT_SCENARIOS"
+log="$FAKE_AGENT_SCENARIOS/invocations.log"
+
+# Log the environment PAS gives the agent, and this process's pid.
+{
+    printf '%s\n' '--- start' "FAKE_PID=$$"
+    env | grep -E '^(PAS_|ANTHROPIC_|OPENAI_|CLAUDE_CODE_USE_)' | sort
+} >>"$FAKE_AGENT_SCENARIOS/env.log"
+
+# Log argv, one argument per line; the positional prompt (the last
+# argument, often multi-line) is logged as <prompt>.
+printf '%s\n' '--- start' >>"$log"
+prompt=
+have_prompt=
+while [ $# -gt 0 ]; do
+    case $1 in
+        exec | --json | --yolo | --skip-git-repo-check | --ephemeral)
+            printf '%s\n' "$1" >>"$log"
+            shift
+            ;;
+        --model | --cd)
+            [ $# -ge 2 ] || die "$1 needs a value"
+            printf '%s\n' "$1" "$2" >>"$log"
+            shift 2
+            ;;
+        -*)
+            die "unknown flag $1"
+            ;;
+        *)
+            [ $# -eq 1 ] || die "the prompt must be the last argument, got $1"
+            printf '%s\n' '<prompt>' >>"$log"
+            prompt=$1
+            have_prompt=1
+            shift
+            ;;
+    esac
+done
+[ -n "$have_prompt" ] || die "a positional prompt is required"
+printf '%s\n' '--- start' "$prompt" >>"$FAKE_AGENT_SCENARIOS/prompts.log"
+
+# The scenario text, as fake-claude finds it: the file <node>.<attempt>, then
+# <node>, else the node's own prompt after the last "Task (".
+node_file=
+if [ -n "${PAS_NODE_ID:-}" ]; then
+    if [ -n "${PAS_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT"
+    elif [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID"
+    fi
+fi
+if [ -n "$node_file" ]; then
+    task=$(head -n 1 "$node_file")
+else
+    task=${prompt##*Task (}
+fi
+
+token() {
+    printf '%s\n' "$task" | tr -s ' \t' '\n\n' | sed -n "s/^$1=\\([A-Za-z0-9_-]*\\).*/\\1/p" | tail -n 1
+}
+
+scenario=$(token scenario)
+[ -n "$scenario" ] || die "no scenario=<name> in the scenario file or node prompt"
+label=$(token label)
+
+counter="$FAKE_AGENT_SCENARIOS/attempts.$scenario"
+attempt=$(cat "$counter" 2>/dev/null || echo 0)
+printf '%s\n' "$((attempt + 1))" >"$counter"
+
+# message <text>: an agent_message item. <text> is plain ASCII without quotes
+# or backslashes, or holds a JSON escape such as \n.
+message() {
+    printf '%s\n' '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"'"$1"'"}}'
+}
+
+started() {
+    printf '%s\n' '{"type":"thread.started","thread_id":"00000000-0000-4000-8000-000000000001"}' \
+        '{"type":"turn.started"}'
+}
+
+completed() {
+    printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":3,"cached_input_tokens":0,"output_tokens":2}}'
+}
+
+case $scenario in
+    success)
+        started
+        message 'fake-codex: success'
+        completed
+        ;;
+    label)
+        [ -n "$label" ] || die "scenario label needs label=<label>"
+        started
+        message "fake-codex: routed\\n$label"
+        completed
+        ;;
+    turn_failed)
+        started
+        message 'fake-codex: partial'
+        printf '%s\n' '{"type":"turn.failed","error":{"message":"fake-codex: turn failed"}}'
+        exit 1
+        ;;
+    crash)
+        printf '%s\n' 'fake-codex: crashed' >&2
+        exit 3
+        ;;
+    garbage)
+        printf '%s\n' 'fake-codex: this is not json' '{"type":' 'garbage'
+        ;;
+    silent) ;;
+    hang)
+        started
+        exec sleep "${FAKE_HANG_SECS:-30}"
+        ;;
+    *)
+        die "unknown scenario $scenario"
+        ;;
+esac
