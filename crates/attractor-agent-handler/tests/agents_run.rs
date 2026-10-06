@@ -9,8 +9,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use attractor_agent_handler::{
-    AgentHandler, AgentObserver, AgentRequest, AgentResult, AgentStatus, Agents, ConfigError,
-    FailureClass, Invocation, Profile, Record, Selection, Usage,
+    AgentHandler, AgentObserver, AgentRequest, AgentResult, AgentStatus, Agents, CancellationToken,
+    ConfigError, FailureClass, Invocation, Profile, Record, Selection, Spawned, Started, Usage,
 };
 
 /// The argv, env and prompt one invocation was given.
@@ -42,6 +42,11 @@ impl AgentHandler for Recorder {
             .lock()
             .unwrap()
             .push((inv.argv.clone(), inv.env.clone(), inv.prompt.to_string()));
+        (inv.spawned)(Spawned {
+            pid: 4242,
+            pgid: 4242,
+            host: Some("host-1".into()),
+        });
         AgentResult {
             invocation_id: inv.invocation_id.to_string(),
             status: AgentStatus::Completed,
@@ -62,12 +67,38 @@ impl AgentHandler for Recorder {
     }
 }
 
+/// Never returns: ignores its timeout and its cancel token.
+struct Stuck;
+
+#[async_trait]
+impl AgentHandler for Stuck {
+    fn mechanism(&self) -> &'static str {
+        "stuck"
+    }
+
+    async fn run(&self, _inv: Invocation<'_>) -> AgentResult {
+        std::future::pending().await
+    }
+
+    fn transcript_usage(&self, _transcript: &str) -> Usage {
+        Usage::default()
+    }
+}
+
+/// Records what the observer is told, in order.
 #[derive(Default)]
-struct Counter(Mutex<Vec<AgentResult>>);
+struct Counter {
+    finished: Mutex<Vec<AgentResult>>,
+    started: Mutex<Vec<Started>>,
+}
 
 impl AgentObserver for Counter {
+    fn started(&self, started: &Started) {
+        self.started.lock().unwrap().push(started.clone());
+    }
+
     fn finished(&self, result: &AgentResult) {
-        self.0.lock().unwrap().push(result.clone());
+        self.finished.lock().unwrap().push(result.clone());
     }
 }
 
@@ -78,6 +109,7 @@ fn profile(name: &str, mechanism: &str) -> Profile {
         command: vec!["agent".into()],
         args: vec!["--quiet".into()],
         model_args: vec!["--model".into(), "{model}".into()],
+        kill_grace: Duration::from_millis(50),
     }
 }
 
@@ -97,8 +129,10 @@ fn request<'a>(profile: &str, observer: Option<&'a dyn AgentObserver>) -> AgentR
             attempt: 1,
             invocation_id: "inv-1".into(),
         },
-        transcript: None,
+        transcript: Some(PathBuf::from("/run/transcripts/inv-1.jsonl")),
+        stderr: Some(PathBuf::from("/run/transcripts/inv-1.stderr.log")),
         observer,
+        cancel: CancellationToken::new(),
     }
 }
 
@@ -164,7 +198,7 @@ async fn observer_is_told_once_with_the_returned_value() {
     let ok = agents.run(request("p", Some(&counter))).await;
     let failed = agents.run(request("nope", Some(&counter))).await;
 
-    assert_eq!(*counter.0.lock().unwrap(), vec![ok, failed]);
+    assert_eq!(*counter.finished.lock().unwrap(), vec![ok, failed]);
 }
 
 #[test]
@@ -222,4 +256,71 @@ fn transcript_usage_asks_the_profiles_handler() {
         Some("stream")
     );
     assert_eq!(agents.transcript_usage("nope", "stream"), Usage::default());
+}
+
+#[tokio::test]
+async fn started_reports_each_spawn_with_the_request_ids_and_paths() {
+    let agents = Agents::new(
+        vec![Recorder::new("fake")],
+        vec![profile("p", "fake")],
+        BTreeMap::new(),
+    )
+    .unwrap();
+    let counter = Counter::default();
+
+    agents.run(request("p", Some(&counter))).await;
+
+    assert_eq!(
+        *counter.started.lock().unwrap(),
+        vec![Started {
+            invocation_id: "inv-1".into(),
+            spawn: 1,
+            node_id: "work".into(),
+            attempt: 1,
+            profile: "p".into(),
+            model: Some("m1".into()),
+            pid: 4242,
+            pgid: 4242,
+            host: Some("host-1".into()),
+            transcript: Some(PathBuf::from("/run/transcripts/inv-1.jsonl")),
+            stderr: Some(PathBuf::from("/run/transcripts/inv-1.stderr.log")),
+        }]
+    );
+    assert_eq!(counter.finished.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_handler_that_ignores_its_timeout_is_cut_off_at_the_hard_deadline() {
+    let agents = Agents::new(
+        vec![Arc::new(Stuck)],
+        vec![profile("p", "stuck")],
+        BTreeMap::new(),
+    )
+    .unwrap()
+    .with_hard_deadline_margin(Duration::from_millis(50));
+    let counter = Counter::default();
+    let mut req = request("p", Some(&counter));
+    req.timeout = Duration::from_millis(100);
+
+    let result = agents.run(req).await;
+
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::Timeout));
+    // timeout 100 + kill_grace 50 + margin 50.
+    assert_eq!(result.detail, "handler did not return within 200ms");
+    assert_eq!(*counter.finished.lock().unwrap(), vec![result]);
+}
+
+#[test]
+fn stop_grace_is_the_longest_kill_grace_plus_the_margin() {
+    let mut slow = profile("slow", "fake");
+    slow.kill_grace = Duration::from_secs(3);
+    let agents = Agents::new(
+        vec![Recorder::new("fake")],
+        vec![profile("p", "fake"), slow],
+        BTreeMap::new(),
+    )
+    .unwrap()
+    .with_hard_deadline_margin(Duration::from_secs(1));
+    assert_eq!(agents.max_kill_grace(), Duration::from_secs(3));
+    assert_eq!(agents.stop_grace(), Duration::from_secs(4));
 }

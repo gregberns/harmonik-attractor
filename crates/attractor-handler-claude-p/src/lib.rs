@@ -8,8 +8,10 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 
-use attractor_agent_handler::{AgentHandler, AgentResult, FailureClass, Invocation, Usage};
-use attractor_agent_process::{run_local, LocalRun};
+use attractor_agent_handler::{
+    AgentHandler, AgentResult, AgentStatus, FailureClass, Invocation, Spawned, Usage,
+};
+use attractor_agent_process::{run_local, LocalRun, Spawn};
 
 pub use parse::{classify, claude_result_line, summarize, Exited};
 
@@ -44,12 +46,23 @@ impl AgentHandler for ClaudeP {
 
     async fn run(&self, inv: Invocation<'_>) -> AgentResult {
         let started = Instant::now();
+        let spawned = |spawn: Spawn| {
+            (inv.spawned)(Spawned {
+                pid: spawn.pid,
+                pgid: spawn.pgid,
+                host: spawn.host,
+            })
+        };
         let local = run_local(
             &Self::argv(&inv),
             &inv.env,
             inv.workdir,
             inv.transcript,
+            inv.stderr,
             inv.timeout,
+            inv.kill_grace,
+            &inv.cancel,
+            &spawned,
         )
         .await;
         let id = inv.invocation_id;
@@ -74,6 +87,11 @@ impl AgentHandler for ClaudeP {
                     FailureClass::Timeout,
                     format!("timed out after {}ms", inv.timeout.as_millis()),
                 )
+            },
+            LocalRun::Cancelled => AgentResult {
+                status: AgentStatus::Cancelled,
+                usage: partial_usage(&inv),
+                ..AgentResult::failed(id, FailureClass::Crash, "cancelled")
             },
             LocalRun::WaitFailed(error) => AgentResult {
                 usage: partial_usage(&inv),
@@ -100,7 +118,7 @@ impl AgentHandler for ClaudeP {
 }
 
 /// Usage from the transcript written so far, for a run that ended without
-/// its full output (timeout, or a failed wait).
+/// its full output (timeout, cancel, or a failed wait).
 fn partial_usage(inv: &Invocation<'_>) -> Usage {
     inv.transcript
         .and_then(|path| std::fs::read(path).ok())

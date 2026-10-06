@@ -97,8 +97,8 @@ pub fn claude_result_line(stdout: &str) -> Option<&str> {
     })
 }
 
-/// The `claude-p` failure table, first match wins (the timeout and launch
-/// rows are decided before there is any output):
+/// The `claude-p` failure table, first match wins (the cancelled, timeout
+/// and launch rows are decided before there is any output):
 /// - a final result line that doesn't deserialize: `NoResult`, whatever the exit;
 /// - a final result line with `is_error` or a `subtype` starting `error`: `Reported`;
 /// - any other final result line: `Completed`, even after a non-zero exit;

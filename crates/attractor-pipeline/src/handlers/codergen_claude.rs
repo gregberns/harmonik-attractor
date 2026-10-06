@@ -95,7 +95,8 @@ pub(super) fn invocation_usage(usage: &Usage) -> InvocationUsage {
 /// - `Failed(Crash)`: "Claude Code exited with <status>: <stderr>";
 /// - `Failed(NoResult)`: the parse or no-output message;
 /// - `Failed(Launch)`: `CliNotFound` when the command is missing, else
-///   "Failed to spawn Claude Code: ...".
+///   "Failed to spawn Claude Code: ...";
+/// - `Cancelled` (the Run was stopped): `AttractorError::Cancelled`.
 pub(super) fn claude_outcome(
     result: &AgentResult,
     node: &PipelineNode,
@@ -110,6 +111,11 @@ pub(super) fn claude_outcome(
         message,
     };
     let is_error = match result.status {
+        AgentStatus::Cancelled => {
+            return Err(AttractorError::Cancelled {
+                node: node.id.clone(),
+            })
+        }
         AgentStatus::Completed => false,
         AgentStatus::Failed(FailureClass::Reported) => true,
         AgentStatus::Failed(FailureClass::Timeout) => {

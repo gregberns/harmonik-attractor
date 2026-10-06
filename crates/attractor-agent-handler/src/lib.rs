@@ -12,9 +12,10 @@ mod registry;
 mod types;
 
 pub use env::{child_env, STRIPPED_ENV};
-pub use profile::{argv, builtin_profiles, fill, Profile};
-pub use registry::{AgentHandler, AgentObserver, Agents, ConfigError};
+pub use profile::{argv, builtin_profiles, fill, Profile, DEFAULT_KILL_GRACE};
+pub use registry::{AgentHandler, AgentObserver, Agents, ConfigError, HARD_DEADLINE_MARGIN};
+pub use tokio_util::sync::CancellationToken;
 pub use types::{
     AgentRequest, AgentResult, AgentStatus, ExitInfo, FailureClass, Invocation, Record, Selection,
-    Usage,
+    Spawned, Started, Usage,
 };

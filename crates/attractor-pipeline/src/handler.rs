@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use async_trait::async_trait;
+use attractor_agent_handler::CancellationToken;
 
 use attractor_types::{Context, Outcome, Result};
 
@@ -27,6 +28,7 @@ pub struct HandlerExecutionContext<'a> {
     events: Option<&'a dyn EventSink>,
     run_id: Option<&'a str>,
     attempt: u32,
+    cancel: &'a CancellationToken,
 }
 
 impl<'a> HandlerExecutionContext<'a> {
@@ -37,6 +39,7 @@ impl<'a> HandlerExecutionContext<'a> {
         events: Option<&'a dyn EventSink>,
         run_id: Option<&'a str>,
         attempt: u32,
+        cancel: &'a CancellationToken,
     ) -> Self {
         Self {
             workflow,
@@ -45,7 +48,13 @@ impl<'a> HandlerExecutionContext<'a> {
             events,
             run_id,
             attempt,
+            cancel,
         }
+    }
+
+    /// Cancelled when the Run is stopped.
+    pub fn cancel(self) -> &'a CancellationToken {
+        self.cancel
     }
 
     /// The Run's id; `None` for library use without a Run Journal.
@@ -251,6 +260,7 @@ impl DynHandler {
             execution.events(),
             execution.run_id(),
             execution.attempt(),
+            execution.cancel(),
         );
         let mut outcome = match self.0.provider_handler() {
             Some(handler) => {

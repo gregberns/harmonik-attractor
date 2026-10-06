@@ -8,6 +8,7 @@ description = "Shared local-process runner: process groups and Transcript stream
 [dependencies]
 tokio = { workspace = true }
 tracing = { workspace = true }
+tokio-util = { workspace = true }
 libc = "0.2"
 
 [dev-dependencies]

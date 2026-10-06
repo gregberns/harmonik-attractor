@@ -5,6 +5,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use tokio_util::sync::CancellationToken;
+
 use crate::registry::AgentObserver;
 
 /// Which agent profile runs a node, and with which model.
@@ -43,12 +45,16 @@ pub struct AgentRequest<'a> {
     pub record: Record,
     /// Where the handler writes the agent's stdout as it arrives, if anywhere.
     pub transcript: Option<PathBuf>,
-    /// Told once when the invocation ends, with the value `run` returns.
+    /// Where the handler writes the agent's stderr as it arrives, if anywhere.
+    pub stderr: Option<PathBuf>,
+    /// Told when each process starts and once when the invocation ends.
     pub observer: Option<&'a dyn AgentObserver>,
+    /// Cancelled when the Run is stopped: the handler stops the agent
+    /// (TERM, grace, KILL) and returns `Cancelled`.
+    pub cancel: CancellationToken,
 }
 
 /// What [`crate::Agents::run`] hands a handler: the request, resolved.
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Invocation<'a> {
     pub invocation_id: &'a str,
     /// Profile command, profile args, extra args and filled model args.
@@ -59,7 +65,56 @@ pub struct Invocation<'a> {
     pub prompt: &'a str,
     pub workdir: &'a Path,
     pub timeout: Duration,
+    /// How long to wait after TERM before KILL, on timeout or cancel.
+    pub kill_grace: Duration,
     pub transcript: Option<&'a Path>,
+    pub stderr: Option<&'a Path>,
+    pub cancel: CancellationToken,
+    /// Call once per process, right after it exists and its transcript and
+    /// stderr files exist, and before any of its output is written.
+    pub spawned: &'a (dyn Fn(Spawned) + Sync),
+}
+
+impl std::fmt::Debug for Invocation<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Invocation")
+            .field("invocation_id", &self.invocation_id)
+            .field("argv", &self.argv)
+            .field("env", &self.env)
+            .field("prompt", &self.prompt)
+            .field("workdir", &self.workdir)
+            .field("timeout", &self.timeout)
+            .field("kill_grace", &self.kill_grace)
+            .field("transcript", &self.transcript)
+            .field("stderr", &self.stderr)
+            .field("cancel", &self.cancel)
+            .finish_non_exhaustive()
+    }
+}
+
+/// A process a handler started, as it reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Spawned {
+    pub pid: u32,
+    pub pgid: u32,
+    pub host: Option<String>,
+}
+
+/// One process of an invocation has started (the journal's `LlmStarted`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Started {
+    pub invocation_id: String,
+    /// 1 for the first process of the invocation.
+    pub spawn: u32,
+    pub node_id: String,
+    pub attempt: u32,
+    pub profile: String,
+    pub model: Option<String>,
+    pub pid: u32,
+    pub pgid: u32,
+    pub host: Option<String>,
+    pub transcript: Option<PathBuf>,
+    pub stderr: Option<PathBuf>,
 }
 
 /// How an invocation ended.
@@ -67,6 +122,8 @@ pub struct Invocation<'a> {
 pub enum AgentStatus {
     Completed,
     Failed(FailureClass),
+    /// The request's cancel token fired and the agent was stopped.
+    Cancelled,
 }
 
 /// Why an invocation failed (design §1).

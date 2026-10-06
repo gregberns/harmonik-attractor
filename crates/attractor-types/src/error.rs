@@ -77,6 +77,10 @@ pub enum AttractorError {
     #[error("CLI binary '{binary}' not found — ensure it is installed and on PATH")]
     CliNotFound { binary: String },
 
+    /// The Run was stopped while the node ran; the node did not finish.
+    #[error("node '{node}' was cancelled")]
+    Cancelled { node: String },
+
     // === Agent Errors ===
     #[error("Agent loop detected after {window} consecutive identical tool calls")]
     LoopDetected { window: usize },
@@ -286,6 +290,13 @@ mod tests {
             retryable: false,
         };
         assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn cancelled_is_not_retryable() {
+        let err = AttractorError::Cancelled { node: "n".into() };
+        assert!(!err.is_retryable());
+        assert_eq!(err.to_string(), "node 'n' was cancelled");
     }
 
     #[test]

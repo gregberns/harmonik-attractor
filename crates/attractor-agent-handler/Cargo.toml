@@ -8,6 +8,8 @@ description = "The agent handler interface and the Agents registry the PAS engin
 # Must never depend on another attractor-* crate (design §1).
 [dependencies]
 async-trait = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

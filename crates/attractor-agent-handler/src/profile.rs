@@ -1,6 +1,11 @@
 //! Agent profiles and the argv they produce: pure.
 
+use std::time::Duration;
+
 use crate::types::AgentRequest;
+
+/// How long the built-in profiles wait after TERM before KILL.
+pub const DEFAULT_KILL_GRACE: Duration = Duration::from_secs(10);
 
 /// A named way to run an agent: which handler (`mechanism`) and which
 /// command line. Templates in `model_args` use `{model}`.
@@ -12,6 +17,8 @@ pub struct Profile {
     pub args: Vec<String>,
     /// Added only when the request names a model.
     pub model_args: Vec<String>,
+    /// How long to wait after TERM before KILL, on timeout or cancel.
+    pub kill_grace: Duration,
 }
 
 /// The profiles PAS ships with: `claude`, run by the `claude-p` handler.
@@ -30,6 +37,7 @@ pub fn builtin_profiles() -> Vec<Profile> {
         .map(String::from)
         .collect(),
         model_args: vec!["--model".into(), "{model}".into()],
+        kill_grace: DEFAULT_KILL_GRACE,
     }]
 }
 
@@ -83,7 +91,9 @@ mod tests {
                 invocation_id: "i".into(),
             },
             transcript: None,
+            stderr: None,
             observer: None,
+            cancel: tokio_util::sync::CancellationToken::new(),
         }
     }
 
@@ -94,6 +104,7 @@ mod tests {
             command: vec!["bin/claude".into(), "--sub".into()],
             args: vec!["--a".into()],
             model_args: vec!["--model".into(), "m={model}".into()],
+            kill_grace: DEFAULT_KILL_GRACE,
         }
     }
 
@@ -144,5 +155,6 @@ mod tests {
             ]
         );
         assert_eq!(claude.model_args, ["--model", "{model}"]);
+        assert_eq!(claude.kill_grace, Duration::from_secs(10));
     }
 }

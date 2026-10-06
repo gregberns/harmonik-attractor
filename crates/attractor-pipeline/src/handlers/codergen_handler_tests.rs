@@ -160,7 +160,9 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
             invocation_id: "i".into(),
         },
         transcript: None,
+        stderr: None,
         observer: None,
+        cancel: CancellationToken::new(),
     };
     attractor_handler_claude_p::ClaudeP::argv(&Invocation {
         invocation_id: "i",
@@ -169,7 +171,11 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
         prompt: "test prompt",
         workdir: Path::new("."),
         timeout: DEFAULT_TIMEOUT,
+        kill_grace: attractor_agent_handler::DEFAULT_KILL_GRACE,
         transcript: None,
+        stderr: None,
+        cancel: CancellationToken::new(),
+        spawned: &|_| {},
     })
 }
 
@@ -508,7 +514,11 @@ mod transcripts {
         let Ok(entries) = std::fs::read_dir(run_dir.join("transcripts")) else {
             return vec![];
         };
-        let mut files: Vec<_> = entries.map(|e| e.unwrap().path()).collect();
+        // Transcripts only: each Claude invocation also has a `.stderr.log`.
+        let mut files: Vec<_> = entries
+            .map(|e| e.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
+            .collect();
         files.sort();
         files
     }
@@ -550,6 +560,7 @@ mod transcripts {
                     events: None,
                     run_id: None,
                     attempt: 1,
+                    cancel: CancellationToken::new(),
                 },
             )
             .await
@@ -898,19 +909,36 @@ mod transcripts {
     }
 
     impl EventLog {
-        /// The payload of every Event received; each must be `LlmInvoked`.
-        fn llm_invoked(&self) -> Vec<serde_json::Value> {
+        /// The payload of every `kind` Event received; every Event must be
+        /// `LlmStarted` or `LlmInvoked`.
+        fn of(&self, kind: &str) -> Vec<serde_json::Value> {
             self.0
                 .lock()
                 .unwrap()
                 .iter()
-                .map(|event| {
-                    let value = serde_json::to_value(event).unwrap();
-                    value
-                        .get("LlmInvoked")
-                        .cloned()
-                        .unwrap_or_else(|| panic!("not LlmInvoked: {value}"))
+                .map(|event| serde_json::to_value(event).unwrap())
+                .inspect(|value| {
+                    assert!(
+                        value.get("LlmStarted").is_some() || value.get("LlmInvoked").is_some(),
+                        "unexpected Event: {value}"
+                    )
                 })
+                .filter_map(|value| value.get(kind).cloned())
+                .collect()
+        }
+
+        fn llm_invoked(&self) -> Vec<serde_json::Value> {
+            self.of("LlmInvoked")
+        }
+
+        /// Each Event's kind, in order.
+        fn kinds(&self) -> Vec<String> {
+            self.0
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|event| serde_json::to_value(event).unwrap())
+                .filter_map(|value| value.as_object()?.keys().next().cloned())
                 .collect()
         }
 
@@ -959,6 +987,7 @@ mod transcripts {
                     events: Some(events),
                     run_id: None,
                     attempt: 1,
+                    cancel: CancellationToken::new(),
                 },
             )
             .await
@@ -1011,6 +1040,21 @@ mod transcripts {
 
         let invoked = events.llm_invoked();
         assert_eq!(invoked.len(), 3, "{invoked:?}");
+        // Each invocation: LlmStarted, then LlmInvoked, with one id.
+        assert_eq!(
+            events.kinds(),
+            ["LlmStarted", "LlmInvoked"].repeat(3),
+            "event order"
+        );
+        let started = events.of("LlmStarted");
+        for (started, invoked) in started.iter().zip(&invoked) {
+            assert_eq!(started["invocation_id"], invoked["invocation_id"]);
+            let id = started["invocation_id"].as_str().unwrap();
+            assert_eq!(started["transcript"], format!("transcripts/{id}.jsonl"));
+            assert_eq!(started["stderr"], format!("transcripts/{id}.stderr.log"));
+            assert!(run_dir.join(started["stderr"].as_str().unwrap()).exists());
+            assert_eq!(started["pid"], started["pgid"]);
+        }
         let mut ids: Vec<String> = invoked
             .iter()
             .map(|event| event["invocation_id"].as_str().unwrap().to_owned())
@@ -1167,8 +1211,14 @@ mod transcripts {
                 ),
             }
             // The journal line leaves the key out too.
-            let journal =
-                serde_json::to_value(events.0.lock().unwrap()[0].to_journal_data()).unwrap();
+            let journal = events
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|event| serde_json::to_value(event.to_journal_data()).unwrap())
+                .find(|value| value["type"] == "LlmInvoked")
+                .unwrap();
             assert_eq!(
                 journal.to_string().contains("model_requested"),
                 expected.is_some(),
@@ -1665,6 +1715,7 @@ mod stream_formats {
                     events: None,
                     run_id: None,
                     attempt: 1,
+                    cancel: CancellationToken::new(),
                 },
             )
             .await

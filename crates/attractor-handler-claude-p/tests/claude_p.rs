@@ -7,12 +7,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use attractor_agent_handler::{
-    builtin_profiles, AgentRequest, AgentResult, AgentStatus, Agents, FailureClass, Profile,
-    Record, Selection,
+    builtin_profiles, AgentObserver, AgentRequest, AgentResult, AgentStatus, Agents,
+    CancellationToken, FailureClass, Profile, Record, Selection, Started,
 };
 use attractor_handler_claude_p::{claude_result_line, ClaudeP};
 
@@ -39,6 +39,10 @@ impl Fixture {
 
     fn transcript(&self) -> PathBuf {
         self.dir.path().join("transcript.jsonl")
+    }
+
+    fn stderr(&self) -> PathBuf {
+        self.dir.path().join("inv-42.stderr.log")
     }
 
     /// The scenario line the fake reads for node `work`.
@@ -99,8 +103,18 @@ impl Fixture {
     }
 
     fn agents(&self, command: PathBuf, extra_env: &[(&str, &str)]) -> Agents {
+        self.agents_with_grace(command, extra_env, Duration::from_secs(10))
+    }
+
+    fn agents_with_grace(
+        &self,
+        command: PathBuf,
+        extra_env: &[(&str, &str)],
+        kill_grace: Duration,
+    ) -> Agents {
         let profile = Profile {
             command: vec![command.to_string_lossy().into_owned()],
+            kill_grace,
             ..builtin_profiles().remove(0)
         };
         Agents::new(
@@ -133,8 +147,21 @@ impl Fixture {
                 invocation_id: "inv-42".into(),
             },
             transcript: Some(self.transcript()),
+            stderr: Some(self.stderr()),
             observer: None,
+            cancel: CancellationToken::new(),
         }
+    }
+
+    /// The fake's pid from its last `env.log` start block.
+    fn fake_pid(&self) -> u32 {
+        self.read("env.log")
+            .lines()
+            .filter_map(|l| l.strip_prefix("FAKE_PID="))
+            .last()
+            .unwrap()
+            .parse()
+            .unwrap()
     }
 
     async fn run(&self, scenario: &str) -> AgentResult {
@@ -254,6 +281,7 @@ async fn a_missing_command_is_a_launch_failure_and_leaves_no_transcript() {
     assert_eq!(result.status, AgentStatus::Failed(FailureClass::Launch));
     assert_eq!(result.launch_error, Some(std::io::ErrorKind::NotFound));
     assert!(!fx.transcript().exists());
+    assert!(!fx.stderr().exists());
 }
 
 #[tokio::test]
@@ -411,4 +439,156 @@ async fn flaky_times_out_on_attempt_one_then_completes_on_attempt_two() {
         .collect();
     assert_eq!(attempts, ["2", "3"]);
     assert_eq!(fx.read("attempts.flaky").trim(), "2");
+}
+
+/// Records `started` (and how long the transcript was at that moment) and
+/// `finished`, in order.
+#[derive(Default)]
+struct Recording {
+    transcript: PathBuf,
+    events: Mutex<Vec<String>>,
+    started: Mutex<Vec<(Started, u64)>>,
+}
+
+impl AgentObserver for Recording {
+    fn started(&self, started: &Started) {
+        let len = fs::metadata(&self.transcript).map(|m| m.len()).unwrap();
+        self.started.lock().unwrap().push((started.clone(), len));
+        self.events.lock().unwrap().push("started".into());
+    }
+
+    fn finished(&self, _result: &AgentResult) {
+        self.events.lock().unwrap().push("finished".into());
+    }
+}
+
+/// Polls `check` until it holds, failing after 10 s.
+async fn wait_until(what: &str, mut check: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !check() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// Whether process `pid` no longer exists.
+fn gone(pid: u32) -> bool {
+    // SAFETY: kill with signal 0 only checks that the process exists.
+    let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+    !alive
+}
+
+#[tokio::test]
+async fn started_is_reported_once_before_any_output_and_before_finished() {
+    let fx = Fixture::new();
+    fx.scenario("scenario=success");
+    let recording = Recording {
+        transcript: fx.transcript(),
+        ..Recording::default()
+    };
+    let mut req = fx.request(Duration::from_secs(20));
+    req.observer = Some(&recording);
+
+    let result = fx.agents(fake_claude(), &[]).run(req).await;
+
+    assert_eq!(result.status, AgentStatus::Completed, "{}", result.detail);
+    assert_eq!(*recording.events.lock().unwrap(), ["started", "finished"]);
+    let started = recording.started.lock().unwrap();
+    let (started, transcript_len) = &started[0];
+    // The fake prints its init line at once; none of it had been written.
+    assert_eq!(*transcript_len, 0);
+    assert_eq!(started.invocation_id, "inv-42");
+    assert_eq!(started.spawn, 1);
+    assert_eq!(started.node_id, "work");
+    assert_eq!(started.attempt, 2);
+    assert_eq!(started.profile, "claude");
+    assert_eq!(started.model.as_deref(), Some("x"));
+    assert_eq!(started.pid, fx.fake_pid());
+    assert_eq!(started.pgid, started.pid);
+    assert_eq!(started.transcript, Some(fx.transcript()));
+    assert_eq!(started.stderr, Some(fx.stderr()));
+}
+
+#[tokio::test]
+async fn stderr_is_written_live_and_kept() {
+    let fx = Fixture::new();
+    fx.scenario("scenario=stderr_live");
+    let agents = fx.agents(fake_claude(), &[]);
+    let go = fx.scenarios().join("go");
+    let stderr = fx.stderr();
+
+    let (result, ()) = tokio::join!(agents.run(fx.request(Duration::from_secs(20))), async {
+        wait_until("the first stderr line", || {
+            fs::read_to_string(&stderr).is_ok_and(|s| s.contains("fake-claude: working"))
+        })
+        .await;
+        // The agent is still waiting for `go`, so this line arrived live.
+        assert!(!fs::read_to_string(&stderr)
+            .unwrap()
+            .contains("fake-claude: done"));
+        fs::write(&go, "").unwrap();
+    });
+
+    assert_eq!(result.status, AgentStatus::Completed, "{}", result.detail);
+    let text = fs::read_to_string(fx.stderr()).unwrap();
+    assert!(text.contains("fake-claude: working"), "{text}");
+    assert!(text.contains("fake-claude: done"), "{text}");
+}
+
+#[tokio::test]
+async fn a_crash_leaves_its_stderr_in_the_file() {
+    let fx = Fixture::new();
+    let result = fx.run("scenario=crash").await;
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::Crash));
+    let text = fs::read_to_string(fx.stderr()).unwrap();
+    assert!(text.contains("fake-claude: crashed"), "{text}");
+}
+
+#[tokio::test]
+async fn a_timeout_sends_term_first_and_the_agent_exits_on_it() {
+    let fx = Fixture::new();
+    fx.scenario("scenario=hang_term");
+    let result = fx
+        .agents(fake_claude(), &[])
+        .run(fx.request(Duration::from_secs(1)))
+        .await;
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::Timeout));
+    assert_eq!(fx.read("term").trim(), "term");
+}
+
+#[tokio::test]
+async fn an_agent_that_ignores_term_is_killed_after_the_grace() {
+    let fx = Fixture::new();
+    fx.scenario("scenario=hang_ignore_term");
+    let result = fx
+        .agents_with_grace(fake_claude(), &[], Duration::from_millis(300))
+        .run(fx.request(Duration::from_secs(1)))
+        .await;
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::Timeout));
+    assert!(fx.read("term").contains("term"));
+    // The runner reaped it after KILL.
+    assert!(gone(fx.fake_pid()));
+}
+
+#[tokio::test]
+async fn a_cancel_sends_term_and_returns_cancelled() {
+    let fx = Fixture::new();
+    fx.scenario("scenario=hang_term");
+    let agents = fx.agents(fake_claude(), &[]);
+    let mut req = fx.request(Duration::from_secs(20));
+    let cancel = CancellationToken::new();
+    req.cancel = cancel.clone();
+    let transcript = fx.transcript();
+
+    let (result, ()) = tokio::join!(agents.run(req), async {
+        // The init line is printed after the trap is set.
+        wait_until("the init line", || {
+            fs::read_to_string(&transcript).is_ok_and(|s| s.contains("init"))
+        })
+        .await;
+        cancel.cancel();
+    });
+
+    assert_eq!(result.status, AgentStatus::Cancelled);
+    assert_eq!(fx.read("term").trim(), "term");
 }

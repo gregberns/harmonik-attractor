@@ -5,7 +5,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use attractor_agent_handler::{AgentRequest, AgentStatus, Agents, FailureClass, Record, Selection};
+use attractor_agent_handler::{
+    AgentObserver, AgentRequest, AgentResult, AgentStatus, Agents, CancellationToken, FailureClass,
+    Record, Selection, Started,
+};
 use attractor_dot::AttributeValue;
 use attractor_quality::{
     ClaudeCodergenConfig, ClaudeSettingSource, ClaudeSettingsMode, ResolutionError,
@@ -91,6 +94,8 @@ struct CodergenExecutionControls<'a> {
     run_id: Option<&'a str>,
     /// This attempt at the node, 1-based, for `PAS_ATTEMPT`.
     attempt: u32,
+    /// Cancelled when the Run is stopped; stops a Claude agent gracefully.
+    cancel: CancellationToken,
 }
 
 /// `LlmInvoked.status` values (spec C3).
@@ -162,6 +167,33 @@ impl Drop for LlmInvocation<'_> {
             self.emit(INVOKED_TIMEOUT, usage);
         }
     }
+}
+
+/// Journals `LlmStarted` for each process of a Claude invocation.
+/// `LlmInvoked` stays with the [`LlmInvocation`] guard, which also covers a
+/// dropped future.
+struct StartedJournal<'a> {
+    events: &'a dyn EventSink,
+}
+
+impl AgentObserver for StartedJournal<'_> {
+    fn started(&self, started: &Started) {
+        self.events.emit(PipelineEvent::LlmStarted {
+            invocation_id: started.invocation_id.clone(),
+            spawn: started.spawn,
+            node_id: started.node_id.clone(),
+            attempt: started.attempt,
+            profile: started.profile.clone(),
+            model: started.model.clone(),
+            host: started.host.clone(),
+            pid: started.pid,
+            pgid: started.pgid,
+            transcript: attractor_journal::transcript_rel_path(&started.invocation_id),
+            stderr: attractor_journal::stderr_rel_path(&started.invocation_id),
+        });
+    }
+
+    fn finished(&self, _result: &AgentResult) {}
 }
 
 #[async_trait]
@@ -363,7 +395,7 @@ impl CodergenHandler {
         };
 
         // Spawn the CLI process — detect missing binary
-        let child = match cmd.spawn() {
+        let mut child = match cmd.spawn() {
             Ok(child) => child,
             Err(e) => {
                 // No Model Invocation happened, so no Transcript either.
@@ -419,8 +451,8 @@ impl CodergenHandler {
         // timeout or cancellation keeps the partial Transcript.
         let mut process_group = ProcessGroupGuard::new(child.id());
         let timeout_dur = node.timeout.unwrap_or(std::time::Duration::from_secs(600));
-        let output = match tokio::time::timeout(timeout_dur, run_streaming(child, transcript)).await
-        {
+        let streaming = run_streaming(&mut child, transcript, None);
+        let output = match tokio::time::timeout(timeout_dur, streaming).await {
             Ok(Ok(output)) => {
                 process_group.disarm();
                 output
@@ -528,9 +560,17 @@ impl CodergenHandler {
         // One id names the Model Invocation everywhere: `LlmInvoked`, the
         // Transcript file and `PAS_INVOCATION_ID`.
         let invocation_id = attractor_journal::new_invocation_id();
-        let transcript = controls.run_dir.as_ref().map(|run_dir| {
-            attractor_journal::RunDir::from_path(run_dir).transcript(&invocation_id)
-        });
+        let run_dir = controls
+            .run_dir
+            .as_ref()
+            .map(|run_dir| attractor_journal::RunDir::from_path(run_dir));
+        let transcript = run_dir.as_ref().map(|dir| dir.transcript(&invocation_id));
+        let stderr = run_dir.as_ref().map(|dir| dir.stderr(&invocation_id));
+        // `LlmStarted` needs a Run folder: its paths are relative to it.
+        let journal_starts = match (controls.events, &controls.run_dir) {
+            (Some(events), Some(_)) => Some(StartedJournal { events }),
+            _ => None,
+        };
         let summarize =
             |stdout: &str| invocation_usage(&self.agents.transcript_usage(CLAUDE_PROFILE, stdout));
         // Armed before the agent starts: if the engine's outer deadline drops
@@ -568,7 +608,11 @@ impl CodergenHandler {
                     invocation_id,
                 },
                 transcript,
-                observer: None,
+                stderr,
+                observer: journal_starts
+                    .as_ref()
+                    .map(|observer| observer as &dyn AgentObserver),
+                cancel: controls.cancel.clone(),
             })
             .await;
         if let Some(invocation) = invocation {
@@ -577,7 +621,8 @@ impl CodergenHandler {
                 AgentStatus::Completed => {
                     invocation.finish(INVOKED_SUCCESS, invocation_usage(&result.usage))
                 }
-                AgentStatus::Failed(FailureClass::Timeout) => {
+                // A stopped agent is reported as a dropped one always was.
+                AgentStatus::Failed(FailureClass::Timeout) | AgentStatus::Cancelled => {
                     invocation.finish(INVOKED_TIMEOUT, invocation_usage(&result.usage))
                 }
                 AgentStatus::Failed(
@@ -715,6 +760,7 @@ impl ProviderNodeHandler for CodergenHandler {
                 events: None,
                 run_id: None,
                 attempt: 1,
+                cancel: CancellationToken::new(),
             },
         )
         .await
@@ -779,6 +825,7 @@ impl CodergenHandler {
                 events: execution.events(),
                 run_id: execution.run_id(),
                 attempt: execution.attempt(),
+                cancel: execution.cancel().clone(),
             },
         )
         .await

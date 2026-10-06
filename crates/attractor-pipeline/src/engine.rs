@@ -8,6 +8,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 
+use attractor_agent_handler::CancellationToken;
 use attractor_journal::{EventData, JournalWriter, EVENTS_FILE};
 use attractor_types::{AttractorError, Context, Outcome, Result, StageStatus};
 
@@ -41,6 +42,9 @@ pub struct PipelineExecutor {
     run_id: Option<String>,
     /// Run folder of the attached journal; handed to handlers for Transcripts.
     run_dir: Option<PathBuf>,
+    /// Cancelled when the Run is stopped: no new attempt starts, a running
+    /// handler is stopped, and the Run returns `AttractorError::Cancelled`.
+    cancel: CancellationToken,
 }
 
 /// The result of a completed pipeline execution.
@@ -355,7 +359,14 @@ impl PipelineExecutor {
             observers: Observers::default(),
             run_id: None,
             run_dir: None,
+            cancel: CancellationToken::new(),
         }
+    }
+
+    /// Stop the Run when `cancel` is cancelled (`pas run`'s SIGTERM).
+    pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = cancel;
+        self
     }
 
     /// Create an executor pre-loaded with the default built-in handlers.
@@ -368,6 +379,7 @@ impl PipelineExecutor {
             observers: Observers::default(),
             run_id: None,
             run_dir: None,
+            cancel: CancellationToken::new(),
         }
     }
 
@@ -524,6 +536,11 @@ impl PipelineExecutor {
         }
 
         for attempt in progress.active_node_attempts..max_attempts {
+            // A stopped Run starts nothing new and leaves the checkpoint as it
+            // is, so a resume runs this node.
+            if self.cancel.is_cancelled() {
+                return Err(cancelled(node));
+            }
             if progress.step_count >= max_steps {
                 return Err(AttractorError::MaxStepsExceeded { max_steps });
             }
@@ -564,18 +581,32 @@ impl PipelineExecutor {
                     Some(&self.observers),
                     self.run_id.as_deref(),
                     u32::try_from(attempt + 1).unwrap_or(u32::MAX),
+                    &self.cancel,
                 ),
                 configured.plan().graph(),
             );
-            let result = if let Some(timeout) = resolved.invocation.timeout {
-                match tokio::time::timeout(timeout, execution).await {
-                    Ok(result) => result,
-                    Err(_) => Err(AttractorError::CommandTimeout {
-                        timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
-                    }),
-                }
-            } else {
+            let result = if resolved.runs_through_agents() {
+                // `Agents` bounds the call (TERM, grace, KILL, then its hard
+                // deadline) and stops the agent on cancel.
                 execution.await
+            } else {
+                let bounded = async {
+                    match resolved.invocation.timeout {
+                        Some(timeout) => match tokio::time::timeout(timeout, execution).await {
+                            Ok(result) => result,
+                            Err(_) => Err(AttractorError::CommandTimeout {
+                                timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+                            }),
+                        },
+                        None => execution.await,
+                    }
+                };
+                // On a stop the handler future is dropped, as before; its own
+                // process-group guard kills any child.
+                tokio::select! {
+                    result = bounded => result,
+                    () = self.cancel.cancelled() => Err(cancelled(node)),
+                }
             };
 
             // Before StageCompleted/StageFailed/StageRetrying, whatever the
@@ -592,6 +623,8 @@ impl PipelineExecutor {
 
             let has_more_attempts = attempt + 1 < max_attempts;
             match result {
+                // Stopped: no StageFailed, no retry, no routing.
+                Err(error @ AttractorError::Cancelled { .. }) => return Err(error),
                 Ok(outcome) if outcome.status == StageStatus::Retry && has_more_attempts => {
                     if let Some(cost) = outcome
                         .context_updates
@@ -647,7 +680,10 @@ impl PipelineExecutor {
                 }
             }
 
-            tokio::time::sleep(retry_delay(attempt)).await;
+            tokio::select! {
+                () = tokio::time::sleep(retry_delay(attempt)) => {}
+                () = self.cancel.cancelled() => return Err(cancelled(node)),
+            }
         }
 
         Err(AttractorError::RetriesExhausted {
@@ -1186,6 +1222,8 @@ impl PipelineExecutor {
 
         match execution_result {
             Ok(result) if result.stopped_before.is_some() => Ok(result),
+            // Stopped: the caller records the end of the Attempt.
+            Err(error @ AttractorError::Cancelled { .. }) => Err(error),
             Ok(result) => {
                 self.emit(PipelineEvent::PipelineCompleted {
                     pipeline_name: graph.name.clone(),
@@ -1203,6 +1241,13 @@ impl PipelineExecutor {
                 Err(error)
             }
         }
+    }
+}
+
+/// The error a stopped Run returns for `node`.
+fn cancelled(node: &crate::graph::PipelineNode) -> AttractorError {
+    AttractorError::Cancelled {
+        node: node.id.clone(),
     }
 }
 

@@ -127,6 +127,15 @@ pub struct ResolvedNode {
     pub invocation: NodeInvocationPolicy,
 }
 
+impl ResolvedNode {
+    /// Whether the node runs an agent through `Agents`, which bounds it with
+    /// its own TERM-grace-KILL and hard deadline and honours the cancel token
+    /// itself. Today: codergen nodes with the Claude provider.
+    pub fn runs_through_agents(&self) -> bool {
+        self.handler == HandlerIdentity::Codergen && self.provider == Some(LlmProvider::Claude)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NodeInvocationPolicy {
     pub max_attempts: NonZeroUsize,

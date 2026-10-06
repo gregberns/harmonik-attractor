@@ -610,6 +610,7 @@ async fn run_both(
                 events: None,
                 run_id: None,
                 attempt: 1,
+                cancel: CancellationToken::new(),
             },
         )
         .await;
@@ -640,8 +641,11 @@ async fn run_both(
     );
 
     let transcripts = match std::fs::read_dir(run_dir.join("transcripts")) {
+        // Transcripts only: Claude invocations also leave a `.stderr.log`.
         Ok(entries) => entries
-            .map(|entry| std::fs::read(entry.unwrap().path()).unwrap())
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
+            .map(|path| std::fs::read(path).unwrap())
             .collect(),
         Err(_) => Vec::new(),
     };

@@ -2,13 +2,19 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 
 use crate::env::child_env;
 use crate::profile::{argv, Profile};
-use crate::types::{AgentRequest, AgentResult, FailureClass, Invocation, Usage};
+use crate::types::{AgentRequest, AgentResult, FailureClass, Invocation, Spawned, Started, Usage};
+
+/// How long past `timeout + kill_grace` `Agents` waits for a handler that
+/// ignores its timeout before giving up on it.
+pub const HARD_DEADLINE_MARGIN: Duration = Duration::from_secs(5);
 
 /// One way of driving an agent, named by its mechanism (e.g. `claude-p`).
 #[async_trait]
@@ -23,8 +29,15 @@ pub trait AgentHandler: Send + Sync {
     fn transcript_usage(&self, transcript: &str) -> Usage;
 }
 
-/// Told about each invocation's end (the engine journals it).
+/// Told about each invocation's processes and its end (the engine journals
+/// them).
 pub trait AgentObserver: Send + Sync {
+    /// Called once per process, synchronously, after the process exists and
+    /// its transcript and stderr files exist, and before any of its stdout is
+    /// written to the transcript. It must stay synchronous: that is what
+    /// makes `LlmStarted` come before the agent's first output.
+    fn started(&self, started: &Started);
+    /// Called once per invocation, with the value `Agents::run` returns.
     fn finished(&self, result: &AgentResult);
 }
 
@@ -57,6 +70,7 @@ pub struct Agents {
     handlers: BTreeMap<&'static str, Arc<dyn AgentHandler>>,
     profiles: BTreeMap<String, Profile>,
     parent_env: BTreeMap<String, String>,
+    hard_deadline_margin: Duration,
 }
 
 impl fmt::Debug for Agents {
@@ -102,7 +116,32 @@ impl Agents {
             handlers: by_mechanism,
             profiles: by_name,
             parent_env,
+            hard_deadline_margin: HARD_DEADLINE_MARGIN,
         })
+    }
+
+    /// The same registry with another hard-deadline margin (tests).
+    pub fn with_hard_deadline_margin(self, margin: Duration) -> Self {
+        Self {
+            hard_deadline_margin: margin,
+            ..self
+        }
+    }
+
+    /// The longest `kill_grace` of any profile: how long a stopped agent
+    /// may take to exit.
+    pub fn max_kill_grace(&self) -> Duration {
+        self.profiles
+            .values()
+            .map(|p| p.kill_grace)
+            .max()
+            .unwrap_or_default()
+    }
+
+    /// How long a stopped Run should wait for its agents before giving up:
+    /// the longest `kill_grace` plus the hard-deadline margin.
+    pub fn stop_grace(&self) -> Duration {
+        self.max_kill_grace() + self.hard_deadline_margin
     }
 
     /// No handlers and no profiles: every `run` fails as `Launch`.
@@ -111,15 +150,28 @@ impl Agents {
             handlers: BTreeMap::new(),
             profiles: BTreeMap::new(),
             parent_env: BTreeMap::new(),
+            hard_deadline_margin: HARD_DEADLINE_MARGIN,
         }
     }
 
     /// Run one invocation through the selected profile's handler. Never an
     /// error: an unknown profile is `Failed(Launch)`. The request's observer,
-    /// if any, is told the returned value exactly once.
+    /// if any, is told each process start and the returned value exactly
+    /// once.
+    ///
+    /// A handler that has not returned by `timeout + kill_grace` plus the
+    /// hard-deadline margin is dropped (its process guard kills any child)
+    /// and the result is `Failed(Timeout)`.
     pub async fn run(&self, req: AgentRequest<'_>) -> AgentResult {
         let result = match self.resolve(&req.selection.profile) {
             Some((profile, handler)) => {
+                let spawns = AtomicU32::new(0);
+                let spawned = |spawn: Spawned| {
+                    let index = spawns.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+                    if let Some(observer) = req.observer {
+                        observer.started(&started(&req, profile, index, spawn));
+                    }
+                };
                 let inv = Invocation {
                     invocation_id: &req.record.invocation_id,
                     argv: argv(profile, &req),
@@ -127,9 +179,21 @@ impl Agents {
                     prompt: &req.prompt,
                     workdir: &req.workdir,
                     timeout: req.timeout,
+                    kill_grace: profile.kill_grace,
                     transcript: req.transcript.as_deref(),
+                    stderr: req.stderr.as_deref(),
+                    cancel: req.cancel.clone(),
+                    spawned: &spawned,
                 };
-                handler.run(inv).await
+                let deadline = req.timeout + profile.kill_grace + self.hard_deadline_margin;
+                match tokio::time::timeout(deadline, handler.run(inv)).await {
+                    Ok(result) => result,
+                    Err(_elapsed) => AgentResult::failed(
+                        req.record.invocation_id.clone(),
+                        FailureClass::Timeout,
+                        format!("handler did not return within {}ms", deadline.as_millis()),
+                    ),
+                }
             }
             None => AgentResult::failed(
                 req.record.invocation_id.clone(),
@@ -155,5 +219,22 @@ impl Agents {
         let profile = self.profiles.get(name)?;
         let handler = self.handlers.get(profile.mechanism.as_str())?;
         Some((profile, handler))
+    }
+}
+
+/// The `Started` report for one process of `req`.
+fn started(req: &AgentRequest<'_>, profile: &Profile, spawn: u32, process: Spawned) -> Started {
+    Started {
+        invocation_id: req.record.invocation_id.clone(),
+        spawn,
+        node_id: req.record.node_id.clone(),
+        attempt: req.record.attempt,
+        profile: profile.name.clone(),
+        model: req.selection.model.clone(),
+        pid: process.pid,
+        pgid: process.pgid,
+        host: process.host,
+        transcript: req.transcript.clone(),
+        stderr: req.stderr.clone(),
     }
 }
