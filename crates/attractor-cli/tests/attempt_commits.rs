@@ -248,3 +248,32 @@ fn a_non_git_workdir_gets_no_commits() {
     assert!(fake.run_meta()["worktree"].is_null());
     assert!(!plain.join(".git").exists());
 }
+
+#[test]
+fn signing_and_the_repos_other_hooks_do_not_affect_attempt_commits() {
+    use std::os::unix::fs::PermissionsExt;
+    let fake = FakeAgent::new();
+    // Signing on with a signer that always fails, and a failing post-commit
+    // hook: neither may block or change an attempt commit.
+    fake.git(&["config", "commit.gpgsign", "true"]);
+    fake.git(&["config", "gpg.program", "false"]);
+    let hook = fake.repo().join(".git/hooks/post-commit");
+    fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    let ran = fake.scenarios().join("post-commit-ran");
+    fs::write(
+        &hook,
+        format!("#!/bin/sh\necho ran > '{}'\nexit 1\n", ran.display()),
+    )
+    .unwrap();
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    assert_success(
+        &fake,
+        &one_node(r#"timeout="30s", prompt="scenario=success""#),
+    );
+
+    let commits = engine_commits(&fake);
+    assert_eq!(commits.len(), 1, "{commits:#?}");
+    let branch = fake.run_meta()["branch"].as_str().unwrap().to_string();
+    assert_eq!(fake.git(&["log", "-1", "--format=%G?", &branch]), "N");
+    assert!(!ran.exists(), "the repo's post-commit hook ran");
+}

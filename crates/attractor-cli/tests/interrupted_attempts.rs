@@ -318,3 +318,26 @@ fn an_attempt_that_left_nothing_gets_no_interrupted_commit_or_note() {
     let prompt = fs::read_to_string(fake.scenarios().join("prompt.work.2")).unwrap();
     assert!(!prompt.contains("interrupted"), "{prompt}");
 }
+
+#[test]
+fn a_resume_after_a_failed_attempt_makes_no_interrupted_commit() {
+    let fake = FakeAgent::new();
+    scenario(&fake, "work.1", "scenario=crash");
+    scenario(&fake, "work", "scenario=success");
+    let dot = work_node(r#"timeout="30s", max_retries=1"#);
+    let first = fake.command(&dot).output().unwrap();
+    assert!(!first.status.success(), "the crash ends the first run");
+
+    let output = fake.command(&dot).output().unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    // The failed attempt was committed when it ended; nothing was left.
+    let commits = engine_commits(&fake);
+    let summary: Vec<(&str, &str)> = commits
+        .iter()
+        .map(|c| (c.status.as_str(), c.attempt.as_str()))
+        .collect();
+    assert_eq!(summary, [("fail", "1"), ("success", "2")], "{commits:#?}");
+    let prompt = fs::read_to_string(fake.scenarios().join("prompt.work.2")).unwrap();
+    assert!(!prompt.contains("interrupted"), "{prompt}");
+}

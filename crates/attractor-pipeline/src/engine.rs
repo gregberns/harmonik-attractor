@@ -650,8 +650,16 @@ impl PipelineExecutor {
                 .await;
             // Record the attempt, whatever its result, as one commit in the
             // Run's worktree (after the agent's own commits).
-            self.commit_attempt(configured, resolved, &node.id, attempt_number, &result)
-                .await?;
+            if let Some(sha) = self
+                .commit_attempt(configured, resolved, &node.id, attempt_number, &result)
+                .await?
+            {
+                // The attempt is recorded: a resume compares against this
+                // commit, so the engine's own commit never looks like work an
+                // interrupted attempt left.
+                progress.active_attempt_head = Some(sha);
+                checkpoint.save(&node.id, progress).await?;
+            }
 
             let has_more_attempts = attempt + 1 < max_attempts;
             match result {
@@ -798,9 +806,10 @@ impl PipelineExecutor {
         Ok(Some(resume_note(&base, &interrupted)))
     }
 
-    /// Commit the attempt in the Run's worktree, if it has one. Start and exit
-    /// nodes do no work and get no commit; a cancelled attempt is committed
-    /// as `interrupted` on resume instead. A failed commit stops the Run.
+    /// Commit the attempt in the Run's worktree, if it has one, and return
+    /// the commit. Start and exit nodes do no work and get no commit; a
+    /// cancelled attempt is committed as `interrupted` on resume instead. A
+    /// failed commit stops the Run.
     async fn commit_attempt(
         &self,
         configured: &RunConfiguration,
@@ -808,18 +817,18 @@ impl PipelineExecutor {
         node_id: &str,
         attempt: u32,
         result: &Result<Outcome>,
-    ) -> Result<()> {
+    ) -> Result<Option<String>> {
         let Some(worktree) = configured.controls().run_worktree() else {
-            return Ok(());
+            return Ok(None);
         };
         if matches!(
             resolved.handler,
             HandlerIdentity::Start | HandlerIdentity::Exit
         ) {
-            return Ok(());
+            return Ok(None);
         }
         let Some(record) = run_commits::attempt_record(result) else {
-            return Ok(());
+            return Ok(None);
         };
         let commit = run_commits::AttemptCommit {
             run_id: &worktree.run_id,
@@ -828,7 +837,7 @@ impl PipelineExecutor {
             record,
         };
         match run_commits::commit_attempt(&worktree.root, &commit).await {
-            Ok(_sha) => Ok(()),
+            Ok(sha) => Ok(Some(sha)),
             Err(message) => {
                 let error = AttractorError::AttemptCommitFailed {
                     node: node_id.to_string(),

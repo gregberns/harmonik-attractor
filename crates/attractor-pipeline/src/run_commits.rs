@@ -104,6 +104,15 @@ pub(crate) async fn commit_attempt(
     if !has_identity(root).await {
         args.extend(["-c", "user.name=PAS", "-c", "user.email=pas@localhost"]);
     }
+    // None of the repository's hooks run (Q40; --no-verify alone leaves
+    // prepare-commit-msg and post-commit), and attempt commits are never
+    // signed: signing could prompt or fail in an unattended Run.
+    args.extend([
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+    ]);
     args.extend([
         "commit",
         "--allow-empty",
