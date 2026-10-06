@@ -542,12 +542,19 @@ impl PipelineExecutor {
         }
         // An attempt `pas` never finished: record what it left, whether or
         // not attempts are left, before anything else (work is never lost).
-        let resume_note = if std::mem::take(&mut progress.resuming_attempt) {
-            self.record_interrupted(configured, &node.id, progress)
+        let mut resume_note = None;
+        if std::mem::take(&mut progress.resuming_attempt) {
+            if let Some((note, interrupted)) = self
+                .record_interrupted(configured, &node.id, progress)
                 .await?
-        } else {
-            None
-        };
+            {
+                // Recorded: a later resume compares against this commit and
+                // doesn't record the same interruption again.
+                progress.active_attempt_head = Some(interrupted);
+                checkpoint.save(&node.id, progress).await?;
+                resume_note = Some(note);
+            }
+        }
         if progress.active_node_attempts >= max_attempts {
             return Err(AttractorError::RetriesExhausted {
                 node: node.id.clone(),
@@ -761,13 +768,14 @@ impl PipelineExecutor {
 
     /// On resume, commit what an interrupted attempt left in the worktree
     /// (`Pas-Status: interrupted`) and return the note for the next
-    /// attempt's prompt; `None` when it left nothing or there is no worktree.
+    /// attempt's prompt and the commit; `None` when it left nothing or there
+    /// is no worktree.
     async fn record_interrupted(
         &self,
         configured: &RunConfiguration,
         node_id: &str,
         progress: &ExecutionProgress,
-    ) -> Result<Option<String>> {
+    ) -> Result<Option<(String, String)>> {
         let Some(worktree) = configured.controls().run_worktree() else {
             return Ok(None);
         };
@@ -803,7 +811,7 @@ impl PipelineExecutor {
         // The diff base: the attempt's start, so the note covers the agent's
         // own commits too; without it, HEAD before the interrupted commit.
         let base = start.map(str::to_string).or(head).unwrap_or_default();
-        Ok(Some(resume_note(&base, &interrupted)))
+        Ok(Some((resume_note(&base, &interrupted), interrupted)))
     }
 
     /// Commit the attempt in the Run's worktree, if it has one, and return

@@ -341,3 +341,36 @@ fn a_resume_after_a_failed_attempt_makes_no_interrupted_commit() {
     let prompt = fs::read_to_string(fake.scenarios().join("prompt.work.2")).unwrap();
     assert!(!prompt.contains("interrupted"), "{prompt}");
 }
+
+#[test]
+fn repeated_resumes_with_no_attempts_left_record_the_interruption_once() {
+    let fake = FakeAgent::new();
+    scenario(&fake, "work.1", "scenario=edit_hang");
+    // No retries: the SIGKILLed attempt counts, so every resume ends with
+    // "Max retries exhausted".
+    let dot = work_node(r#"timeout="120s", max_retries=0"#);
+    let mut pas = spawn_run(&fake, &dot);
+    let mut agent = KillGroup(Some(agent_pgid(&fake)));
+    let partial = worktree(&fake).join("partial.txt");
+    wait_for("partial.txt", Duration::from_secs(20), || partial.is_file());
+    pas.kill().unwrap();
+    pas.wait().unwrap();
+    agent.kill_now();
+
+    for _ in 0..2 {
+        let output = fake.command(&dot).output().unwrap();
+        assert!(!output.status.success());
+        assert!(
+            stderr(&output).contains("Max retries exhausted for node 'work'"),
+            "{}",
+            stderr(&output)
+        );
+    }
+
+    let commits = engine_commits(&fake);
+    let summary: Vec<(&str, &str)> = commits
+        .iter()
+        .map(|c| (c.status.as_str(), c.attempt.as_str()))
+        .collect();
+    assert_eq!(summary, [("interrupted", "1")], "{commits:#?}");
+}
