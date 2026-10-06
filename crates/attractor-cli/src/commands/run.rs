@@ -46,6 +46,8 @@ pub struct RunInvocation {
     /// `--worktree-root`, absolute; `None` leaves it to pas.toml or the
     /// built-in default.
     pub worktree_root: Option<PathBuf>,
+    /// `--allow-test-agents`: `test_only` agent profiles may run.
+    pub allow_test_agents: bool,
 }
 
 /// Time between Heartbeat Events while an Attempt runs (C3).
@@ -276,13 +278,16 @@ fn print_highlighted(lines: &[String], json: bool) {
 fn prepare_run_configuration(
     path: &std::path::Path,
     workdir: Option<&std::path::Path>,
-    worktree_root: Option<&std::path::Path>,
     dry_run: bool,
     max_budget_usd: Option<f64>,
     max_steps: Option<u64>,
     codergen_claude: &CodergenClaudeCliOpts,
+    invocation: &RunInvocation,
     json: bool,
-) -> anyhow::Result<attractor_pipeline::RunConfiguration> {
+) -> anyhow::Result<(
+    attractor_pipeline::RunConfiguration,
+    Arc<attractor_agent_handler::Agents>,
+)> {
     let graph = crate::load_pipeline(path)?;
     let plan = match attractor_pipeline::ExecutionPlan::compile(graph.clone()) {
         Ok(plan) => plan,
@@ -301,19 +306,31 @@ fn prepare_run_configuration(
         anyhow::bail!("Pipeline validation failed");
     }
 
-    attractor_pipeline::RunConfiguration::prepare(
+    let configured = attractor_pipeline::RunConfiguration::prepare(
         plan,
         attractor_pipeline::ExecutionOptions {
             dry_run: dry_run.then_some(true),
             max_steps,
             max_budget_usd,
             workdir: workdir.map(std::path::Path::to_path_buf),
-            worktree_root: worktree_root.map(std::path::Path::to_path_buf),
+            worktree_root: invocation.worktree_root.clone(),
             claude: codergen_claude.to_execution_options()?,
             ..Default::default()
         },
     )
-    .map_err(anyhow::Error::msg)
+    .map_err(anyhow::Error::msg)?;
+
+    // The run's agent profiles (built-in, pas.toml, [codergen.claude]), and
+    // every profile a node uses checked before anything is written.
+    let agents = crate::agents::agents(
+        attractor_pipeline::agent_profiles(configured.controls())?,
+        invocation.allow_test_agents,
+    )?;
+    let diagnostics = attractor_pipeline::check_agents(configured.plan(), &agents);
+    if super::print_diagnostics_to(&diagnostics, json) {
+        anyhow::bail!("Pipeline validation failed");
+    }
+    Ok((configured, agents))
 }
 
 /// A `pas run` failure that happened before the Run could be reported. In
@@ -664,6 +681,8 @@ fn setup_failed(json: bool, error: SetupError) -> anyhow::Error {
 /// Everything `cmd_run` sets up before the engine runs.
 struct PreparedRun {
     configured: attractor_pipeline::RunConfiguration,
+    /// The run's agent profiles and handlers, checked against the plan.
+    agents: Arc<attractor_agent_handler::Agents>,
     logs_dir: PathBuf,
     checkpoint: Option<attractor_pipeline::PipelineCheckpoint>,
     run_id: String,
@@ -711,6 +730,7 @@ pub async fn cmd_run(
     })?;
     let PreparedRun {
         configured,
+        agents,
         logs_dir,
         checkpoint,
         run_id,
@@ -798,10 +818,6 @@ pub async fn cmd_run(
     // `answers/<question-id>.json`, e.g. written by `pas answer`.
     let interviewer =
         std::sync::Arc::new(attractor_pipeline::JournalInterviewer::new(run_dir.clone()));
-    let agents = crate::agents::agents(
-        attractor_pipeline::agent_profiles(configured.controls())?,
-        false,
-    )?;
     let stop_grace = agents.stop_grace();
     let registry = attractor_pipeline::default_registry_with_interviewer(agents, interviewer);
     let cancel = attractor_agent_handler::CancellationToken::new();
@@ -913,14 +929,14 @@ async fn prepare_run(
         None => None,
     };
 
-    let configured = prepare_run_configuration(
+    let (configured, agents) = prepare_run_configuration(
         path,
         workdir,
-        invocation.worktree_root.as_deref(),
         dry_run,
         max_budget_usd,
         max_steps,
         codergen_claude,
+        invocation,
         json,
     )
     .map_err(|e| SetupError::new("invalid_pipeline", e))?;
@@ -1147,6 +1163,7 @@ async fn prepare_run(
 
     Ok(PreparedRun {
         configured,
+        agents,
         logs_dir,
         checkpoint,
         run_id,
@@ -1209,11 +1226,11 @@ pub async fn cmd_run_dir(
         prepare_run_configuration(
             dot_file,
             workdir,
-            invocation.worktree_root.as_deref(),
             dry_run,
             max_budget_usd,
             max_steps,
             codergen_claude,
+            invocation,
             false,
         )?;
     }

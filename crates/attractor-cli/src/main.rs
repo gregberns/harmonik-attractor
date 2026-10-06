@@ -120,6 +120,10 @@ enum Commands {
         /// Ignored on resume
         #[arg(long)]
         worktree_root: Option<PathBuf>,
+
+        /// Allow agent profiles marked `test_only` (the test fakes)
+        #[arg(long)]
+        allow_test_agents: bool,
     },
 
     /// Answer a waiting Human Gate by creating its answer file. Exits 7 when
@@ -207,6 +211,10 @@ enum Commands {
         /// Print one JSON object `{"v":1,"ok":true,"valid":...,"diagnostics":[...]}`
         #[arg(long)]
         json: bool,
+
+        /// Allow agent profiles marked `test_only` (the test fakes)
+        #[arg(long)]
+        allow_test_agents: bool,
     },
 
     /// Show information about a pipeline
@@ -503,6 +511,7 @@ async fn run_cli() -> anyhow::Result<()> {
             allow_shared_workdir,
             base,
             worktree_root,
+            allow_test_agents,
         } => {
             let codergen_claude = CodergenClaudeCliOpts {
                 settings_mode: codergen_claude_settings_mode,
@@ -522,6 +531,7 @@ async fn run_cli() -> anyhow::Result<()> {
                 allow_shared_workdir,
                 base,
                 worktree_root: worktree_root.map(|root| std::path::absolute(&root).unwrap_or(root)),
+                allow_test_agents,
             };
             if pipeline.is_dir() {
                 cmd_run_dir(
@@ -585,8 +595,12 @@ async fn run_cli() -> anyhow::Result<()> {
         } => cmd_kill(&run_id, &grace, json)?,
         #[cfg(feature = "monitor")]
         Commands::Monitor { port, open } => commands::monitor::cmd_monitor(port, open).await?,
-        Commands::Validate { pipeline, json } => {
-            cmd_validate(&pipeline, json)?;
+        Commands::Validate {
+            pipeline,
+            json,
+            allow_test_agents,
+        } => {
+            cmd_validate(&pipeline, allow_test_agents, json)?;
         }
         Commands::Info { pipeline } => {
             cmd_info(&pipeline)?;

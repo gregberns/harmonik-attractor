@@ -66,6 +66,6 @@ pub use run_configuration::{
 pub use stylesheet::{apply_stylesheet, parse_stylesheet, Declaration, Rule, Selector, Stylesheet};
 pub use transforms::{apply_transforms, expand_variables};
 pub use validation::{
-    validate, validate_beads_available, validate_or_raise, validate_plan, Diagnostic, LintRule,
-    Severity,
+    check_agents, validate, validate_beads_available, validate_or_raise, validate_plan, Diagnostic,
+    LintRule, Severity,
 };

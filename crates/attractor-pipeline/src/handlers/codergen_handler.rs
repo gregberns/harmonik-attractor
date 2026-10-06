@@ -233,6 +233,11 @@ impl NodeHandler for CodergenHandler {
             },
             handler: HandlerIdentity::Codergen,
             provider: Some(provider),
+            agent: (provider == LlmProvider::Claude).then(|| Selection {
+                profile: CLAUDE_PROFILE.to_string(),
+                model: node.llm_model.clone(),
+                reasoning: None,
+            }),
             invocation: Default::default(),
         };
         ProviderNodeHandler::execute_resolved(self, node, &resolved, context, graph).await
@@ -250,23 +255,28 @@ impl CodergenHandler {
     ) -> Result<Outcome> {
         let prompt = node.prompt.as_deref().unwrap_or("No prompt specified");
         let label = node.label.clone();
-        let provider = resolved
-            .provider
-            .ok_or_else(|| AttractorError::HandlerError {
-                handler: "codergen".into(),
-                node: node.id.clone(),
-                message: "compiled codergen node has no provider".into(),
-            })?;
+        // An `agent=` node has a profile and no provider.
+        let display_name = match (resolved.provider, &resolved.agent) {
+            (Some(provider), _) => provider.display_name().to_string(),
+            (None, Some(agent)) => format!("agent {}", agent.profile),
+            (None, None) => {
+                return Err(AttractorError::HandlerError {
+                    handler: "codergen".into(),
+                    node: node.id.clone(),
+                    message: "compiled codergen node has no provider or agent".into(),
+                })
+            }
+        };
 
         tracing::info!(
             node = %node.id,
             label = %label,
-            provider = provider.display_name(),
+            provider = %display_name,
             "Executing codergen handler"
         );
 
         if controls.dry_run {
-            tracing::info!(node = %node.id, provider = provider.display_name(), "Dry run — skipping CLI execution");
+            tracing::info!(node = %node.id, provider = %display_name, "Dry run — skipping CLI execution");
             return Ok(Outcome {
                 status: StageStatus::Success,
                 preferred_label: None,
@@ -287,15 +297,11 @@ impl CodergenHandler {
                     );
                     m.insert(
                         format!("{}.provider", node.id),
-                        serde_json::Value::String(provider.display_name().into()),
+                        serde_json::Value::String(display_name.clone()),
                     );
                     m
                 },
-                notes: format!(
-                    "Dry run — {} not invoked for: {}",
-                    provider.display_name(),
-                    label
-                ),
+                notes: format!("Dry run — {display_name} not invoked for: {label}"),
                 failure_reason: None,
             });
         }
@@ -347,23 +353,36 @@ impl CodergenHandler {
             }
         }
 
+        let graph_model = match graph.attrs.get("model") {
+            Some(AttributeValue::String(m)) => Some(m.as_str()),
+            _ => None,
+        };
+        if let Some(agent) = &resolved.agent {
+            return self
+                .run_claude(
+                    node,
+                    resolved,
+                    graph,
+                    full_prompt,
+                    agent,
+                    graph_model,
+                    controls,
+                )
+                .await;
+        }
         // Resolve model: node attribute, then graph-level fallback
-        let model = node
-            .llm_model
-            .as_deref()
-            .or_else(|| match graph.attrs.get("model") {
-                Some(AttributeValue::String(m)) => Some(m.as_str()),
-                _ => None,
-            });
+        let model = node.llm_model.as_deref().or(graph_model);
 
-        let cli = match provider {
-            LlmProvider::Claude => {
-                return self
-                    .run_claude(node, resolved, graph, full_prompt, model, controls)
-                    .await
+        let (provider, cli) = match resolved.provider {
+            Some(provider @ LlmProvider::Codex) => (provider, CliProvider::Codex),
+            Some(provider @ LlmProvider::Gemini) => (provider, CliProvider::Gemini),
+            Some(LlmProvider::Claude) | None => {
+                return Err(AttractorError::HandlerError {
+                    handler: "codergen".into(),
+                    node: node.id.clone(),
+                    message: "a Claude codergen node has no agent profile".into(),
+                })
             }
-            LlmProvider::Codex => CliProvider::Codex,
-            LlmProvider::Gemini => CliProvider::Gemini,
         };
         let summarize = move |stdout: &str| summarize_stream(cli, stdout);
 
@@ -555,16 +574,23 @@ impl CodergenHandler {
         ))
     }
 
-    /// A Claude node: one invocation of the `claude` profile through `Agents`.
+    /// An agent node: one invocation of its profile through `Agents`.
     async fn run_claude(
         &self,
         node: &PipelineNode,
         resolved: &ResolvedNode,
         graph: &PipelineGraph,
         prompt: String,
-        model: Option<&str>,
+        agent: &Selection,
+        graph_model: Option<&str>,
         controls: CodergenExecutionControls<'_>,
     ) -> Result<Outcome> {
+        let profile = self.agents.profile(&agent.profile);
+        let model = select_model(
+            agent.model.as_deref(),
+            profile.and_then(|p| p.model.as_deref()),
+            graph_model,
+        );
         // One id names the Model Invocation everywhere: `LlmInvoked`, the
         // Transcript file and `PAS_INVOCATION_ID`.
         let invocation_id = attractor_journal::new_invocation_id();
@@ -580,7 +606,7 @@ impl CodergenHandler {
             _ => None,
         };
         let summarize =
-            |stdout: &str| invocation_usage(&self.agents.transcript_usage(CLAUDE_PROFILE, stdout));
+            |stdout: &str| invocation_usage(&self.agents.transcript_usage(&agent.profile, stdout));
         // Armed before the agent starts: if the engine's outer deadline drops
         // this future, `Drop` still emits `LlmInvoked` with status `timeout`.
         let invocation = match (controls.events, &controls.run_dir) {
@@ -591,7 +617,7 @@ impl CodergenHandler {
                 invocation_id: invocation_id.clone(),
                 node_id: node.id.clone(),
                 provider: LlmProvider::Claude,
-                model_requested: model.map(str::to_owned),
+                model_requested: model.clone(),
                 started: Instant::now(),
                 emitted: false,
             }),
@@ -602,9 +628,9 @@ impl CodergenHandler {
             .agents
             .run(AgentRequest {
                 selection: Selection {
-                    profile: CLAUDE_PROFILE.to_string(),
-                    model: model.map(str::to_owned),
-                    reasoning: None,
+                    profile: agent.profile.clone(),
+                    model,
+                    reasoning: agent.reasoning.clone(),
                 },
                 prompt,
                 extra_args: controls
@@ -659,7 +685,7 @@ impl CodergenHandler {
         // The timeout the agent ran under: the node's, else the profile's.
         let timeout = node
             .timeout
-            .or_else(|| self.agents.profile(CLAUDE_PROFILE).map(|p| p.timeout))
+            .or_else(|| profile.map(|p| p.timeout))
             .unwrap_or_default();
         claude_outcome(
             &result,
@@ -674,6 +700,27 @@ impl CodergenHandler {
             },
         )
     }
+}
+
+/// The agent selection the compiler gives a node with `provider`: profile
+/// `claude` for Claude, none otherwise (tests building `ResolvedNode`s).
+#[cfg(test)]
+pub(crate) fn test_agent<P: Into<Option<LlmProvider>>>(
+    provider: P,
+    model: Option<String>,
+) -> Option<Selection> {
+    (provider.into() == Some(LlmProvider::Claude)).then(|| Selection {
+        profile: CLAUDE_PROFILE.to_string(),
+        model,
+        reasoning: None,
+    })
+}
+
+/// The model an agent node asks for: the node's `llm_model`, else the
+/// profile's `model`, else the graph's `model`. A graph-wide default never
+/// overrides a profile's own model.
+fn select_model(node: Option<&str>, profile: Option<&str>, graph: Option<&str>) -> Option<String> {
+    node.or(profile).or(graph).map(str::to_owned)
 }
 
 /// What a provider answered, as the outcome needs it.

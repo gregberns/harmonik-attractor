@@ -479,6 +479,10 @@ async fn codergen_dry_run_includes_provider() {
         kind: ResolvedNodeKind::Task,
         handler: crate::HandlerIdentity::Codergen,
         provider: Some(LlmCliProvider::Gemini),
+        agent: crate::handlers::codergen_handler::test_agent(
+            Some(LlmCliProvider::Gemini),
+            node.llm_model.clone(),
+        ),
         invocation: Default::default(),
     };
 
@@ -507,6 +511,7 @@ async fn codergen_rejects_missing_provider_even_in_dry_run() {
         kind: ResolvedNodeKind::Task,
         handler: crate::HandlerIdentity::Codergen,
         provider: None,
+        agent: crate::handlers::codergen_handler::test_agent(None, node.llm_model.clone()),
         invocation: Default::default(),
     };
 
@@ -614,6 +619,10 @@ mod transcripts {
             kind: ResolvedNodeKind::Task,
             handler: crate::HandlerIdentity::Codergen,
             provider: Some(provider),
+            agent: crate::handlers::codergen_handler::test_agent(
+                Some(provider),
+                node.llm_model.clone(),
+            ),
             invocation: Default::default(),
         };
         CodergenHandler::new(crate::handlers::tests::claude_agents(&program))
@@ -1056,6 +1065,10 @@ mod transcripts {
             kind: ResolvedNodeKind::Task,
             handler: crate::HandlerIdentity::Codergen,
             provider: Some(provider),
+            agent: crate::handlers::codergen_handler::test_agent(
+                Some(provider),
+                node.llm_model.clone(),
+            ),
             invocation: Default::default(),
         };
         CodergenHandler::new(crate::handlers::tests::claude_agents(&program))
@@ -1793,6 +1806,10 @@ mod stream_formats {
             kind: ResolvedNodeKind::Task,
             handler: crate::HandlerIdentity::Codergen,
             provider: Some(provider),
+            agent: crate::handlers::codergen_handler::test_agent(
+                Some(provider),
+                node.llm_model.clone(),
+            ),
             invocation: Default::default(),
         };
         CodergenHandler::new(crate::handlers::tests::claude_agents(&program))
@@ -2005,6 +2022,10 @@ mod claude_outcomes {
             kind: ResolvedNodeKind::Task,
             handler: crate::HandlerIdentity::Codergen,
             provider: Some(LlmProvider::Claude),
+            agent: crate::handlers::codergen_handler::test_agent(
+                Some(LlmProvider::Claude),
+                node.llm_model.clone(),
+            ),
             invocation: Default::default(),
         };
         claude_outcome(
