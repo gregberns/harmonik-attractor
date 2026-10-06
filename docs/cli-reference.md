@@ -262,14 +262,20 @@ records the profile name as `provider`.
 
 > **Codex and `OPENAI_API_KEY`.** The default `env.remove` strips
 > `OPENAI_API_KEY`, so Codex bills the logged-in subscription, never an
-> inherited API key. A project that logs Codex in with an API key adds a
-> profile that sets it, and selects it with `agent="codex-api"`:
+> inherited API key. A project whose Codex authenticates with an API key
+> adds a profile that lets the caller's key through, and selects it with
+> `agent="codex-api"`:
 >
 > ```toml
 > [agents.codex-api]
 > inherit_from = "codex"
-> env.set = { OPENAI_API_KEY = "sk-..." }
+> # the default list minus OPENAI_API_KEY, so the caller's key reaches Codex
+> env.remove = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+>               "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]
 > ```
+>
+> Never put a key in `env.set`: its values are literal and committed with
+> `pas.toml`, so they land in git and in every Run's worktree.
 
 A project replaces a profile by name, or adds one, in `pas.toml`:
 
@@ -297,7 +303,7 @@ test_only = true
 | `timeout` | How long an invocation may run when the node sets no `timeout` (built-in `10m`). |
 | `kill_grace` | How long to wait after TERM before KILL, on timeout or stop (built-in `10s`). |
 | `env.remove` | Variables removed from the agent's environment. |
-| `env.set` | Variables set in the agent's environment, after `env.remove`; the `PAS_*` ids are set last. |
+| `env.set` | Variables set in the agent's environment, after `env.remove`; the `PAS_*` ids are set last. Values are literal and committed with `pas.toml`: never secrets. |
 | `test_only` | Refused unless `pas run` / `pas validate` get `--allow-test-agents`. |
 | `inherit_from` | Another profile to take every field this one leaves unset from. |
 
