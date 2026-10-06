@@ -67,6 +67,7 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
         stderr: None,
         prompt_file: None,
         session: attractor_agent_handler::Session::New("sess-1".into()),
+        state_dir: None,
         observer: None,
         cancel: CancellationToken::new(),
     };
@@ -80,6 +81,10 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
             command_len: claude.command.len(),
             env: Default::default(),
             session: request.session.clone(),
+            api_key: None,
+            state_dir: None,
+            profile: &claude,
+            model,
             prompt: "test prompt",
             workdir: Path::new("."),
             timeout: claude.timeout,

@@ -105,6 +105,7 @@ impl Fixture {
                 stderr: Some(self.dir.path().join("t.stderr.log")),
                 prompt_file: Some(self.dir.path().join("t.prompt.txt")),
                 session,
+                state_dir: None,
                 observer: None,
                 cancel: CancellationToken::new(),
             })

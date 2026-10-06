@@ -152,6 +152,7 @@ impl Fixture {
             stderr: Some(self.stderr()),
             prompt_file: None,
             session: Session::New("sess-1".into()),
+            state_dir: None,
             observer: None,
             cancel: CancellationToken::new(),
         }

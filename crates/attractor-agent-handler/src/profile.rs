@@ -36,6 +36,25 @@ pub struct Profile {
     pub session_args: Vec<String>,
     /// How to continue a session; `None`: the profile can't resume.
     pub resume: Option<Resume>,
+    /// The provider name (`pi` profiles), e.g. `deepseek`, `zai`.
+    pub provider: Option<String>,
+    /// The provider's API base URL (`pi` profiles).
+    pub base_url: Option<String>,
+    /// The environment variable holding the API key (`pi` profiles). The
+    /// key is resolved by `Agents::run`, passed to the handler only as
+    /// `Invocation::api_key` and never put in the child's environment.
+    pub api_key_env: Option<String>,
+    /// The model's limits (`pi` profiles), for a model the provider doesn't
+    /// list itself.
+    pub limits: Option<Limits>,
+}
+
+/// A model's context window and largest reply, in tokens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Limits {
+    pub context: u64,
+    pub max_output: u64,
 }
 
 /// A profile's resume form (design §2).
@@ -190,6 +209,7 @@ mod tests {
             stderr: None,
             prompt_file: None,
             session: Session::New("sess-1".into()),
+            state_dir: None,
             observer: None,
             cancel: tokio_util::sync::CancellationToken::new(),
         }
@@ -211,6 +231,10 @@ mod tests {
             test_only: false,
             session_args: vec![],
             resume: None,
+            provider: None,
+            base_url: None,
+            api_key_env: None,
+            limits: None,
         }
     }
 

@@ -10,7 +10,7 @@ use async_trait::async_trait;
 
 use attractor_agent_handler::{
     AgentHandler, AgentObserver, AgentRequest, AgentResult, AgentStatus, Agents, CancellationToken,
-    ConfigError, FailureClass, Invocation, Profile, ProfileEnv, Record, Selection, Spawned,
+    ConfigError, FailureClass, Invocation, Limits, Profile, ProfileEnv, Record, Selection, Spawned,
     Started, Usage,
 };
 
@@ -125,6 +125,10 @@ fn profile(name: &str, mechanism: &str) -> Profile {
         test_only: false,
         session_args: vec![],
         resume: None,
+        provider: None,
+        base_url: None,
+        api_key_env: None,
+        limits: None,
     }
 }
 
@@ -149,6 +153,7 @@ fn request<'a>(profile: &str, observer: Option<&'a dyn AgentObserver>) -> AgentR
         stderr: Some(PathBuf::from("/run/transcripts/inv-1.stderr.log")),
         prompt_file: None,
         session: attractor_agent_handler::Session::New("sess-1".into()),
+        state_dir: None,
         observer,
         cancel: CancellationToken::new(),
     }
@@ -591,4 +596,224 @@ async fn handlers_name_themselves_and_see_the_commands_length() {
     assert_eq!(agents.display_name("p"), Some("fake"));
     assert_eq!(agents.reports_cost("p"), Some(true));
     assert_eq!(agents.display_name("nope"), None);
+}
+
+/// What a keyed invocation was given beyond argv and env.
+#[derive(Debug, Clone)]
+struct KeyedSeen {
+    api_key: Option<String>,
+    state_dir: Option<PathBuf>,
+    env: BTreeMap<String, String>,
+    debug: String,
+}
+
+/// A handler that takes the Pi fields, resumes natively and records the
+/// key and state dir it is handed.
+struct Keyed {
+    seen: Mutex<Vec<KeyedSeen>>,
+}
+
+impl Keyed {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            seen: Mutex::new(Vec::new()),
+        })
+    }
+}
+
+#[async_trait]
+impl AgentHandler for Keyed {
+    fn mechanism(&self) -> &'static str {
+        "keyed"
+    }
+
+    fn check(&self, profile: &Profile) -> Result<(), ConfigError> {
+        match profile.provider {
+            Some(_) => Ok(()),
+            None => Err(ConfigError::HandlerField {
+                profile: profile.name.clone(),
+                field: "provider",
+                problem: "is required".into(),
+            }),
+        }
+    }
+
+    fn resumes_natively(&self) -> bool {
+        true
+    }
+
+    async fn run(&self, inv: Invocation<'_>) -> AgentResult {
+        self.seen.lock().unwrap().push(KeyedSeen {
+            api_key: inv.api_key.map(str::to_string),
+            state_dir: inv.state_dir.map(PathBuf::from),
+            env: inv.env.clone(),
+            debug: format!("{inv:?}"),
+        });
+        AgentResult::failed(inv.invocation_id, FailureClass::Launch, "recorded")
+    }
+
+    fn transcript_usage(&self, _transcript: &str) -> Usage {
+        Usage::default()
+    }
+}
+
+fn keyed_profile(name: &str) -> Profile {
+    let mut p = profile(name, "keyed");
+    p.provider = Some("deepseek".into());
+    p.api_key_env = Some("FAKE_PI_KEY".into());
+    p
+}
+
+#[test]
+fn the_default_check_refuses_pi_fields_on_another_mechanism() {
+    for (field, set) in [
+        (
+            "provider",
+            (|p: &mut Profile| p.provider = Some("x".into())) as fn(&mut Profile),
+        ),
+        ("base_url", |p| p.base_url = Some("https://x".into())),
+        ("api_key_env", |p| p.api_key_env = Some("K".into())),
+        ("limits", |p| {
+            p.limits = Some(Limits {
+                context: 1,
+                max_output: 1,
+            })
+        }),
+    ] {
+        let mut p = profile("p", "claude-p");
+        set(&mut p);
+        let err = Agents::new(
+            vec![Recorder::new("claude-p")],
+            vec![p],
+            BTreeMap::new(),
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            ConfigError::FieldNotForMechanism {
+                profile: "p".into(),
+                field,
+                mechanism: "claude-p".into(),
+            }
+        );
+        assert!(err.to_string().contains(field), "{err}");
+    }
+}
+
+#[test]
+fn new_asks_each_profiles_handler_to_check_it() {
+    let mut p = keyed_profile("p");
+    p.provider = None;
+    let err = Agents::new(vec![Keyed::new()], vec![p], BTreeMap::new(), false).unwrap_err();
+    assert_eq!(err.to_string(), "agent profile p: provider is required");
+}
+
+#[test]
+fn a_natively_resuming_handler_can_resume_without_a_resume_form() {
+    let agents = Agents::new(
+        vec![Keyed::new(), Recorder::new("fake")],
+        vec![keyed_profile("pi"), profile("plain", "fake")],
+        BTreeMap::new(),
+        false,
+    )
+    .unwrap();
+    assert_eq!(agents.can_resume("pi"), Some(true));
+    assert_eq!(agents.can_resume("plain"), Some(false));
+    assert_eq!(agents.can_resume("nope"), None);
+}
+
+#[tokio::test]
+async fn the_api_key_reaches_the_handler_but_not_the_childs_env() {
+    let keyed = Keyed::new();
+    let mut p = keyed_profile("p");
+    p.env.remove.push("FAKE_PI_KEY".into());
+    let agents = Agents::new(
+        vec![keyed.clone()],
+        vec![p],
+        env(&[("PATH", "/bin"), ("FAKE_PI_KEY", "sk-secret")]),
+        false,
+    )
+    .unwrap();
+    let mut req = request("p", None);
+    req.state_dir = Some(PathBuf::from("/run/dir"));
+
+    agents.run(req).await;
+
+    let seen = keyed.seen.lock().unwrap();
+    assert_eq!(seen[0].api_key.as_deref(), Some("sk-secret"));
+    assert_eq!(seen[0].state_dir, Some(PathBuf::from("/run/dir")));
+    assert!(
+        !seen[0].env.contains_key("FAKE_PI_KEY"),
+        "{:?}",
+        seen[0].env
+    );
+    assert_eq!(seen[0].env.get("PATH").map(String::as_str), Some("/bin"));
+    assert!(!seen[0].debug.contains("sk-secret"), "{}", seen[0].debug);
+}
+
+#[tokio::test]
+async fn the_profiles_env_set_key_wins_and_is_still_kept_from_the_child() {
+    let keyed = Keyed::new();
+    let mut p = keyed_profile("p");
+    p.env
+        .set
+        .insert("FAKE_PI_KEY".into(), "sk-from-profile".into());
+    let agents = Agents::new(
+        vec![keyed.clone()],
+        vec![p],
+        env(&[("FAKE_PI_KEY", "sk-inherited")]),
+        false,
+    )
+    .unwrap();
+
+    agents.run(request("p", None)).await;
+
+    let seen = keyed.seen.lock().unwrap();
+    assert_eq!(seen[0].api_key.as_deref(), Some("sk-from-profile"));
+    assert!(!seen[0].env.contains_key("FAKE_PI_KEY"));
+}
+
+#[tokio::test]
+async fn a_missing_or_empty_api_key_is_a_launch_failure_naming_the_variable() {
+    for parent in [env(&[]), env(&[("FAKE_PI_KEY", "")])] {
+        let keyed = Keyed::new();
+        let agents =
+            Agents::new(vec![keyed.clone()], vec![keyed_profile("p")], parent, false).unwrap();
+
+        let result = agents.run(request("p", None)).await;
+
+        assert_eq!(result.status, AgentStatus::Failed(FailureClass::Launch));
+        assert!(
+            result
+                .detail
+                .contains("API key variable FAKE_PI_KEY is not set"),
+            "{}",
+            result.detail
+        );
+        assert!(
+            keyed.seen.lock().unwrap().is_empty(),
+            "the handler never ran"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_profile_without_api_key_env_hands_no_key() {
+    let keyed = Keyed::new();
+    let mut p = keyed_profile("p");
+    p.api_key_env = None;
+    let agents = Agents::new(
+        vec![keyed.clone()],
+        vec![p],
+        env(&[("FAKE_PI_KEY", "sk-secret")]),
+        false,
+    )
+    .unwrap();
+
+    agents.run(request("p", None)).await;
+
+    let seen = keyed.seen.lock().unwrap();
+    assert_eq!(seen[0].api_key, None);
+    assert_eq!(seen[0].state_dir, None);
 }

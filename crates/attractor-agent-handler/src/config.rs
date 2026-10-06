@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::profile::{Profile, ProfileEnv, Resume};
+use crate::profile::{Limits, Profile, ProfileEnv, Resume};
 use crate::registry::ConfigError;
 
 /// The built-in profiles and defaults, compiled into the binary.
@@ -40,6 +40,12 @@ pub struct ProfileConfig {
     /// Continues a session; replaces `command` and `args` (`{command}`
     /// expands to the command). At most one of the two resume forms.
     pub resume_command: Option<Vec<String>>,
+    /// `pi` profiles: the provider, its base URL, the API key's variable
+    /// and the model's limits.
+    pub provider: Option<String>,
+    pub base_url: Option<String>,
+    pub api_key_env: Option<String>,
+    pub limits: Option<Limits>,
 }
 
 /// `command = "claude"` or `command = ["claude", "--sub"]`.
@@ -205,6 +211,10 @@ fn overlay(child: ProfileConfig, parent: &ProfileConfig) -> ProfileConfig {
         } else {
             parent.resume_command.clone()
         },
+        provider: child.provider.or_else(|| parent.provider.clone()),
+        base_url: child.base_url.or_else(|| parent.base_url.clone()),
+        api_key_env: child.api_key_env.or_else(|| parent.api_key_env.clone()),
+        limits: child.limits.or(parent.limits),
     }
 }
 
@@ -256,6 +266,10 @@ fn into_profile(name: &str, config: ProfileConfig) -> Result<Profile, ConfigErro
         test_only: config.test_only.unwrap_or(false),
         session_args: config.session_args.unwrap_or_default(),
         resume,
+        provider: config.provider,
+        base_url: config.base_url,
+        api_key_env: config.api_key_env,
+        limits: config.limits,
     })
 }
 
@@ -505,6 +519,57 @@ mod tests {
         assert_eq!(leaf.model_args, ["--model", "{model}"]);
         assert_eq!(leaf.kill_grace, Duration::from_secs(3));
         assert_eq!(leaf.timeout, Duration::from_secs(600));
+    }
+
+    #[test]
+    fn pi_fields_are_inherited_each_on_its_own() {
+        let profiles = config(BASE)
+            .with_overrides(&overrides(
+                r#"
+                [mid]
+                inherit_from = "base"
+                provider = "deepseek"
+                base_url = "https://api.example/v1"
+                api_key_env = "DEEPSEEK_API_KEY"
+                limits = { context = 128000, max_output = 8192 }
+
+                [leaf]
+                inherit_from = "mid"
+                provider = "zai"
+                "#,
+            ))
+            .resolve()
+            .unwrap();
+        let base = profile(&profiles, "base");
+        assert_eq!(
+            (
+                &base.provider,
+                &base.base_url,
+                &base.api_key_env,
+                base.limits
+            ),
+            (&None, &None, &None, None)
+        );
+        let leaf = profile(&profiles, "leaf");
+        assert_eq!(leaf.provider.as_deref(), Some("zai"));
+        assert_eq!(leaf.base_url.as_deref(), Some("https://api.example/v1"));
+        assert_eq!(leaf.api_key_env.as_deref(), Some("DEEPSEEK_API_KEY"));
+        assert_eq!(
+            leaf.limits,
+            Some(Limits {
+                context: 128000,
+                max_output: 8192
+            })
+        );
+    }
+
+    #[test]
+    fn limits_refuse_an_unknown_field() {
+        let err = toml::from_str::<BTreeMap<String, ProfileConfig>>(
+            "[x]\nlimits = { context = 1, max_output = 1, other = 1 }\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("other"), "{err}");
     }
 
     #[test]

@@ -18,11 +18,13 @@ pub use config::{
 };
 pub use env::child_env;
 pub use profile::{
-    argv, fill, resolve_argv, selected_model, selected_reasoning, Profile, ProfileEnv,
+    argv, fill, resolve_argv, selected_model, selected_reasoning, Limits, Profile, ProfileEnv,
     ResolvedArgv, Resume,
 };
 pub use prompt_file::prompt_file_text;
-pub use registry::{AgentHandler, AgentObserver, Agents, ConfigError, HARD_DEADLINE_MARGIN};
+pub use registry::{
+    refuse_pi_fields, AgentHandler, AgentObserver, Agents, ConfigError, HARD_DEADLINE_MARGIN,
+};
 pub use tokio_util::sync::CancellationToken;
 pub use types::{
     AgentRequest, AgentResult, AgentStatus, ExitInfo, FailureClass, Invocation, Record, Selection,

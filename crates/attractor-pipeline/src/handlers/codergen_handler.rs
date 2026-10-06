@@ -404,7 +404,7 @@ impl CodergenHandler {
     ) -> Result<Outcome> {
         let profile_name = selection.profile.clone();
         let profile = self.agents.profile(&profile_name);
-        let can_resume = profile.is_some_and(|p| p.can_resume());
+        let can_resume = self.agents.can_resume(&profile_name).unwrap_or(false);
         let session = choose_session(
             Fidelity::effective(resolved.fidelity, can_resume),
             controls.session.and_then(|s| s.prior),
@@ -473,6 +473,7 @@ impl CodergenHandler {
                 stderr,
                 prompt_file,
                 session,
+                state_dir: controls.run_dir.clone(),
                 observer: journal_starts
                     .as_ref()
                     .map(|observer| observer as &dyn AgentObserver),

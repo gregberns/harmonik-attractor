@@ -40,6 +40,10 @@ fn profile(command: Vec<String>) -> Profile {
         test_only: false,
         session_args: vec![],
         resume: None,
+        provider: None,
+        base_url: None,
+        api_key_env: None,
+        limits: None,
     }
 }
 
@@ -115,6 +119,7 @@ impl Fixture {
                 stderr: Some(self.dir.path().join("t.stderr.log")),
                 prompt_file: Some(self.prompt_file()),
                 session: attractor_agent_handler::Session::New("sess-1".into()),
+                state_dir: None,
                 observer: None,
                 cancel: CancellationToken::new(),
             })

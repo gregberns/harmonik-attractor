@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use tokio_util::sync::CancellationToken;
 
+use crate::profile::Profile;
 use crate::registry::AgentObserver;
 
 /// Which agent profile runs a node, with which model and reasoning level.
@@ -79,6 +80,9 @@ pub struct AgentRequest<'a> {
     pub prompt_file: Option<PathBuf>,
     /// A new session, or the one to continue.
     pub session: Session,
+    /// The Run folder, for handlers that keep per-invocation files there
+    /// (never in the worktree); `None` outside a Run.
+    pub state_dir: Option<PathBuf>,
     /// Told when each process starts and once when the invocation ends.
     pub observer: Option<&'a dyn AgentObserver>,
     /// Cancelled when the Run is stopped: the handler stops the agent
@@ -99,6 +103,15 @@ pub struct Invocation<'a> {
     pub command_len: usize,
     /// The complete child environment; the handler uses exactly this map.
     pub env: BTreeMap<String, String>,
+    /// The profile's API key, if it names one (`api_key_env`). Never logged,
+    /// never on argv, never in the child's environment or the prompt file.
+    pub api_key: Option<&'a str>,
+    /// The Run folder (see [`AgentRequest::state_dir`]).
+    pub state_dir: Option<&'a Path>,
+    /// The profile, for a handler that reads its own fields (`pi`).
+    pub profile: &'a Profile,
+    /// The model the invocation uses: the request's, else the profile's.
+    pub model: Option<&'a str>,
     /// The session: `argv` already carries its flags (`session_args`,
     /// `resume_args` or `resume_command`).
     pub session: Session,
@@ -123,6 +136,10 @@ impl std::fmt::Debug for Invocation<'_> {
             .field("argv", &self.argv)
             .field("command_len", &self.command_len)
             .field("env", &self.env)
+            .field("api_key", &self.api_key.map(|_| "<redacted>"))
+            .field("state_dir", &self.state_dir)
+            .field("profile", &self.profile.name)
+            .field("model", &self.model)
             .field("session", &self.session)
             .field("prompt", &self.prompt)
             .field("workdir", &self.workdir)

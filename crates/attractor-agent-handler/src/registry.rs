@@ -35,6 +35,20 @@ pub trait AgentHandler: Send + Sync {
     fn argv(&self, inv: &Invocation<'_>) -> Vec<String> {
         inv.argv.clone()
     }
+    /// Check the handler-specific fields of a profile; called for every
+    /// profile when `Agents` is built, so `pas validate` and `pas run`
+    /// report a bad profile before anything starts. The default refuses
+    /// the `pi` fields, so a profile can't silently carry fields its
+    /// mechanism ignores.
+    fn check(&self, profile: &Profile) -> Result<(), ConfigError> {
+        refuse_pi_fields(profile)
+    }
+    /// Whether the agent continues a session with the same command it
+    /// starts one with (e.g. Pi's `--session-id`), so its profiles need no
+    /// resume form to resume.
+    fn resumes_natively(&self) -> bool {
+        false
+    }
     /// The agent's name in messages and the node's `<id>.provider`
     /// context value, e.g. "Claude Code". Defaults to the mechanism.
     fn display_name(&self) -> &'static str {
@@ -95,6 +109,24 @@ pub enum ConfigError {
     TwoResumeForms {
         profile: String,
     },
+    /// A profile sets a field its mechanism doesn't take.
+    FieldNotForMechanism {
+        profile: String,
+        field: &'static str,
+        mechanism: String,
+    },
+    /// A profile's handler needs a field the profile doesn't set, or
+    /// rejects its value.
+    HandlerField {
+        profile: String,
+        field: &'static str,
+        problem: String,
+    },
+    /// The profile's `api_key_env` names a variable that is unset or empty.
+    MissingApiKey {
+        profile: String,
+        variable: String,
+    },
     BadDuration {
         profile: String,
         field: &'static str,
@@ -144,6 +176,23 @@ impl fmt::Display for ConfigError {
                 }
                 Ok(())
             }
+            Self::FieldNotForMechanism {
+                profile,
+                field,
+                mechanism,
+            } => write!(
+                f,
+                "agent profile {profile}: {field} is not used by mechanism {mechanism}"
+            ),
+            Self::HandlerField {
+                profile,
+                field,
+                problem,
+            } => write!(f, "agent profile {profile}: {field} {problem}"),
+            Self::MissingApiKey { profile, variable } => write!(
+                f,
+                "agent profile {profile}: API key variable {variable} is not set"
+            ),
             Self::TwoResumeForms { profile } => write!(
                 f,
                 "agent profile {profile} sets both resume_args and resume_command; keep one"
@@ -210,12 +259,13 @@ impl Agents {
         }
         let mut by_name = BTreeMap::new();
         for profile in profiles {
-            if !by_mechanism.contains_key(profile.mechanism.as_str()) {
+            let Some(handler) = by_mechanism.get(profile.mechanism.as_str()) else {
                 return Err(ConfigError::NoHandler {
                     profile: profile.name,
                     mechanism: profile.mechanism,
                 });
-            }
+            };
+            handler.check(&profile)?;
             let name = profile.name.clone();
             if by_name.insert(name.clone(), profile).is_some() {
                 return Err(ConfigError::DuplicateProfile(name));
@@ -238,14 +288,15 @@ impl Agents {
         }
     }
 
-    /// The longest `kill_grace` of any profile: how long a stopped agent
-    /// may take to exit.
-    /// Whether `profile` can continue a session; `None` for an unknown
-    /// profile.
+    /// Whether `profile` can continue a session (it has a resume form, or
+    /// its handler resumes natively); `None` for an unknown profile.
     pub fn can_resume(&self, profile: &str) -> Option<bool> {
-        self.profiles.get(profile).map(Profile::can_resume)
+        let (profile, handler) = self.resolve(profile)?;
+        Some(profile.can_resume() || handler.resumes_natively())
     }
 
+    /// The longest `kill_grace` of any profile: how long a stopped agent
+    /// may take to exit.
     pub fn max_kill_grace(&self) -> Duration {
         self.profiles
             .values()
@@ -323,12 +374,18 @@ impl Agents {
     /// hard-deadline margin is dropped (its process guard kills any child)
     /// and the result is `Failed(Timeout)`.
     pub async fn run(&self, req: AgentRequest<'_>) -> AgentResult {
-        let resolved = self.check(&req.selection).and_then(|()| {
-            self.resolve(&req.selection.profile)
-                .ok_or_else(|| ConfigError::UnknownProfile(req.selection.profile.clone()))
-        });
+        let resolved = self
+            .check(&req.selection)
+            .and_then(|()| {
+                self.resolve(&req.selection.profile)
+                    .ok_or_else(|| ConfigError::UnknownProfile(req.selection.profile.clone()))
+            })
+            .and_then(|(profile, handler)| {
+                let api_key = api_key(profile, &self.parent_env)?;
+                Ok((profile, handler, api_key))
+            });
         let result = match resolved {
-            Ok((profile, handler)) => {
+            Ok((profile, handler, api_key)) => {
                 let timeout = req.timeout.unwrap_or(profile.timeout);
                 let spawns = AtomicU32::new(0);
                 let spawned = |spawn: Spawned| {
@@ -342,12 +399,19 @@ impl Agents {
                     invocation_id: &req.record.invocation_id,
                     argv: resolved.argv,
                     command_len: resolved.command_len,
-                    env: child_env(
-                        &self.parent_env,
-                        &profile.env,
-                        &req.record,
-                        req.session.id(),
+                    env: without_key(
+                        child_env(
+                            &self.parent_env,
+                            &profile.env,
+                            &req.record,
+                            req.session.id(),
+                        ),
+                        profile,
                     ),
+                    api_key: api_key.as_deref(),
+                    state_dir: req.state_dir.as_deref(),
+                    profile,
+                    model: selected_model(profile, &req),
                     session: req.session.clone(),
                     prompt: &req.prompt,
                     workdir: &req.workdir,
@@ -432,6 +496,58 @@ impl Agents {
         let profile = self.profiles.get(name)?;
         let handler = self.handlers.get(profile.mechanism.as_str())?;
         Some((profile, handler))
+    }
+}
+
+/// The profile's API key, when it names one (`api_key_env`): the
+/// profile's `env.set` value for that variable, else the caller's. Naming
+/// the variable is consent to use it, so `env.remove` doesn't block it.
+/// A named variable that is unset or empty is an error: the agent would
+/// only fail to authenticate.
+fn api_key(
+    profile: &Profile,
+    parent_env: &BTreeMap<String, String>,
+) -> Result<Option<String>, ConfigError> {
+    let Some(name) = profile.api_key_env.as_deref() else {
+        return Ok(None);
+    };
+    profile
+        .env
+        .set
+        .get(name)
+        .or_else(|| parent_env.get(name))
+        .filter(|value| !value.is_empty())
+        .map(|value| Some(value.clone()))
+        .ok_or_else(|| ConfigError::MissingApiKey {
+            profile: profile.name.clone(),
+            variable: name.to_string(),
+        })
+}
+
+/// `env` without the profile's API key variable: the key reaches the
+/// handler only as `Invocation::api_key`, never the agent's environment.
+fn without_key(mut env: BTreeMap<String, String>, profile: &Profile) -> BTreeMap<String, String> {
+    if let Some(name) = &profile.api_key_env {
+        env.remove(name);
+    }
+    env
+}
+
+/// The default [`AgentHandler::check`]: no `pi` field on another mechanism.
+pub fn refuse_pi_fields(profile: &Profile) -> Result<(), ConfigError> {
+    let set = [
+        ("provider", profile.provider.is_some()),
+        ("base_url", profile.base_url.is_some()),
+        ("api_key_env", profile.api_key_env.is_some()),
+        ("limits", profile.limits.is_some()),
+    ];
+    match set.iter().find(|(_, is_set)| *is_set) {
+        Some((field, _)) => Err(ConfigError::FieldNotForMechanism {
+            profile: profile.name.clone(),
+            field,
+            mechanism: profile.mechanism.clone(),
+        }),
+        None => Ok(()),
     }
 }
 
