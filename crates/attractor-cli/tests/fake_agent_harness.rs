@@ -121,8 +121,10 @@ fn label_routing_follows_the_labelled_edge() {
 fn crash_ends_the_run_with_the_exit_status_and_stderr() {
     let fake = FakeAgent::new();
     let stderr = failed_run(&fake, r#"timeout="30s", prompt="scenario=crash""#);
-    assert!(stderr.contains("Claude Code exited with"), "{stderr}");
-    assert!(stderr.contains("exit status: 3"), "{stderr}");
+    assert!(
+        stderr.contains("attempt 1: Claude Code exited with exit status: 3;"),
+        "{stderr}"
+    );
     assert!(stderr.contains("fake-claude: crashed"), "{stderr}");
 }
 
@@ -148,7 +150,7 @@ fn hang_ends_the_run_with_the_timeout_error() {
     let fake = FakeAgent::new();
     let stderr = failed_run(&fake, r#"timeout="1s", prompt="scenario=hang""#);
     assert!(
-        stderr.contains("Command timed out after 1000ms"),
+        stderr.contains("node 'work' attempt 1 failed: timeout after 1000ms"),
         "{stderr}"
     );
     assert_eq!(fake.attempts("hang"), 1);
@@ -192,14 +194,14 @@ fn flaky_is_retried_on_timeout_then_succeeds() {
 #[test]
 fn flaky_past_its_retries_ends_the_run_with_the_timeout_error() {
     let fake = FakeAgent::new();
-    // Today the last attempt's own CommandTimeout ends the Run, not
+    // The last attempt's own AgentTimeout ends the Run, not
     // RetriesExhausted.
     let stderr = failed_run(
         &fake,
         r#"timeout="1s", max_retries=1, prompt="scenario=flaky fails=3""#,
     );
     assert!(
-        stderr.contains("Command timed out after 1000ms"),
+        stderr.contains("node 'work' attempt 2 failed: timeout after 1000ms"),
         "{stderr}"
     );
     assert_eq!(fake.attempts("flaky"), 2);
@@ -458,7 +460,7 @@ fn a_timeout_sends_term_first() {
     // be dropped and SIGKILLed: no TERM, no marker.
     let stderr = failed_run(&fake, r#"timeout="1s", prompt="scenario=hang_term""#);
     assert!(
-        stderr.contains("Command timed out after 1000ms"),
+        stderr.contains("node 'work' attempt 1 failed: timeout after 1000ms"),
         "{stderr}"
     );
     assert_eq!(
@@ -475,7 +477,7 @@ fn an_agent_that_ignores_term_is_killed_after_the_grace() {
     let fake = FakeAgent::new();
     let stderr = failed_run(&fake, r#"timeout="1s", prompt="scenario=hang_ignore_term""#);
     assert!(
-        stderr.contains("Command timed out after 1000ms"),
+        stderr.contains("node 'work' attempt 1 failed: timeout after 1000ms"),
         "{stderr}"
     );
     assert!(fs::read_to_string(fake.scenarios().join("term"))

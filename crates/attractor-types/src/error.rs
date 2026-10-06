@@ -1,5 +1,35 @@
 //! Unified error type and Result alias for Attractor.
 
+use std::fmt;
+use std::path::PathBuf;
+
+/// The files one agent invocation left in its Run folder: its Transcript
+/// and its stderr log. Displays as `transcript <path>; stderr <path>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentFiles {
+    pub transcript: PathBuf,
+    pub stderr: PathBuf,
+}
+
+impl fmt::Display for AgentFiles {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "transcript {}; stderr {}",
+            self.transcript.display(),
+            self.stderr.display()
+        )
+    }
+}
+
+/// `; <files>` when there are files, else nothing.
+fn files_suffix(files: &Option<AgentFiles>) -> String {
+    files
+        .as_ref()
+        .map(|files| format!("; {files}"))
+        .unwrap_or_default()
+}
+
 /// Unified error type for all Attractor subsystems.
 #[derive(Debug, thiserror::Error)]
 pub enum AttractorError {
@@ -74,6 +104,18 @@ pub enum AttractorError {
     #[error("Command timed out after {timeout_ms}ms")]
     CommandTimeout { timeout_ms: u64 },
 
+    /// An agent node's own timeout fired; `files` when the Run has a folder.
+    #[error(
+        "node '{node}' attempt {attempt} failed: timeout after {timeout_ms}ms{}",
+        files_suffix(files)
+    )]
+    AgentTimeout {
+        node: String,
+        attempt: u32,
+        timeout_ms: u64,
+        files: Option<AgentFiles>,
+    },
+
     #[error("CLI binary '{binary}' not found — ensure it is installed and on PATH")]
     CliNotFound { binary: String },
 
@@ -106,6 +148,7 @@ impl AttractorError {
             self,
             AttractorError::RateLimited { .. }
                 | AttractorError::CommandTimeout { .. }
+                | AttractorError::AgentTimeout { .. }
                 | AttractorError::ProviderError {
                     retryable: true,
                     ..
@@ -130,9 +173,9 @@ impl AttractorError {
             AttractorError::RateLimited { .. } => Some(429),
             AttractorError::AuthError { .. } => Some(401),
             AttractorError::ProviderError { status, .. } => Some(*status),
-            AttractorError::RequestTimeout { .. } | AttractorError::CommandTimeout { .. } => {
-                Some(504)
-            }
+            AttractorError::RequestTimeout { .. }
+            | AttractorError::CommandTimeout { .. }
+            | AttractorError::AgentTimeout { .. } => Some(504),
             AttractorError::ValidationError(_) => Some(400),
             AttractorError::ContextLengthExceeded { .. } => Some(413),
             _ => None,
@@ -305,6 +348,41 @@ mod tests {
         assert!(err.is_retryable());
     }
 
+    fn agent_timeout(files: Option<AgentFiles>) -> AttractorError {
+        AttractorError::AgentTimeout {
+            node: "work".into(),
+            attempt: 2,
+            timeout_ms: 1000,
+            files,
+        }
+    }
+
+    #[test]
+    fn retryable_agent_timeout() {
+        assert!(agent_timeout(None).is_retryable());
+    }
+
+    #[test]
+    fn error_display_agent_timeout_without_files() {
+        assert_eq!(
+            agent_timeout(None).to_string(),
+            "node 'work' attempt 2 failed: timeout after 1000ms"
+        );
+    }
+
+    #[test]
+    fn error_display_agent_timeout_with_files() {
+        let files = AgentFiles {
+            transcript: "/run/transcripts/inv.jsonl".into(),
+            stderr: "/run/transcripts/inv.stderr.log".into(),
+        };
+        assert_eq!(
+            agent_timeout(Some(files)).to_string(),
+            "node 'work' attempt 2 failed: timeout after 1000ms; \
+             transcript /run/transcripts/inv.jsonl; stderr /run/transcripts/inv.stderr.log"
+        );
+    }
+
     #[test]
     fn not_retryable_auth_error() {
         let err = AttractorError::AuthError {
@@ -386,6 +464,11 @@ mod tests {
     fn http_status_command_timeout_504() {
         let err = AttractorError::CommandTimeout { timeout_ms: 5000 };
         assert_eq!(err.http_status(), Some(504));
+    }
+
+    #[test]
+    fn http_status_agent_timeout_504() {
+        assert_eq!(agent_timeout(None).http_status(), Some(504));
     }
 
     #[test]

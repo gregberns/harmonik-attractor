@@ -52,6 +52,7 @@ impl AgentHandler for Recorder {
             status: AgentStatus::Completed,
             text: "done".into(),
             detail: String::new(),
+            stderr_tail: String::new(),
             usage: Usage::default(),
             exit: None,
             duration: Duration::ZERO,

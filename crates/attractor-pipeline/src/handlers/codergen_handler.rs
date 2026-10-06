@@ -27,7 +27,7 @@ use attractor_agent_process::{run_streaming, Transcript};
 mod claude;
 #[path = "codergen_provider.rs"]
 mod provider;
-use claude::{claude_extra_args, claude_outcome, invocation_usage, ClaudeCliConfig};
+use claude::{claude_extra_args, claude_outcome, invocation_usage, AgentAttempt, ClaudeCliConfig};
 #[cfg(test)]
 use provider::{
     build_cli_command, parse_codex_output, parse_gemini_output, parse_gemini_stream_output,
@@ -590,6 +590,7 @@ impl CodergenHandler {
             _ => None,
         };
         let timeout = node.timeout.unwrap_or(DEFAULT_TIMEOUT);
+        let failure_invocation_id = invocation_id.clone();
         let result = self
             .agents
             .run(AgentRequest {
@@ -644,7 +645,12 @@ impl CodergenHandler {
             node,
             resolved,
             graph,
-            u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+            &AgentAttempt {
+                attempt: controls.attempt,
+                timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+                run_dir: controls.run_dir.as_deref(),
+                invocation_id: &failure_invocation_id,
+            },
         )
     }
 }

@@ -202,10 +202,8 @@ async fn crash_is_a_crash_with_exit_three_and_stderr() {
     let result = fx.run("scenario=crash").await;
     assert_eq!(result.status, AgentStatus::Failed(FailureClass::Crash));
     assert_eq!(result.exit.and_then(|e| e.code), Some(3));
-    assert_eq!(
-        result.detail,
-        "exited with exit status: 3: fake-claude: crashed"
-    );
+    assert_eq!(result.detail, "exited with exit status: 3");
+    assert_eq!(result.stderr_tail, "fake-claude: crashed");
 }
 
 #[tokio::test]

@@ -2,10 +2,13 @@
 //! and the mapping from an [`AgentResult`] to today's outcomes and errors.
 //! Pure functions.
 
+use std::path::Path;
+
 use attractor_agent_handler::{AgentResult, AgentStatus, FailureClass, Usage};
 use attractor_dot::AttributeValue;
+use attractor_journal::RunDir;
 use attractor_quality::ClaudeSettingsMode;
-use attractor_types::{AttractorError, Outcome, Result};
+use attractor_types::{AgentFiles, AttractorError, Outcome, Result};
 
 use super::provider::InvocationUsage;
 use super::{provider_outcome, ProviderResult};
@@ -89,10 +92,57 @@ pub(super) fn invocation_usage(usage: &Usage) -> InvocationUsage {
     }
 }
 
-/// A Claude node's outcome, with today's messages:
+/// Which attempt of a node one invocation was, as its failure messages
+/// name it.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct AgentAttempt<'a> {
+    /// 1-based.
+    pub(super) attempt: u32,
+    pub(super) timeout_ms: u64,
+    /// The Run folder (absolute), when the node runs in a Run.
+    pub(super) run_dir: Option<&'a Path>,
+    pub(super) invocation_id: &'a str,
+}
+
+/// The Transcript and stderr log of `invocation_id` in `run_dir`, when there
+/// is a Run folder. Absolute when `run_dir` is.
+pub(super) fn agent_failure_files(
+    run_dir: Option<&Path>,
+    invocation_id: &str,
+) -> Option<AgentFiles> {
+    run_dir.map(|dir| {
+        let dir = RunDir::from_path(dir);
+        AgentFiles {
+            transcript: dir.transcript(invocation_id),
+            stderr: dir.stderr(invocation_id),
+        }
+    })
+}
+
+/// A crashed agent's message: `attempt <n>: <agent> <detail>; last stderr
+/// lines:\n<tail>` (`(no stderr)` for an empty tail), then
+/// `\ntranscript <path>; stderr <path>` when there are files.
+pub(super) fn crash_message(
+    agent: &str,
+    attempt: u32,
+    detail: &str,
+    stderr_tail: &str,
+    files: Option<&AgentFiles>,
+) -> String {
+    let tail = if stderr_tail.is_empty() {
+        "(no stderr)"
+    } else {
+        stderr_tail
+    };
+    let files = files.map(|files| format!("\n{files}")).unwrap_or_default();
+    format!("attempt {attempt}: {agent} {detail}; last stderr lines:\n{tail}{files}")
+}
+
+/// A Claude node's outcome:
 /// - `Completed`: Success; `Failed(Reported)`: Fail, "Claude Code returned an error";
-/// - `Failed(Timeout)`: `CommandTimeout`, the only retryable error;
-/// - `Failed(Crash)`: "Claude Code exited with <status>: <stderr>";
+/// - `Failed(Timeout)`: `AgentTimeout` (node, attempt, files), the only
+///   retryable error;
+/// - `Failed(Crash)`: [`crash_message`];
 /// - `Failed(NoResult)`: the parse or no-output message;
 /// - `Failed(Launch)`: `CliNotFound` when the command is missing, else
 ///   "Failed to spawn Claude Code: ...";
@@ -102,7 +152,7 @@ pub(super) fn claude_outcome(
     node: &PipelineNode,
     resolved: &ResolvedNode,
     graph: &PipelineGraph,
-    timeout_ms: u64,
+    attempt: &AgentAttempt<'_>,
 ) -> Result<Outcome> {
     let claude = LlmProvider::Claude;
     let handler_error = |message: String| AttractorError::HandlerError {
@@ -110,6 +160,7 @@ pub(super) fn claude_outcome(
         node: node.id.clone(),
         message,
     };
+    let files = || agent_failure_files(attempt.run_dir, attempt.invocation_id);
     let is_error = match result.status {
         AgentStatus::Cancelled => {
             return Err(AttractorError::Cancelled {
@@ -119,13 +170,20 @@ pub(super) fn claude_outcome(
         AgentStatus::Completed => false,
         AgentStatus::Failed(FailureClass::Reported) => true,
         AgentStatus::Failed(FailureClass::Timeout) => {
-            return Err(AttractorError::CommandTimeout { timeout_ms })
+            return Err(AttractorError::AgentTimeout {
+                node: node.id.clone(),
+                attempt: attempt.attempt,
+                timeout_ms: attempt.timeout_ms,
+                files: files(),
+            })
         }
         AgentStatus::Failed(FailureClass::Crash) => {
-            return Err(handler_error(format!(
-                "{} {}",
+            return Err(handler_error(crash_message(
                 claude.display_name(),
-                result.detail
+                attempt.attempt,
+                &result.detail,
+                &result.stderr_tail,
+                files().as_ref(),
             )))
         }
         AgentStatus::Failed(FailureClass::NoResult) => {
