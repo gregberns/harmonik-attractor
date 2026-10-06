@@ -37,7 +37,7 @@ fn each_invocation_has_a_prompt_file_without_env_values() {
         .command(
             r#"digraph G {
                 start [shape="Mdiamond"]
-                work [shape="box", llm_provider="claude", timeout="1s", max_retries=1, prompt="do the work"]
+                work [shape="box", agent="fake", timeout="1s", max_retries=1, prompt="do the work"]
                 done [shape="Msquare"]
                 start -> work -> done
             }"#,

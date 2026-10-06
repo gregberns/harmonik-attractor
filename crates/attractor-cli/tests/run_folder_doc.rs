@@ -90,8 +90,8 @@ fn every_file_a_run_creates_is_in_the_doc() {
             r#"digraph G {
                 start [shape="Mdiamond"]
                 gate [shape="hexagon", prompt="Go on?"]
-                work [shape="box", llm_provider="claude", timeout="1s", max_retries=1, prompt="work"]
-                last [shape="box", llm_provider="claude", timeout="30s", prompt="last"]
+                work [shape="box", agent="fake", timeout="1s", max_retries=1, prompt="work"]
+                last [shape="box", agent="fake", timeout="30s", prompt="last"]
                 done [shape="Msquare"]
                 start -> gate
                 gate -> work [label="yes"]
