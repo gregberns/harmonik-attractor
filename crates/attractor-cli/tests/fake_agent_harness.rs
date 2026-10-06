@@ -534,7 +534,9 @@ fn a_stop_still_kills_an_agent_that_ignores_term() {
     wait_for("LlmStarted", Duration::from_secs(20), || {
         has_event(&fake, "LlmStarted")
     });
-    let pid = fake_pid(&fake);
+    // From LlmStarted, not env.log: LlmStarted is journalled at spawn, before
+    // the fake has written env.log.
+    let pid = fake.events_of("LlmStarted")[0]["pid"].as_u64().unwrap() as u32;
 
     sigterm(&child);
     let status = wait_exit(&mut child, Duration::from_secs(40));
