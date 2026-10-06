@@ -162,6 +162,30 @@ impl CodergenClaudeCliOpts {
     }
 }
 
+/// How long a stopped Attempt waits for its agents before giving up: the
+/// longest `kill_grace` of the profiles the pipeline's nodes use, plus the
+/// hard-deadline margin.
+fn stop_wait(
+    configured: &attractor_pipeline::RunConfiguration,
+    agents: &attractor_agent_handler::Agents,
+) -> Duration {
+    agents.stop_grace_of(
+        configured
+            .plan()
+            .all_nodes()
+            .filter_map(|node| node.agent.as_ref())
+            .map(|agent| agent.profile.as_str()),
+    )
+}
+
+/// [`stop_wait`] in milliseconds, for `AttemptStarted.stop_wait_ms`.
+fn stop_wait_ms(
+    configured: &attractor_pipeline::RunConfiguration,
+    agents: &attractor_agent_handler::Agents,
+) -> u64 {
+    u64::try_from(stop_wait(configured, agents).as_millis()).unwrap_or(u64::MAX)
+}
+
 /// Generate a deterministic logs directory name from the pipeline file path.
 /// Format: `.pas/logs/<stem>-<8hex>` e.g. `.pas/logs/phase-01-spec-a3f1b2c9`
 ///
@@ -818,7 +842,7 @@ pub async fn cmd_run(
     // `answers/<question-id>.json`, e.g. written by `pas answer`.
     let interviewer =
         std::sync::Arc::new(attractor_pipeline::JournalInterviewer::new(run_dir.clone()));
-    let stop_grace = agents.stop_grace();
+    let stop_grace = stop_wait(&configured, &agents);
     let registry = attractor_pipeline::default_registry_with_interviewer(agents, interviewer);
     let cancel = attractor_agent_handler::CancellationToken::new();
     let executor = attractor_pipeline::PipelineExecutor::new(registry)
@@ -1158,6 +1182,7 @@ async fn prepare_run(
             argv: invocation.argv.clone(),
             git_head: git_rev_parse(&place.workdir, "HEAD"),
             resumed_from_node: checkpoint.as_ref().map(|cp| cp.current_node_id.clone()),
+            stop_wait_ms: Some(stop_wait_ms(&configured, &agents)),
         })
         .map_err(journal_error)?;
 

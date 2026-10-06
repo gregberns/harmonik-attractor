@@ -325,6 +325,18 @@ impl FakeAgent {
             .unwrap()
     }
 
+    /// `pas <args>` with the fake's environment (e.g. `stop`, `kill`).
+    pub fn pas_cli(&self, args: &[&str]) -> Output {
+        self.pas_cli_command(args).output().unwrap()
+    }
+
+    /// The command [`FakeAgent::pas_cli`] runs, to spawn it.
+    pub fn pas_cli_command(&self, args: &[&str]) -> Command {
+        let mut command = self.pas();
+        command.args(args);
+        command
+    }
+
     /// The folders under `<logs>/runs`, sorted.
     pub fn run_dirs(&self) -> Vec<PathBuf> {
         let Ok(entries) = fs::read_dir(self.logs().join("runs")) else {

@@ -344,6 +344,12 @@ fn stop_grace_is_the_longest_kill_grace_plus_the_margin() {
     .with_hard_deadline_margin(Duration::from_secs(1));
     assert_eq!(agents.max_kill_grace(), Duration::from_secs(3));
     assert_eq!(agents.stop_grace(), Duration::from_secs(4));
+    assert_eq!(
+        agents.stop_grace_of(["p", "nope"]),
+        Duration::from_millis(1050)
+    );
+    assert_eq!(agents.stop_grace_of(["p", "slow"]), Duration::from_secs(4));
+    assert_eq!(agents.stop_grace_of([]), Duration::from_secs(1));
 }
 
 #[test]

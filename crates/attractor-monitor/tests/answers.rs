@@ -118,6 +118,7 @@ fn add_run(e: &Env, ended: Option<AttemptEndReason>, choices: &[&str]) -> (Strin
         argv: vec!["pas".into()],
         git_head: None,
         resumed_from_node: None,
+        stop_wait_ms: None,
     })
     .unwrap();
     w.append(EventData::HumanInputRequested {

@@ -5,12 +5,16 @@
 //! `llm_provider="claude"` alias, through `pas run` with the fake.
 
 // This crate uses a subset of the shared harness.
+mod common;
 #[allow(dead_code)]
 mod fake_agent;
 
 use std::fs;
+use std::process::{Child, ExitStatus, Stdio};
+use std::time::{Duration, Instant};
 
 use fake_agent::{stderr, FakeAgent};
+use serde_json::Value;
 
 /// start -> work -> done, `work` an agent node with `attrs`.
 fn one_node(attrs: &str) -> String {
@@ -277,4 +281,150 @@ mcp_config_json = "{\"mcpServers\":{}}"
         fake.invocations(),
         vec![expected.map(String::from).to_vec()]
     );
+}
+
+// --- pas kill's default grace follows the Run's profiles ---
+
+/// Polls `ready` every 20 ms for up to `secs` seconds.
+fn wait_until(what: &str, secs: u64, mut ready: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(secs);
+    while !ready() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// The journal so far, tolerating a partly written last line.
+fn journal_so_far(fake: &FakeAgent) -> Vec<Value> {
+    let Some(run) = fake.run_dirs().into_iter().next() else {
+        return Vec::new();
+    };
+    fs::read_to_string(run.join("events.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect()
+}
+
+fn has_event(fake: &FakeAgent, kind: &str) -> bool {
+    journal_so_far(fake).iter().any(|e| e["type"] == kind)
+}
+
+fn run_id(fake: &FakeAgent) -> String {
+    fake.run_meta()["run_id"].as_str().unwrap().to_string()
+}
+
+/// A `pas run` in the background, killed if the test fails first.
+struct Spawned(Child);
+
+impl Spawned {
+    fn wait(&mut self, secs: u64) -> ExitStatus {
+        let mut status = None;
+        wait_until("pas run to exit", secs, || {
+            status = self.0.try_wait().unwrap();
+            status.is_some()
+        });
+        status.unwrap()
+    }
+}
+
+impl Drop for Spawned {
+    fn drop(&mut self) {
+        if self.0.try_wait().ok().flatten().is_none() {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+}
+
+#[test]
+fn attempt_started_records_the_stop_wait_of_the_profiles_used() {
+    let fake = FakeAgent::new();
+    fake.commit_pas_toml("kill_grace = \"1s\"");
+    // `work` uses the fake; `gate` waits for `go` in the worktree; the stop
+    // lands before `after`.
+    let dot = &format!(
+        r#"digraph G {{
+            start [shape="Mdiamond"]
+            work [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
+            gate [shape="parallelogram", tool_command="{go}"]
+            after [shape="parallelogram", tool_command="true"]
+            done [shape="Msquare"]
+            start -> work -> gate -> after -> done
+        }}"#,
+        go = common::wait_for_go!()
+    );
+    let mut run = Spawned(
+        fake.command(dot)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_until("gate to start", 30, || {
+        has_event(&fake, "StageStarted")
+            && journal_so_far(&fake)
+                .iter()
+                .any(|e| e["type"] == "StageStarted" && e["data"]["node_id"] == "gate")
+    });
+    let id = run_id(&fake);
+    let stop = fake.pas_cli(&["stop", &id]);
+    assert!(stop.status.success(), "{}", stderr(&stop));
+    fs::write(fake.worktree().join("go"), "").unwrap();
+    assert_eq!(run.wait(30).code(), Some(0), "a stopped Run exits 0");
+
+    // A resume reloads pas.toml: its Attempt records the new grace.
+    fake.commit_pas_toml("kill_grace = \"2s\"");
+    let resumed = fake.run(dot);
+    assert_success(&resumed);
+
+    let waits: Vec<Value> = fake
+        .events_of("AttemptStarted")
+        .iter()
+        .map(|data| data["stop_wait_ms"].clone())
+        .collect();
+    assert_eq!(waits, [6000, 7000]);
+}
+
+#[test]
+fn pas_kill_without_grace_waits_for_a_profile_grace_over_15s() {
+    let fake = FakeAgent::new();
+    // Over the old fixed 20 s default's limit (15 s grace + 5 s margin).
+    fake.commit_pas_toml("kill_grace = \"16s\"");
+    let mut run = Spawned(
+        fake.command(&one_node(
+            r#"agent="fake", timeout="120s", prompt="scenario=hang_ignore_term""#,
+        ))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap(),
+    );
+    wait_until("LlmStarted", 30, || has_event(&fake, "LlmStarted"));
+    let id = run_id(&fake);
+
+    // pas kill watches the Run's pid; reap the Run as soon as it exits, or
+    // its zombie looks alive and draws a SIGKILL.
+    let mut killer = fake
+        .pas_cli_command(&["kill", &id, "--json"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut ran = None;
+    wait_until("pas kill to finish", 60, || {
+        if ran.is_none() {
+            ran = run.0.try_wait().unwrap();
+        }
+        killer.try_wait().unwrap().is_some()
+    });
+    let kill = killer.wait_with_output().unwrap();
+    assert!(ran.is_some(), "the Run ended before pas kill escalated");
+
+    let out: Value = serde_json::from_slice(&kill.stdout)
+        .unwrap_or_else(|_| panic!("pas kill: {}{}", stdout(&kill), stderr(&kill)));
+    assert_eq!(out["signal"], "SIGTERM", "{out}");
+    let ended = fake.events_of("AttemptEnded");
+    assert_eq!(ended.len(), 1, "{ended:?}");
+    assert_eq!(ended[0]["reason"], "stopped");
 }

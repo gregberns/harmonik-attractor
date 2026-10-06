@@ -129,6 +129,11 @@ pub enum EventData {
         git_head: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         resumed_from_node: Option<String>,
+        /// How long this Attempt, once stopped, may wait for its agents
+        /// before ending: the longest `kill_grace` of its agent profiles
+        /// plus the hard-deadline margin. `pas kill` waits longer by default.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stop_wait_ms: Option<u64>,
     },
     /// Never written when the process is killed; its absence is how a
     /// crashed Attempt is detected.
@@ -489,6 +494,7 @@ mod tests {
                 argv: vec![s("pas"), s("run")],
                 git_head: Some(s("abc")),
                 resumed_from_node: None,
+                stop_wait_ms: None,
             },
             EventData::AttemptEnded {
                 attempt: 1,

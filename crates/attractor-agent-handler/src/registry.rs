@@ -210,6 +210,19 @@ impl Agents {
             .saturating_add(self.hard_deadline_margin)
     }
 
+    /// [`Agents::stop_grace`] over only the named profiles (the ones a
+    /// pipeline runs); unknown names are skipped, and no profile leaves the
+    /// margin alone.
+    pub fn stop_grace_of<'a>(&self, profiles: impl IntoIterator<Item = &'a str>) -> Duration {
+        profiles
+            .into_iter()
+            .filter_map(|name| self.profiles.get(name))
+            .map(|p| p.kill_grace)
+            .max()
+            .unwrap_or_default()
+            .saturating_add(self.hard_deadline_margin)
+    }
+
     /// No handlers and no profiles: every `run` fails as `Launch`.
     pub fn empty() -> Self {
         Self {

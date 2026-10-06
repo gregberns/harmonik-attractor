@@ -53,6 +53,7 @@ fn attempt_started() -> EventData {
         argv: vec!["pas".into()],
         git_head: None,
         resumed_from_node: None,
+        stop_wait_ms: None,
     }
 }
 
@@ -270,6 +271,7 @@ async fn ended_run_resumed_is_refreshed() {
         argv: vec![],
         git_head: None,
         resumed_from_node: None,
+        stop_wait_ms: None,
     })
     .unwrap();
     wait_for(

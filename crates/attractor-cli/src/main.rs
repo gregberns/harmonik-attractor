@@ -170,10 +170,12 @@ enum Commands {
         run_id: String,
 
         /// How long to wait after SIGTERM before SIGKILL (e.g. 500ms, 10s, 1m).
-        /// The default is longer than a stopped Run waits for its agent (10 s
-        /// grace + 5 s), so the Run can still journal its own end.
-        #[arg(long, default_value = "20s")]
-        grace: String,
+        /// Default: 5 s longer than the Run waits for its agents once stopped
+        /// (its profiles' longest kill_grace + 5 s, recorded when the Attempt
+        /// started), so the Run can still journal its own end; 20 s for a Run
+        /// that recorded none
+        #[arg(long)]
+        grace: Option<String>,
 
         /// Print one JSON object `{"v":1,"ok":...,"run_id":...}`
         #[arg(long)]
@@ -592,7 +594,7 @@ async fn run_cli() -> anyhow::Result<()> {
             run_id,
             grace,
             json,
-        } => cmd_kill(&run_id, &grace, json)?,
+        } => cmd_kill(&run_id, grace.as_deref(), json)?,
         #[cfg(feature = "monitor")]
         Commands::Monitor { port, open } => commands::monitor::cmd_monitor(port, open).await?,
         Commands::Validate {

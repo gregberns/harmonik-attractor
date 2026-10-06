@@ -1,5 +1,5 @@
-//! `pas kill <run-id> [--grace 20s] [--json]`: end an active Run now (spec
-//! File Change 12, C1, C3, C5, C6).
+//! `pas kill <run-id> [--grace <duration>] [--json]`: end an active Run now
+//! (spec File Change 12, C1, C3, C5, C6).
 //!
 //! The PID comes from the Run's last Heartbeat. It is signalled only when it
 //! provably is the Run: the Run is `running`, the Pipeline lock is held right
@@ -25,6 +25,18 @@ use super::runs::pid_alive;
 const POLL: Duration = Duration::from_millis(50);
 /// How long to wait for the process to vanish after SIGKILL.
 const KILL_WAIT: Duration = Duration::from_secs(1);
+/// How much longer than a stopped Run waits for its agents `pas kill` waits
+/// by default before SIGKILL, so the Run can still journal its own end.
+const KILL_SLACK: Duration = Duration::from_secs(5);
+/// The default grace for a Run whose `AttemptStarted` has no
+/// `stop_wait_ms` (one started before it was recorded).
+const DEFAULT_GRACE: Duration = Duration::from_secs(20);
+
+/// `pas kill`'s grace when `--grace` is not given: the Attempt's recorded
+/// stop wait plus [`KILL_SLACK`], else [`DEFAULT_GRACE`].
+fn default_kill_grace(stop_wait: Option<Duration>) -> Duration {
+    stop_wait.map_or(DEFAULT_GRACE, |wait| wait.saturating_add(KILL_SLACK))
+}
 
 #[derive(Debug)]
 enum KillError {
@@ -111,23 +123,37 @@ trait Os {
     fn elapsed(&self) -> Duration;
 }
 
-/// The PID of the last Heartbeat of the last Attempt, else of its
-/// `AttemptStarted`.
-fn recorded_pid(run_dir: &RunDir) -> Result<Option<u32>, KillError> {
+/// What the journal says about the last Attempt: its PID (the last
+/// Heartbeat's, else `AttemptStarted`'s) and its recorded stop wait.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct RecordedAttempt {
+    pid: Option<u32>,
+    stop_wait: Option<Duration>,
+}
+
+fn recorded_attempt(run_dir: &RunDir) -> Result<RecordedAttempt, KillError> {
     let events = read_all(run_dir.events())
         .map_err(|e| KillError::Io(format!("cannot read the Run Journal: {e}")))?;
     let Some(last) = events.iter().map(|e| e.attempt).max() else {
-        return Ok(None);
+        return Ok(RecordedAttempt::default());
     };
-    let (mut heartbeat, mut started) = (None, None);
+    let (mut heartbeat, mut started, mut stop_wait) = (None, None, None);
     for event in events.iter().filter(|e| e.attempt == last) {
         match &event.data {
             EventData::Heartbeat { pid } => heartbeat = Some(*pid),
-            EventData::AttemptStarted { pid, .. } => started = Some(*pid),
+            EventData::AttemptStarted {
+                pid, stop_wait_ms, ..
+            } => {
+                started = Some(*pid);
+                stop_wait = stop_wait_ms.map(Duration::from_millis);
+            }
             _ => {}
         }
     }
-    Ok(heartbeat.or(started))
+    Ok(RecordedAttempt {
+        pid: heartbeat.or(started),
+        stop_wait,
+    })
 }
 
 /// Check that `pid` holds the Pipeline lock of `run_id` right now.
@@ -160,16 +186,19 @@ fn verify_lock_holder(
 }
 
 /// Kill Run `run_id` found through the Index at `index` (`None`: no state
-/// folder, so an empty Index).
+/// folder, so an empty Index). `grace` is `--grace`; `None` uses
+/// [`default_kill_grace`] of the Attempt's recorded stop wait.
 fn kill(
     index: Option<&Path>,
     run_id: &str,
-    grace: &str,
+    grace: Option<&str>,
     now: chrono::DateTime<chrono::Utc>,
     os: &mut impl Os,
     lock_held: impl Fn(&Path) -> bool,
 ) -> Result<Killed, KillError> {
-    let grace = attractor_dot::duration_serde::parse_duration_str(grace)
+    let grace = grace
+        .map(attractor_dot::duration_serde::parse_duration_str)
+        .transpose()
         .map_err(KillError::InvalidGrace)?;
     let unknown_run = || KillError::UnknownRun(run_id.to_string());
     let run_id = parse_run_id(run_id).ok_or_else(unknown_run)?;
@@ -195,7 +224,11 @@ fn kill(
         status => return Err(KillError::NotActive { run_id, status }),
     }
     let run_dir = RunDir::from_path(&entry.run_dir);
-    let pid = recorded_pid(&run_dir)?.ok_or_else(|| KillError::NoPid(run_id.clone()))?;
+    let recorded = recorded_attempt(&run_dir)?;
+    let pid = recorded
+        .pid
+        .ok_or_else(|| KillError::NoPid(run_id.clone()))?;
+    let grace = grace.unwrap_or_else(|| default_kill_grace(recorded.stop_wait));
     // Never a PID that would address a process group or the caller.
     if pid <= 1 || pid == std::process::id() {
         return Err(KillError::NotLockHolder(format!(
@@ -347,7 +380,7 @@ impl Os for RealOs {
 
 /// `pas kill`.
 #[cfg(unix)]
-pub fn cmd_kill(run_id: &str, grace: &str, json: bool) -> anyhow::Result<()> {
+pub fn cmd_kill(run_id: &str, grace: Option<&str>, json: bool) -> anyhow::Result<()> {
     let index = attractor_journal::index_path().ok();
     let mut os = RealOs {
         start: std::time::Instant::now(),
@@ -365,7 +398,7 @@ pub fn cmd_kill(run_id: &str, grace: &str, json: bool) -> anyhow::Result<()> {
 
 /// `pas kill` cannot signal processes here.
 #[cfg(not(unix))]
-pub fn cmd_kill(run_id: &str, _grace: &str, json: bool) -> anyhow::Result<()> {
+pub fn cmd_kill(run_id: &str, _grace: Option<&str>, json: bool) -> anyhow::Result<()> {
     report(
         run_id,
         json,
@@ -530,9 +563,14 @@ mod tests {
     }
 
     fn go(s: &Setup, os: &mut Fake, grace: &str) -> Result<Killed, KillError> {
-        kill(Some(&s.index), RUN, grace, chrono::Utc::now(), os, |p| {
-            p.exists()
-        })
+        kill(
+            Some(&s.index),
+            RUN,
+            Some(grace),
+            chrono::Utc::now(),
+            os,
+            |p| p.exists(),
+        )
     }
 
     #[test]
@@ -620,7 +658,7 @@ mod tests {
         let error = kill(
             Some(&s.index),
             RUN,
-            "1s",
+            Some("1s"),
             chrono::Utc::now(),
             &mut os,
             |_| false,
@@ -647,7 +685,7 @@ mod tests {
         let error = kill(
             Some(&s.index),
             RUN,
-            "1s",
+            Some("1s"),
             chrono::Utc::now() + chrono::Duration::minutes(10),
             &mut os,
             |_| true,
@@ -668,7 +706,7 @@ mod tests {
         let error = kill(
             Some(&s.index),
             other,
-            "1s",
+            Some("1s"),
             chrono::Utc::now(),
             &mut Fake::new(None),
             |_| true,
@@ -678,7 +716,7 @@ mod tests {
         let error = kill(
             None,
             RUN,
-            "1s",
+            Some("1s"),
             chrono::Utc::now(),
             &mut Fake::new(None),
             |_| true,
@@ -740,7 +778,7 @@ mod tests {
         let error = kill(
             Some(&s.index),
             RUN,
-            "0s",
+            Some("0s"),
             chrono::Utc::now(),
             &mut os,
             |_| true,
@@ -765,5 +803,62 @@ garbage line
         assert_eq!(groups_of_descendants(ps, 10), vec![12, 13]);
         assert_eq!(groups_of_descendants(ps, 20), Vec::<u32>::new());
         assert_eq!(groups_of_descendants("", 10), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn default_grace_is_the_recorded_stop_wait_plus_slack() {
+        assert_eq!(default_kill_grace(None), Duration::from_secs(20));
+        assert_eq!(
+            default_kill_grace(Some(Duration::from_secs(15))),
+            Duration::from_secs(20)
+        );
+        assert_eq!(
+            default_kill_grace(Some(Duration::from_secs(60))),
+            Duration::from_secs(65)
+        );
+        assert_eq!(default_kill_grace(Some(Duration::MAX)), Duration::MAX);
+    }
+
+    #[test]
+    fn without_grace_a_run_gets_its_stop_wait_plus_slack_before_sigkill() {
+        let started = line(
+            1,
+            "AttemptStarted",
+            &format!(
+                r#"{{"attempt":1,"pid":{PID},"argv":[],"pas_version":"0","stop_wait_ms":60000}}"#
+            ),
+        );
+        let s = setup(Some(&started));
+        let mut os = Fake::new(None);
+        let done = kill(
+            Some(&s.index),
+            RUN,
+            None,
+            chrono::Utc::now(),
+            &mut os,
+            |p| p.exists(),
+        )
+        .unwrap();
+        assert_eq!(done.signal, "SIGKILL");
+        assert!(os.clock >= Duration::from_secs(65), "{:?}", os.clock);
+        assert!(os.clock < Duration::from_secs(67), "{:?}", os.clock);
+    }
+
+    #[test]
+    fn without_grace_or_a_recorded_stop_wait_the_grace_is_20s() {
+        let s = setup(Some(&started(PID)));
+        let mut os = Fake::new(None);
+        let done = kill(
+            Some(&s.index),
+            RUN,
+            None,
+            chrono::Utc::now(),
+            &mut os,
+            |p| p.exists(),
+        )
+        .unwrap();
+        assert_eq!(done.signal, "SIGKILL");
+        assert!(os.clock >= Duration::from_secs(20), "{:?}", os.clock);
+        assert!(os.clock < Duration::from_secs(22), "{:?}", os.clock);
     }
 }
