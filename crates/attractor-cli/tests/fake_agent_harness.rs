@@ -6,6 +6,10 @@
 
 mod fake_agent;
 
+use std::fs;
+use std::io::Write;
+use std::process::Stdio;
+
 use fake_agent::{stderr, FakeAgent};
 
 #[test]
@@ -191,21 +195,23 @@ fn flaky_past_its_retries_ends_the_run_with_the_timeout_error() {
     assert_eq!(fake.attempts("flaky"), 2);
 }
 
+// Flipped in 02a: an `error_*` subtype is a reported failure (design §5 c).
 #[test]
-fn error_max_turns_counts_as_success_today() {
+fn error_max_turns_is_a_reported_failure() {
     let fake = FakeAgent::new();
     let output = fake.run(&one_node(
         r#"timeout="30s", prompt="scenario=error_max_turns""#,
     ));
 
-    // FLIPS IN 02a: error_* subtypes become failures (design §5 c).
+    // A Fail with no matching fail edge follows the unconditional edge and
+    // the Run completes, as today (ticket 05 changes that).
     assert!(output.status.success(), "{}", stderr(&output));
     let completed = fake.events_of("StageCompleted");
     let work = completed
         .iter()
         .find(|data| data["node_id"] == "work")
         .unwrap();
-    assert_eq!(work["status"], "success");
+    assert_eq!(work["status"], "fail");
 }
 
 // Permanent, not a 02a flip: a final result wins over the exit status
@@ -228,4 +234,80 @@ fn slow_stream_completes() {
 
     assert!(output.status.success(), "{}", stderr(&output));
     assert_eq!(fake.attempts("slow"), 1);
+}
+
+#[test]
+fn the_agent_env_has_the_pas_ids_and_no_api_key() {
+    let fake = FakeAgent::new();
+    let output = fake
+        .command(&one_node(r#"timeout="30s", prompt="scenario=success""#))
+        .env("ANTHROPIC_API_KEY", "sk-must-not-reach-the-agent")
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let envs = fake.env_logs();
+    assert_eq!(envs.len(), 1, "{envs:?}");
+    let env = &envs[0];
+    assert_eq!(env["PAS_NODE_ID"], "work");
+    assert_eq!(env["PAS_ATTEMPT"], "1");
+    assert_eq!(
+        env["PAS_RUN_ID"],
+        fake.run_json()["run_id"].as_str().unwrap()
+    );
+    let invoked = fake.events_of("LlmInvoked");
+    assert_eq!(invoked.len(), 1, "{invoked:?}");
+    assert_eq!(
+        env["PAS_INVOCATION_ID"],
+        invoked[0]["invocation_id"].as_str().unwrap()
+    );
+    assert!(!env.contains_key("ANTHROPIC_API_KEY"), "{env:?}");
+}
+
+#[test]
+fn node_files_pick_a_scenario_per_attempt() {
+    let fake = FakeAgent::new();
+    fs::write(fake.scenarios().join("work.1"), "scenario=hang\n").unwrap();
+    fs::write(fake.scenarios().join("work"), "scenario=success\n").unwrap();
+    let output = fake.run(&one_node(r#"timeout="1s", max_retries=1, prompt="do it""#));
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let attempts: Vec<String> = fake
+        .env_logs()
+        .iter()
+        .map(|env| env["PAS_ATTEMPT"].clone())
+        .collect();
+    assert_eq!(attempts, ["1", "2"]);
+    assert_eq!(fake.attempts("hang"), 1);
+    assert_eq!(fake.attempts("success"), 1);
+}
+
+#[test]
+fn the_agent_reads_dev_null_even_when_pas_stdin_is_an_open_pipe() {
+    let fake = FakeAgent::new();
+    // An inherited stdin would block the agent until the node timeout, and
+    // max_retries defaults to 0, so no retry could hide it.
+    let mut child = fake
+        .command(&one_node(r#"timeout="5s", prompt="scenario=stdin""#))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // Write something and keep the pipe open until pas has finished.
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"never read\n").unwrap();
+    let output = child.wait_with_output().unwrap();
+    drop(stdin);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let completed = fake.events_of("PipelineCompleted");
+    assert_eq!(completed.len(), 1, "the Run did not complete");
+    assert!(fake.events_of("PipelineFailed").is_empty());
+    assert_eq!(
+        fs::read_to_string(fake.scenarios().join("stdin.bytes"))
+            .unwrap()
+            .trim(),
+        "0"
+    );
 }

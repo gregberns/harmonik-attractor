@@ -5,6 +5,7 @@
 //! the fake's scenario folder, and the Run's logs and state folders. Git
 //! ignores the developer's global and system config (hooks, templates).
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -82,12 +83,19 @@ impl FakeAgent {
 
     /// Writes `dot` and runs `pas run` on it with the fake first on `PATH`.
     pub fn run(&self, dot: &str) -> Output {
+        self.command(dot).output().unwrap()
+    }
+
+    /// Writes `dot` and returns the `pas run` command [`Self::run`] runs, for
+    /// tests that add to its environment or stdin.
+    pub fn command(&self, dot: &str) -> Command {
         let pipeline = self.path().join("p.dot");
         fs::write(&pipeline, dot).unwrap();
         let path = std::env::var_os("PATH").unwrap_or_default();
         let mut paths = vec![self.bin()];
         paths.extend(std::env::split_paths(&path));
-        Command::new(env!("CARGO_BIN_EXE_pas"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_pas"));
+        command
             .arg("run")
             .arg(&pipeline)
             .arg("--workdir")
@@ -103,9 +111,8 @@ impl FakeAgent {
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .env_remove("PAS_HEARTBEAT_INTERVAL_MS")
-            .current_dir(self.path())
-            .output()
-            .unwrap()
+            .current_dir(self.path());
+        command
     }
 
     /// The journal of the one Run made so far.
@@ -120,6 +127,16 @@ impl FakeAgent {
             .lines()
             .map(|line| serde_json::from_str(line).unwrap())
             .collect()
+    }
+
+    /// The one Run's `run.json`.
+    pub fn run_json(&self) -> Value {
+        let runs: Vec<PathBuf> = fs::read_dir(self.logs().join("runs"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(runs.len(), 1, "expected one Run folder: {runs:?}");
+        serde_json::from_str(&fs::read_to_string(runs[0].join("run.json")).unwrap()).unwrap()
     }
 
     /// The journal's Events of type `kind`, as their `data`.
@@ -153,6 +170,21 @@ impl FakeAgent {
         self.blocks("invocations.log")
             .iter()
             .map(|block| block.lines().map(str::to_string).collect())
+            .collect()
+    }
+
+    /// The fake's `PAS_*`, `ANTHROPIC_*`, `OPENAI_*` and `CLAUDE_CODE_USE_*`
+    /// environment per start.
+    pub fn env_logs(&self) -> Vec<BTreeMap<String, String>> {
+        self.blocks("env.log")
+            .iter()
+            .map(|block| {
+                block
+                    .lines()
+                    .filter_map(|line| line.split_once('='))
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect()
+            })
             .collect()
     }
 
