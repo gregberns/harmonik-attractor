@@ -641,3 +641,28 @@ fn a_resume_after_a_stop_runs_the_stopped_node_again() {
     assert_eq!(starts, ["work", "work"]);
     assert_eq!(fake.events_of("PipelineCompleted").len(), 1);
 }
+
+// The harness's PATH never reaches a real agent: without a shim, an agent
+// command finds a stub that refuses to run (AGENTS.md: no real agent in any
+// test).
+#[test]
+fn an_unshimmed_claude_node_hits_the_stub_not_a_real_claude() {
+    let fake = FakeAgent::new();
+    let output = fake.run(
+        r#"digraph G {
+            start [shape="Mdiamond"]
+            work [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
+            done [shape="Msquare"]
+            start -> work -> done
+        }"#,
+    );
+
+    assert!(!output.status.success());
+    let stderr = stderr(&output);
+    assert!(
+        stderr.contains("real agent blocked in tests: call shim_claude_on_path()"),
+        "{stderr}"
+    );
+    // The fake never ran either.
+    assert!(!fake.scenarios().join("env.log").exists());
+}

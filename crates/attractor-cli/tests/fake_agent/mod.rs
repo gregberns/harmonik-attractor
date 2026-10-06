@@ -5,8 +5,10 @@
 //! (`test_only`, `command` = the fake script), the fake's scenario folder,
 //! and the Run's logs and state folders. Pipelines select the fake with
 //! `agent="fake"`, and every `pas run` passes `--allow-test-agents`. A
-//! `bin/` first on `PATH` holds the fake as `claude` only after
-//! [`FakeAgent::shim_claude_on_path`] (the `llm_provider="claude"` alias).
+//! `bin/` first on `PATH` holds a fail-loud stub for every agent CLI
+//! ([`BLOCKED_AGENTS`]), so a test can never reach a real agent from the
+//! user's `PATH`; [`FakeAgent::shim_claude_on_path`] replaces the `claude`
+//! stub with the fake (the `llm_provider="claude"` alias).
 //! Git ignores the developer's global and system config (hooks, templates).
 
 use std::collections::BTreeMap;
@@ -21,6 +23,10 @@ fn fake_claude() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/agents/fake-claude")
 }
 
+/// Agent CLIs a test must never reach on the user's `PATH`: each gets a
+/// stub in `bin/` that exits 2 unless a test shims the fake in its place.
+pub const BLOCKED_AGENTS: [&str; 4] = ["claude", "codex", "gemini", "pi"];
+
 pub struct FakeAgent {
     dir: tempfile::TempDir,
 }
@@ -32,6 +38,9 @@ impl FakeAgent {
         };
         for dir in [fake.bin(), fake.scenarios(), fake.repo()] {
             fs::create_dir_all(dir).unwrap();
+        }
+        for agent in BLOCKED_AGENTS {
+            fake.block_agent(agent);
         }
         fake.git(&["init", "-q"]);
         fake.write_pas_toml("");
@@ -62,10 +71,28 @@ impl FakeAgent {
         self.git(&["commit", "-q", "-m", "pas.toml"]);
     }
 
-    /// Puts the fake on `PATH` as `claude`, for `llm_provider="claude"`.
+    /// Puts the fake on `PATH` as `claude` in place of its stub, for
+    /// `llm_provider="claude"`.
     #[allow(dead_code)]
     pub fn shim_claude_on_path(&self) {
-        std::os::unix::fs::symlink(fake_claude(), self.bin().join("claude")).unwrap();
+        let claude = self.bin().join("claude");
+        fs::remove_file(&claude).unwrap();
+        std::os::unix::fs::symlink(fake_claude(), claude).unwrap();
+    }
+
+    /// Writes `bin/<agent>`: a stub that refuses to run, ahead of any real
+    /// agent on the user's `PATH`.
+    fn block_agent(&self, agent: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let stub = self.bin().join(agent);
+        fs::write(
+            &stub,
+            format!(
+                "#!/bin/sh\necho 'real agent blocked in tests: call shim_{agent}_on_path()' >&2\nexit 2\n"
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     fn path(&self) -> &Path {
