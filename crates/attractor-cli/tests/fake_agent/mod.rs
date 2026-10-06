@@ -63,6 +63,7 @@ impl FakeAgent {
     }
 
     /// Puts the fake on `PATH` as `claude`, for `llm_provider="claude"`.
+    #[allow(dead_code)]
     pub fn shim_claude_on_path(&self) {
         std::os::unix::fs::symlink(fake_claude(), self.bin().join("claude")).unwrap();
     }
@@ -121,20 +122,22 @@ impl FakeAgent {
     /// Writes `dot` and returns the `pas run` command [`Self::run`] runs, for
     /// tests that add to its environment or stdin.
     pub fn command(&self, dot: &str) -> Command {
-        let pipeline = self.path().join("p.dot");
-        fs::write(&pipeline, dot).unwrap();
+        let mut command = self.pas_run(dot);
+        command
+            .arg("--workdir")
+            .arg(self.repo())
+            .arg("--logs")
+            .arg(self.logs());
+        command
+    }
+
+    /// `pas` with the fake's environment, in the scratch folder.
+    fn pas(&self) -> Command {
         let path = std::env::var_os("PATH").unwrap_or_default();
         let mut paths = vec![self.bin()];
         paths.extend(std::env::split_paths(&path));
         let mut command = Command::new(env!("CARGO_BIN_EXE_pas"));
         command
-            .arg("run")
-            .arg(&pipeline)
-            .arg("--allow-test-agents")
-            .arg("--workdir")
-            .arg(self.repo())
-            .arg("--logs")
-            .arg(self.logs())
             .env("PATH", std::env::join_paths(paths).unwrap())
             .env("FAKE_AGENT_SCENARIOS", self.scenarios())
             .env("PAS_STATE_DIR", self.path().join("state"))
@@ -146,6 +149,13 @@ impl FakeAgent {
             .env_remove("PAS_HEARTBEAT_INTERVAL_MS")
             .current_dir(self.path());
         command
+    }
+
+    /// Writes `dot` as the pipeline file and returns its path.
+    fn pipeline(&self, dot: &str) -> PathBuf {
+        let pipeline = self.path().join("p.dot");
+        fs::write(&pipeline, dot).unwrap();
+        pipeline
     }
 
     /// The journal of the one Run made so far.
@@ -278,30 +288,41 @@ impl FakeAgent {
         command
     }
 
-    /// `pas run <pipeline>` for `dot`, with no `--workdir` or `--logs`,
-    /// in the scratch folder, with the fake's environment.
+    /// `pas run <pipeline> --allow-test-agents` for `dot`, with no
+    /// `--workdir` or `--logs`, in the scratch folder, with the fake's
+    /// environment.
     pub fn pas_run(&self, dot: &str) -> Command {
-        let pipeline = self.path().join("p.dot");
-        fs::write(&pipeline, dot).unwrap();
-        let path = std::env::var_os("PATH").unwrap_or_default();
-        let mut paths = vec![self.bin()];
-        paths.extend(std::env::split_paths(&path));
-        let mut command = Command::new(env!("CARGO_BIN_EXE_pas"));
+        let mut command = self.pas();
         command
             .arg("run")
-            .arg(&pipeline)
-            .arg("--allow-test-agents")
-            .env("PATH", std::env::join_paths(paths).unwrap())
-            .env("FAKE_AGENT_SCENARIOS", self.scenarios())
-            .env("PAS_STATE_DIR", self.path().join("state"))
-            .env("GIT_CEILING_DIRECTORIES", self.path())
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("PAS_HEARTBEAT_INTERVAL_MS")
-            .current_dir(self.path());
+            .arg(self.pipeline(dot))
+            .arg("--allow-test-agents");
         command
+    }
+
+    /// [`FakeAgent::command`] without `--allow-test-agents`.
+    pub fn command_without_test_agents(&self, dot: &str) -> Command {
+        let mut command = self.pas();
+        command
+            .arg("run")
+            .arg(self.pipeline(dot))
+            .arg("--workdir")
+            .arg(self.repo())
+            .arg("--logs")
+            .arg(self.logs());
+        command
+    }
+
+    /// `pas validate <pipeline> <extra>` for `dot`, run in the repo so it
+    /// reads the repo's `pas.toml`.
+    pub fn validate(&self, dot: &str, extra: &[&str]) -> Output {
+        self.pas()
+            .arg("validate")
+            .arg(self.pipeline(dot))
+            .args(extra)
+            .current_dir(self.repo())
+            .output()
+            .unwrap()
     }
 
     /// The folders under `<logs>/runs`, sorted.
