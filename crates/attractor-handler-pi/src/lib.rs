@@ -12,7 +12,7 @@ mod parse;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 
@@ -167,6 +167,13 @@ impl AgentHandler for Pi {
 
 /// One Pi process with its agent dir, which is removed when this returns
 /// or is dropped.
+/// Pi waits for rate limits inside its one process (its own retry, set to
+/// the window in `settings.json`), so its spawn may run for the node's
+/// timeout plus the window.
+fn spawn_timeout(inv: &Invocation<'_>) -> Duration {
+    inv.timeout.saturating_add(inv.rate_limit_window)
+}
+
 async fn run_pi(pi: &Pi, inv: &Invocation<'_>, started: Instant) -> AgentResult {
     let id = inv.invocation_id;
     let launch = |detail: String| AgentResult::failed(id, FailureClass::Launch, detail);
@@ -183,7 +190,7 @@ async fn run_pi(pi: &Pi, inv: &Invocation<'_>, started: Instant) -> AgentResult 
         &agent_dirs(state_dir),
         id,
         &models_json(target, inv.profile, inv.api_key),
-        &settings_json(),
+        &settings_json(inv.rate_limit_window),
     ) {
         Ok(dir) => dir,
         Err(error) => return launch(format!("could not write pi's agent folder: {error}")),
@@ -201,7 +208,7 @@ async fn run_pi(pi: &Pi, inv: &Invocation<'_>, started: Instant) -> AgentResult 
         inv.workdir,
         inv.transcript,
         inv.stderr,
-        inv.timeout,
+        spawn_timeout(inv),
         inv.kill_grace,
         &inv.cancel,
         &spawned,
@@ -227,7 +234,7 @@ async fn run_pi(pi: &Pi, inv: &Invocation<'_>, started: Instant) -> AgentResult 
             AgentResult::failed(
                 id,
                 FailureClass::Timeout,
-                format!("timed out after {}ms", inv.timeout.as_millis()),
+                format!("timed out after {}ms", spawn_timeout(inv).as_millis()),
             ),
         ),
         LocalRun::Cancelled => with_partial_usage(
@@ -414,5 +421,36 @@ mod tests {
             check_profile(&zero).map_err(|e| e.to_string()),
             Err("agent profile deepseek: limits must be positive".into())
         );
+    }
+
+    #[test]
+    fn the_spawn_may_run_for_the_timeout_plus_the_window() {
+        let p = Profile {
+            rate_limit_window: Duration::from_secs(120),
+            ..profile()
+        };
+        let inv = Invocation {
+            invocation_id: "i",
+            argv: vec![],
+            command_len: 0,
+            env: Default::default(),
+            api_key: None,
+            state_dir: None,
+            profile: &p,
+            model: None,
+            session: Session::New("s".into()),
+            continue_argv: None,
+            rate_limit_window: p.rate_limit_window,
+            prompt: "",
+            workdir: Path::new("/w"),
+            timeout: Duration::from_secs(30),
+            kill_grace: Duration::from_secs(1),
+            transcript: None,
+            stderr: None,
+            cancel: CancellationToken::new(),
+            spawned: &|_| {},
+            rate_limited: &|_| {},
+        };
+        assert_eq!(spawn_timeout(&inv), Duration::from_secs(150));
     }
 }

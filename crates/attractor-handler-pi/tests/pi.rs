@@ -235,7 +235,11 @@ async fn pi_reads_a_private_models_json_holding_the_key_and_nothing_else_does() 
         }}})
     );
     assert_eq!(fx.read("models.work@1.mode").trim(), "0600");
-    assert_eq!(fx.read("settings.work@1.json"), "{}");
+    // The profile's window is zero: Pi's own retry is off.
+    assert_eq!(
+        fx.read("settings.work@1.json"),
+        r#"{"retry":{"enabled":false}}"#
+    );
 
     let env = fx.read("env.log");
     for line in [
@@ -400,4 +404,27 @@ async fn continuing_runs_the_same_command() {
     let starts: Vec<&str> = log.split("--- start\n").skip(1).collect();
     assert_eq!(starts.len(), 2);
     assert_eq!(starts[0], starts[1]);
+}
+
+#[tokio::test]
+async fn settings_set_pis_retry_to_cover_the_rate_limit_window() {
+    let fx = Fixture::new();
+    let mut p = profile();
+    p.rate_limit_window = Duration::from_secs(120);
+    let result = fx
+        .agents_with(p, &[("FAKE_PI_KEY", KEY)])
+        .run(fx.request("stop"))
+        .await;
+    assert_eq!(result.status, AgentStatus::Completed, "{}", result.detail);
+    let settings: serde_json::Value =
+        serde_json::from_str(&fx.read("settings.work@1.json")).unwrap();
+    assert_eq!(
+        settings,
+        serde_json::json!({"retry": {
+            "enabled": true,
+            "baseDelayMs": 2000,
+            "maxRetries": 6,
+            "provider": {"maxRetryDelayMs": 120000},
+        }})
+    );
 }

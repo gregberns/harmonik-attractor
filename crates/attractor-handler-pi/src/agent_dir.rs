@@ -5,6 +5,7 @@
 use std::fs::{DirBuilder, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use attractor_agent_handler::{Limits, Profile};
 use serde_json::{json, Map, Value};
@@ -46,9 +47,35 @@ pub fn models_json(target: Target<'_>, profile: &Profile, api_key: Option<&str>)
     json!({ "providers": { target.provider: provider } })
 }
 
-/// Pi's `settings.json`: its defaults.
-pub fn settings_json() -> Value {
-    json!({})
+/// Pi's first retry delay; it doubles on each retry (Pi's docs, 0.80.2).
+const PI_BASE_DELAY_MS: u64 = 2000;
+
+/// Pi's `settings.json`: its own retry set to cover the profile's
+/// `rate_limit_window` (Pi retries inside one process, so PAS doesn't
+/// re-spawn it). `maxRetries` is the smallest count whose exponential
+/// backoff (2 s, 4 s, 8 s, ...) adds up to the window, and a delay the
+/// server asks for is waited up to the window (`provider.maxRetryDelayMs`).
+/// A zero window turns Pi's retry off. The keys are from Pi's docs
+/// (`docs/settings.md`, "Retry", Pi 0.80.2); no real Pi run checks them.
+pub fn settings_json(window: Duration) -> Value {
+    let window_ms = u64::try_from(window.as_millis()).unwrap_or(u64::MAX);
+    if window_ms == 0 {
+        return json!({ "retry": { "enabled": false } });
+    }
+    let mut max_retries = 0u32;
+    let mut total = 0u64;
+    while total < window_ms && max_retries < 32 {
+        total = total.saturating_add(PI_BASE_DELAY_MS.saturating_mul(1 << max_retries));
+        max_retries += 1;
+    }
+    json!({
+        "retry": {
+            "enabled": true,
+            "baseDelayMs": PI_BASE_DELAY_MS,
+            "maxRetries": max_retries,
+            "provider": { "maxRetryDelayMs": window_ms },
+        }
+    })
 }
 
 /// A directory that is removed (with what it holds) when dropped, so every
@@ -200,7 +227,13 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().unwrap();
         let parent = tmp.path().join("pi-agent");
-        let dir = AgentDir::create(&parent, "inv-1", &json!({"a": 1}), &settings_json()).unwrap();
+        let dir = AgentDir::create(
+            &parent,
+            "inv-1",
+            &json!({"a": 1}),
+            &settings_json(Duration::ZERO),
+        )
+        .unwrap();
         let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(dir.path()), 0o700);
         assert_eq!(mode(&dir.path().join("models.json")), 0o600);
@@ -221,5 +254,35 @@ mod tests {
         std::fs::create_dir(tmp.path().join("inv-1")).unwrap();
         assert!(AgentDir::create(tmp.path(), "inv-1", &json!({}), &json!({})).is_err());
         assert!(tmp.path().join("inv-1").exists(), "not ours to remove");
+    }
+
+    #[test]
+    fn settings_cover_the_rate_limit_window() {
+        assert_eq!(
+            settings_json(Duration::from_secs(120)),
+            json!({"retry": {
+                "enabled": true,
+                "baseDelayMs": 2000,
+                "maxRetries": 6,
+                "provider": {"maxRetryDelayMs": 120000},
+            }})
+        );
+        // 2 s covers one retry; 6 s two (2 + 4).
+        assert_eq!(
+            settings_json(Duration::from_secs(2))["retry"]["maxRetries"],
+            1
+        );
+        assert_eq!(
+            settings_json(Duration::from_secs(6))["retry"]["maxRetries"],
+            2
+        );
+        assert_eq!(
+            settings_json(Duration::from_secs(7))["retry"]["maxRetries"],
+            3
+        );
+        assert_eq!(
+            settings_json(Duration::ZERO),
+            json!({"retry": {"enabled": false}})
+        );
     }
 }
