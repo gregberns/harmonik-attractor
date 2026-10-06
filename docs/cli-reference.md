@@ -52,7 +52,7 @@ pas run <PIPELINE> [OPTIONS]
 | `--codergen-claude-plugin-dir <DIR>` | — | — | PAS-owned Claude plugin directory for `codergen` nodes. Repeatable. |
 | `--codergen-claude-mcp-config <JSON_OR_FILE>` | — | none | Explicit MCP config for `codergen` nodes. `--strict-mcp-config` remains enabled. |
 | `--run-id <UUID>` | — | generated (UUID v7) | Use this Run ID instead of generating one. Must be a UUID; anything else is rejected. The Monitor passes it so it knows the ID before the Run starts. |
-| `--json` | — | false | Print `{"v":1,"ok":true,"run_id","run_dir"}` as the first stdout line once the Run folder exists; all other output goes to stderr. |
+| `--json` | — | false | Print `{"v":1,"ok":true,"run_id","run_dir"}` as the first stdout line once the Run folder exists, and the Run's [`final.json`](#end-of-run-finaljson) object as the last stdout line when the Run ends (success, failure, stop or SIGTERM); all other output goes to stderr. A setup failure before the first line prints only `{"v":1,"ok":false,"error":…}`. |
 | `--allow-shared-workdir` | — | false | Start even if another process is working in this Run's worktree. Each Run has its own worktree, so this only matters when the same Run is resumed twice at once (e.g. with another `--logs`). The Run records `shared_workdir: true` in its `RunStarted` event when it actually shares the worktree. |
 
 PAS resolves each run-control field independently using `caller > manifest > permitted graph defaults > built-ins`.
@@ -85,6 +85,9 @@ When `--workdir` is inside a git repository, each Run works in its own git workt
 - **`.pas/.gitignore`:** a new Run writes a `.gitignore` containing `*` in `<project-root>/.pas` (default worktree root), in a custom worktree root, and in the `.pas` folder of the default logs (when `--logs` is not given), so `git status` in the main checkout stays clean and pas's own files never count as uncommitted changes. An existing `.gitignore` there is never changed.
 - **Resume:** re-running the command resumes in the worktree and branch recorded in `run.json`, whatever `--base`, `--worktree-root` or `pas.toml` now say; each differing setting prints a warning. `run.json` is not rewritten.
 - **`--fresh`** starts a new Run with a new worktree and branch. The old worktree and branch stay; removing them is not done yet.
+- **Attempt commits:** after every attempt of every node except start and exit nodes, whatever its result, PAS commits everything in the worktree except `.pas/` (`git add -A -- . ':(exclude).pas'`, then `git commit --allow-empty --no-verify`, so the repository's hooks don't run). The agent's own commits during the attempt stay, with PAS's commit on top. The message is `pas(<run-id>): <node> attempt <n> (<status>)` with the trailers `Pas-Run`, `Pas-Node`, `Pas-Attempt`, `Pas-Status` (`success`, `fail`, `retry` or `interrupted`) and, for a failure, `Pas-Failure-Class` (`reported`, `timeout`, `crash`, `no_result` or `launch`). If the repository has no `user.name`/`user.email`, the commit is made as `PAS <pas@localhost>`. A Run outside a worktree (not a git repository, or `--dry-run`) makes no commits. If an attempt can't be committed, the Run stops with `node '<id>' attempt <n>: could not commit the attempt: ...`; the changes stay in the worktree and a resume commits them as `interrupted`.
+- **Interrupted attempts:** if `pas` ended during an attempt (killed, crashed, or stopped with SIGTERM), a resume first commits what that attempt left (`Pas-Status: interrupted`), when the worktree has changes or the agent committed during it, even if the node has no attempts left. The node's next attempt is told so in its prompt: `Your previous attempt was interrupted; its changes since <start> are recorded in commit <sha>. Review git diff <start> before continuing.`, where `<start>` is the worktree's commit when the interrupted attempt began. An interrupted attempt still counts toward `max_retries`, except one ended by a stop (SIGTERM), which does not. Attempt numbers (`Pas-Attempt`, `PAS_ATTEMPT`) never repeat within a visit of a node: the attempt after an interrupted attempt 1 is attempt 2, whether or not attempt 1 counted.
+- **End of run:** when the Run succeeds, its worktree is removed (`git worktree remove`) and its branch stays, so the result is `git log pas/run/<run-id>`. A worktree with uncommitted changes outside `.pas/`, or one another process is working in (`--allow-shared-workdir`), is kept instead, with a warning in `final.json`. A failed or stopped Run keeps both the worktree and the branch, for a resume or a look. The branch is never deleted.
 - **Directory mode:** each `.dot` file is its own Run, so each phase gets its own worktree from `--base`, and a phase does not see an earlier phase's edits.
 - **Not a git repository** (or `git` not on `PATH`), or **`--dry-run`:** the Run works in `--workdir` itself, as before; outside git it prints a `not a git repository` warning.
 
@@ -115,7 +118,38 @@ Every Run writes a Run Journal under its Pipeline's logs folder and registers in
     transcripts/<invocation-id>.stderr.log  its stderr (Claude nodes)
     answers/<question-id>.json          Human Gate answers
     control/stop                        stop request
+    final.json                          end-of-run report
 ```
+
+#### End of run: `final.json`
+
+Every end the `pas run` process lives through writes `runs/<run-id>/final.json` (atomically: a temp file, then a rename), after `AttemptEnded`: success, failure, a stop between stages, and SIGTERM (exit 143). A SIGKILL writes none. Each Attempt overwrites it, so it describes the latest end. With `--json` the same object, on one line, is the last stdout line.
+
+```json
+{
+  "v": 1,
+  "run_id": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b",
+  "status": "failed",
+  "branch": "pas/run/0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b",
+  "base": "HEAD",
+  "base_sha": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+  "final_commit": "9fceb02d0ae598e95dc970b74767f19372d61af8",
+  "worktree": "/repo/.pas/worktrees/0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b",
+  "error": "Handler 'codergen' failed on node 'work': …",
+  "warnings": []
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `v` | Format version, `1` |
+| `run_id` | The Run |
+| `status` | `success`, `failed`, or `stopped` (a stop between stages or SIGTERM; the Run can resume) |
+| `branch`, `base`, `base_sha` | As in `run.json`; `null` without a worktree (not a git repository, or `--dry-run`) |
+| `final_commit` | `git rev-parse <branch>` at the end: the last attempt commit; `null` without a worktree |
+| `worktree` | The kept worktree's path; `null` when it was removed (a successful Run) or there is none |
+| `error` | The Run's error text, as printed on stderr; only when `status` is `failed` |
+| `warnings` | Problems at the end that did not change the result, e.g. a worktree kept because of uncommitted changes, or a removal that failed |
 
 #### Directory mode
 
