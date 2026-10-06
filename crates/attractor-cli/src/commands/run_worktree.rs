@@ -107,7 +107,14 @@ pub(crate) fn run_workdir(
 ) -> Result<PathBuf, WorktreeError> {
     source
         .strip_prefix(top)
-        .map(|sub| worktree.join(sub))
+        // Joining an empty path would add a trailing slash.
+        .map(|sub| {
+            if sub.as_os_str().is_empty() {
+                worktree.to_path_buf()
+            } else {
+                worktree.join(sub)
+            }
+        })
         .map_err(|_| WorktreeError::OutsideRepo {
             workdir: source.to_path_buf(),
             top: top.to_path_buf(),
@@ -526,6 +533,11 @@ mod tests {
         let wt = Path::new("/repo/.pas/worktrees/r1");
         let top = Path::new("/repo");
         assert_eq!(run_workdir(wt, top, top), Ok(wt.to_path_buf()));
+        // Path equality ignores a trailing slash; argv (Codex's --cd) doesn't.
+        assert_eq!(
+            run_workdir(wt, top, top).unwrap().as_os_str(),
+            wt.as_os_str()
+        );
         assert_eq!(
             run_workdir(wt, top, Path::new("/repo/a/b")),
             Ok(wt.join("a/b"))
