@@ -69,6 +69,15 @@ impl<'a> HandlerExecutionContext<'a> {
         }
     }
 
+    /// The same context over another workflow (e.g. an isolated copy); every
+    /// other field is kept.
+    pub(crate) fn with_workflow<'b>(self, workflow: &'b Context) -> HandlerExecutionContext<'b>
+    where
+        'a: 'b,
+    {
+        HandlerExecutionContext { workflow, ..self }
+    }
+
     /// The same context with a note naming the node's previous failure.
     pub(crate) fn with_failure_note(self, failure_note: Option<&'a str>) -> Self {
         Self {
@@ -301,17 +310,7 @@ impl DynHandler {
         // state.
         let isolated_workflow = execution.workflow().clone_isolated().await;
         let before = isolated_workflow.snapshot().await;
-        let isolated_execution = HandlerExecutionContext::new(
-            &isolated_workflow,
-            execution.config(),
-            execution.run_dir(),
-            execution.events(),
-            execution.run_id(),
-            execution.attempt(),
-            execution.cancel(),
-            execution.resume_note(),
-        )
-        .with_session(execution.session());
+        let isolated_execution = execution.with_workflow(&isolated_workflow);
         let mut outcome = match self.0.provider_handler() {
             Some(handler) => {
                 handler
