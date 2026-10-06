@@ -148,11 +148,12 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
         selection: Selection {
             profile: CLAUDE_PROFILE.into(),
             model: model.map(str::to_owned),
+            reasoning: None,
         },
         prompt: "test prompt".into(),
         extra_args: claude_extra_args(&cfg, &node),
         workdir: PathBuf::from("."),
-        timeout: DEFAULT_TIMEOUT,
+        timeout: None,
         record: Record {
             run_id: None,
             node_id: node.id.clone(),
@@ -164,14 +165,15 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
         observer: None,
         cancel: CancellationToken::new(),
     };
+    let claude = builtin_profiles().unwrap().remove(0);
     attractor_handler_claude_p::ClaudeP::argv(&Invocation {
         invocation_id: "i",
-        argv: argv(&builtin_profiles()[0], &request),
+        argv: argv(&claude, &request),
         env: Default::default(),
         prompt: "test prompt",
         workdir: Path::new("."),
-        timeout: DEFAULT_TIMEOUT,
-        kill_grace: attractor_agent_handler::DEFAULT_KILL_GRACE,
+        timeout: claude.timeout,
+        kill_grace: claude.kill_grace,
         transcript: None,
         stderr: None,
         cancel: CancellationToken::new(),

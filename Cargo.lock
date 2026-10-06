@@ -129,8 +129,10 @@ name = "attractor-agent-handler"
 version = "0.11.0"
 dependencies = [
  "async-trait",
+ "serde",
  "tokio",
  "tokio-util",
+ "toml",
 ]
 
 [[package]]

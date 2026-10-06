@@ -1,0 +1,467 @@
+//! Agent profiles from config: the embedded defaults (`agents.toml`) and a
+//! project's `pas.toml` `[agents.<name>]`, layered and resolved into
+//! [`Profile`]s. Pure: parsing and merging, no I/O.
+
+use std::collections::BTreeMap;
+use std::time::Duration;
+
+use serde::Deserialize;
+
+use crate::profile::{Profile, ProfileEnv};
+use crate::registry::ConfigError;
+
+/// The built-in profiles and defaults, compiled into the binary.
+const EMBEDDED: &str = include_str!("agents.toml");
+
+/// One profile as written in config. Every field is optional: a profile
+/// takes what it leaves unset from its `inherit_from` parent, then from
+/// `[defaults]`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileConfig {
+    pub inherit_from: Option<String>,
+    pub mechanism: Option<String>,
+    /// A program, or a program and its first arguments.
+    pub command: Option<CommandLine>,
+    pub args: Option<Vec<String>>,
+    pub model: Option<String>,
+    pub model_args: Option<Vec<String>>,
+    pub reasoning: Option<String>,
+    pub reasoning_args: Option<Vec<String>>,
+    /// A duration such as `"10m"`, `"30s"` or `"500ms"`.
+    pub timeout: Option<String>,
+    pub kill_grace: Option<String>,
+    pub env: Option<EnvConfig>,
+    pub test_only: Option<bool>,
+}
+
+/// `command = "claude"` or `command = ["claude", "--sub"]`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum CommandLine {
+    Program(String),
+    Argv(Vec<String>),
+}
+
+impl CommandLine {
+    fn into_argv(self) -> Vec<String> {
+        match self {
+            Self::Program(program) => vec![program],
+            Self::Argv(argv) => argv,
+        }
+    }
+}
+
+/// `env.remove` and `env.set`; each is inherited on its own.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnvConfig {
+    pub remove: Option<Vec<String>>,
+    pub set: Option<BTreeMap<String, String>>,
+}
+
+/// The shape of the embedded `agents.toml`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentsConfig {
+    #[serde(default)]
+    pub defaults: ProfileConfig,
+    #[serde(default)]
+    pub profiles: BTreeMap<String, ProfileConfig>,
+}
+
+impl AgentsConfig {
+    /// The built-in profiles and defaults.
+    pub fn builtin() -> Result<Self, ConfigError> {
+        Self::parse(EMBEDDED)
+    }
+
+    /// Parse a file shaped like `agents.toml`.
+    pub fn parse(text: &str) -> Result<Self, ConfigError> {
+        toml::from_str(text).map_err(|e| ConfigError::Parse(e.to_string()))
+    }
+
+    /// These profiles with `overrides` layered on top: a profile named in
+    /// `overrides` replaces the one of the same name whole.
+    pub fn with_overrides(mut self, overrides: &BTreeMap<String, ProfileConfig>) -> Self {
+        for (name, profile) in overrides {
+            self.profiles.insert(name.clone(), profile.clone());
+        }
+        self
+    }
+
+    /// Every profile, resolved: `inherit_from` chains followed, then
+    /// `[defaults]`, then checked.
+    pub fn resolve(&self) -> Result<Vec<Profile>, ConfigError> {
+        self.profiles
+            .keys()
+            .map(|name| resolve_one(name, &self.profiles, &self.defaults))
+            .collect()
+    }
+}
+
+/// The profiles PAS ships with.
+pub fn builtin_profiles() -> Result<Vec<Profile>, ConfigError> {
+    AgentsConfig::builtin()?.resolve()
+}
+
+/// `name`'s config with its `inherit_from` chain and the defaults merged
+/// in, as a [`Profile`].
+fn resolve_one(
+    name: &str,
+    profiles: &BTreeMap<String, ProfileConfig>,
+    defaults: &ProfileConfig,
+) -> Result<Profile, ConfigError> {
+    let mut merged = profiles
+        .get(name)
+        .cloned()
+        .ok_or_else(|| ConfigError::UnknownProfile(name.to_string()))?;
+    let mut chain = vec![name.to_string()];
+    let mut next = merged.inherit_from.clone();
+    while let Some(parent_name) = next {
+        if chain.contains(&parent_name) {
+            return Err(ConfigError::InheritCycle {
+                profile: name.to_string(),
+            });
+        }
+        let parent = profiles
+            .get(&parent_name)
+            .ok_or_else(|| ConfigError::UnknownParent {
+                profile: chain.last().cloned().unwrap_or_default(),
+                parent: parent_name.clone(),
+            })?;
+        merged = overlay(merged, parent);
+        next = parent.inherit_from.clone();
+        chain.push(parent_name);
+    }
+    into_profile(name, overlay(merged, defaults))
+}
+
+/// `child` with each field it leaves unset taken from `parent`. A set
+/// field replaces the parent's whole value; lists are not merged.
+fn overlay(child: ProfileConfig, parent: &ProfileConfig) -> ProfileConfig {
+    let env = match (child.env, &parent.env) {
+        (Some(c), Some(p)) => Some(EnvConfig {
+            remove: c.remove.or_else(|| p.remove.clone()),
+            set: c.set.or_else(|| p.set.clone()),
+        }),
+        (c, p) => c.or_else(|| p.clone()),
+    };
+    ProfileConfig {
+        inherit_from: child.inherit_from,
+        mechanism: child.mechanism.or_else(|| parent.mechanism.clone()),
+        command: child.command.or_else(|| parent.command.clone()),
+        args: child.args.or_else(|| parent.args.clone()),
+        model: child.model.or_else(|| parent.model.clone()),
+        model_args: child.model_args.or_else(|| parent.model_args.clone()),
+        reasoning: child.reasoning.or_else(|| parent.reasoning.clone()),
+        reasoning_args: child
+            .reasoning_args
+            .or_else(|| parent.reasoning_args.clone()),
+        timeout: child.timeout.or_else(|| parent.timeout.clone()),
+        kill_grace: child.kill_grace.or_else(|| parent.kill_grace.clone()),
+        env,
+        test_only: child.test_only.or(parent.test_only),
+    }
+}
+
+fn into_profile(name: &str, config: ProfileConfig) -> Result<Profile, ConfigError> {
+    let missing = |field: &'static str| ConfigError::MissingField {
+        profile: name.to_string(),
+        field,
+    };
+    let duration = |field: &'static str, value: Option<String>| {
+        let value = value.ok_or_else(|| missing(field))?;
+        parse_duration(&value).ok_or_else(|| ConfigError::BadDuration {
+            profile: name.to_string(),
+            field,
+            value,
+        })
+    };
+    let command = config
+        .command
+        .map(CommandLine::into_argv)
+        .filter(|argv| argv.first().is_some_and(|program| !program.is_empty()))
+        .ok_or_else(|| missing("command"))?;
+    let env = config.env.unwrap_or_default();
+    Ok(Profile {
+        name: name.to_string(),
+        mechanism: config.mechanism.ok_or_else(|| missing("mechanism"))?,
+        command,
+        args: config.args.unwrap_or_default(),
+        model: config.model,
+        model_args: config.model_args.unwrap_or_default(),
+        reasoning: config.reasoning,
+        reasoning_args: config.reasoning_args.unwrap_or_default(),
+        timeout: duration("timeout", config.timeout)?,
+        kill_grace: duration("kill_grace", config.kill_grace)?,
+        env: ProfileEnv {
+            remove: env.remove.unwrap_or_default(),
+            set: env.set.unwrap_or_default(),
+        },
+        test_only: config.test_only.unwrap_or(false),
+    })
+}
+
+/// `"500ms"`, `"30s"`, `"10m"` or `"1h"`; `None` for anything else.
+pub fn parse_duration(text: &str) -> Option<Duration> {
+    let text = text.trim();
+    let split = text.find(|c: char| !c.is_ascii_digit())?;
+    let (number, unit) = text.split_at(split);
+    let n: u64 = number.parse().ok()?;
+    match unit {
+        "ms" => Some(Duration::from_millis(n)),
+        "s" => Some(Duration::from_secs(n)),
+        "m" => n.checked_mul(60).map(Duration::from_secs),
+        "h" => n.checked_mul(3600).map(Duration::from_secs),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(text: &str) -> AgentsConfig {
+        AgentsConfig::parse(text).unwrap()
+    }
+
+    fn overrides(text: &str) -> BTreeMap<String, ProfileConfig> {
+        toml::from_str(text).unwrap()
+    }
+
+    fn profile<'a>(profiles: &'a [Profile], name: &str) -> &'a Profile {
+        profiles.iter().find(|p| p.name == name).unwrap()
+    }
+
+    const BASE: &str = r#"
+        [defaults]
+        timeout = "10m"
+        kill_grace = "10s"
+        [defaults.env]
+        remove = ["SECRET"]
+
+        [profiles.base]
+        mechanism = "m"
+        command = ["prog", "--sub"]
+        args = ["--a"]
+        model_args = ["--model", "{model}"]
+    "#;
+
+    #[test]
+    fn embedded_defaults_give_todays_claude_profile() {
+        let profiles = builtin_profiles().unwrap();
+        assert_eq!(profiles.len(), 1);
+        let claude = &profiles[0];
+        assert_eq!(claude.name, "claude");
+        assert_eq!(claude.mechanism, "claude-p");
+        assert_eq!(claude.command, ["claude"]);
+        assert_eq!(
+            claude.args,
+            [
+                "--no-session-persistence",
+                "--dangerously-skip-permissions",
+                "--strict-mcp-config",
+                "--disable-slash-commands",
+            ]
+        );
+        assert_eq!(claude.model, None);
+        assert_eq!(claude.model_args, ["--model", "{model}"]);
+        assert_eq!(claude.reasoning_args, ["--effort", "{reasoning}"]);
+        assert_eq!(claude.timeout, Duration::from_secs(600));
+        assert_eq!(claude.kill_grace, Duration::from_secs(10));
+        assert_eq!(
+            claude.env.remove,
+            [
+                "ANTHROPIC_API_KEY",
+                "ANTHROPIC_AUTH_TOKEN",
+                "ANTHROPIC_BASE_URL",
+                "OPENAI_API_KEY",
+                "CLAUDE_CODE_USE_BEDROCK",
+                "CLAUDE_CODE_USE_VERTEX",
+            ]
+        );
+        assert!(claude.env.set.is_empty());
+        assert!(!claude.test_only);
+    }
+
+    #[test]
+    fn an_override_replaces_the_whole_profile_by_name() {
+        let profiles = config(BASE)
+            .with_overrides(&overrides(
+                r#"
+                [base]
+                mechanism = "m"
+                command = "other"
+                "#,
+            ))
+            .resolve()
+            .unwrap();
+        let base = profile(&profiles, "base");
+        assert_eq!(base.command, ["other"]);
+        assert!(base.args.is_empty(), "args are not kept from the built-in");
+        assert!(base.model_args.is_empty());
+    }
+
+    #[test]
+    fn an_override_adds_a_profile() {
+        let profiles = config(BASE)
+            .with_overrides(&overrides(
+                r#"
+                [fake]
+                mechanism = "m"
+                command = "/abs/fake"
+                test_only = true
+                "#,
+            ))
+            .resolve()
+            .unwrap();
+        assert_eq!(profiles.len(), 2);
+        let fake = profile(&profiles, "fake");
+        assert!(fake.test_only);
+        assert_eq!(fake.timeout, Duration::from_secs(600), "from [defaults]");
+        assert_eq!(fake.env.remove, ["SECRET"], "from [defaults]");
+    }
+
+    #[test]
+    fn inherit_from_takes_each_unset_field_from_the_parent() {
+        let profiles = config(BASE)
+            .with_overrides(&overrides(
+                r#"
+                [mid]
+                inherit_from = "base"
+                model = "opus"
+                kill_grace = "3s"
+
+                [leaf]
+                inherit_from = "mid"
+                args = ["--b"]
+                "#,
+            ))
+            .resolve()
+            .unwrap();
+        let leaf = profile(&profiles, "leaf");
+        assert_eq!(leaf.mechanism, "m");
+        assert_eq!(leaf.command, ["prog", "--sub"]);
+        assert_eq!(leaf.args, ["--b"], "a set list replaces the parent's");
+        assert_eq!(leaf.model.as_deref(), Some("opus"));
+        assert_eq!(leaf.model_args, ["--model", "{model}"]);
+        assert_eq!(leaf.kill_grace, Duration::from_secs(3));
+        assert_eq!(leaf.timeout, Duration::from_secs(600));
+    }
+
+    #[test]
+    fn env_remove_and_set_are_inherited_separately() {
+        let profiles = config(BASE)
+            .with_overrides(&overrides(
+                r#"
+                [parent]
+                inherit_from = "base"
+                env.set = { A = "1" }
+
+                [child]
+                inherit_from = "parent"
+                env.remove = ["X"]
+                "#,
+            ))
+            .resolve()
+            .unwrap();
+        let child = profile(&profiles, "child");
+        assert_eq!(child.env.remove, ["X"]);
+        assert_eq!(child.env.set.get("A").map(String::as_str), Some("1"));
+        let parent = profile(&profiles, "parent");
+        assert_eq!(parent.env.remove, ["SECRET"], "from [defaults]");
+    }
+
+    #[test]
+    fn unknown_parent_names_the_profile_and_the_parent() {
+        let err = config(BASE)
+            .with_overrides(&overrides("[x]\ninherit_from = \"nope\"\n"))
+            .resolve()
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ConfigError::UnknownParent {
+                profile: "x".into(),
+                parent: "nope".into()
+            }
+        );
+    }
+
+    #[test]
+    fn an_inherit_cycle_is_an_error() {
+        let err = config(BASE)
+            .with_overrides(&overrides(
+                "[a]\ninherit_from = \"b\"\n[b]\ninherit_from = \"a\"\n",
+            ))
+            .resolve()
+            .unwrap_err();
+        assert!(matches!(err, ConfigError::InheritCycle { .. }), "{err}");
+    }
+
+    #[test]
+    fn a_missing_command_or_mechanism_is_an_error() {
+        let err = config(BASE)
+            .with_overrides(&overrides("[x]\nmechanism = \"m\"\n"))
+            .resolve()
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ConfigError::MissingField {
+                profile: "x".into(),
+                field: "command"
+            }
+        );
+        let err = config(BASE)
+            .with_overrides(&overrides("[x]\ncommand = \"p\"\n"))
+            .resolve()
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ConfigError::MissingField {
+                profile: "x".into(),
+                field: "mechanism"
+            }
+        );
+    }
+
+    #[test]
+    fn a_bad_duration_names_the_profile_and_field() {
+        let err = config(BASE)
+            .with_overrides(&overrides(
+                "[x]\ninherit_from = \"base\"\ntimeout = \"ten\"\n",
+            ))
+            .resolve()
+            .unwrap_err();
+        assert_eq!(
+            err,
+            ConfigError::BadDuration {
+                profile: "x".into(),
+                field: "timeout",
+                value: "ten".into()
+            }
+        );
+    }
+
+    #[test]
+    fn an_unknown_field_is_refused() {
+        let err =
+            toml::from_str::<BTreeMap<String, ProfileConfig>>("[x]\ncomand = \"p\"\n").unwrap_err();
+        assert!(err.to_string().contains("comand"), "{err}");
+        assert!(matches!(
+            AgentsConfig::parse("[profiles.x]\nnope = 1\n"),
+            Err(ConfigError::Parse(_))
+        ));
+    }
+
+    #[test]
+    fn durations_parse_with_a_unit() {
+        assert_eq!(parse_duration("500ms"), Some(Duration::from_millis(500)));
+        assert_eq!(parse_duration("30s"), Some(Duration::from_secs(30)));
+        assert_eq!(parse_duration("10m"), Some(Duration::from_secs(600)));
+        assert_eq!(parse_duration("2h"), Some(Duration::from_secs(7200)));
+        assert_eq!(parse_duration("10"), None);
+        assert_eq!(parse_duration("s"), None);
+        assert_eq!(parse_duration("1d"), None);
+    }
+}

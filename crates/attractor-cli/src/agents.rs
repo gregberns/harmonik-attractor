@@ -23,5 +23,5 @@ fn parent_env() -> BTreeMap<String, String> {
 /// The registry Claude nodes run through: the built-in profiles, the
 /// shipped handlers and this process's environment.
 pub fn agents() -> Result<Arc<Agents>, ConfigError> {
-    Agents::new(handlers(), builtin_profiles(), parent_env()).map(Arc::new)
+    Agents::new(handlers(), builtin_profiles()?, parent_env(), false).map(Arc::new)
 }

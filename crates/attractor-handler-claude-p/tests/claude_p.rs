@@ -115,12 +115,13 @@ impl Fixture {
         let profile = Profile {
             command: vec![command.to_string_lossy().into_owned()],
             kill_grace,
-            ..builtin_profiles().remove(0)
+            ..builtin_profiles().unwrap().remove(0)
         };
         Agents::new(
             vec![Arc::new(ClaudeP)],
             vec![profile],
             self.parent_env(extra_env),
+            false,
         )
         .unwrap()
     }
@@ -130,6 +131,7 @@ impl Fixture {
             selection: Selection {
                 profile: "claude".into(),
                 model: Some("x".into()),
+                reasoning: None,
             },
             prompt: "do the work".into(),
             extra_args: vec![
@@ -139,7 +141,7 @@ impl Fixture {
                 "1".into(),
             ],
             workdir: self.dir.path().join("work"),
-            timeout,
+            timeout: Some(timeout),
             record: Record {
                 run_id: Some("run-7".into()),
                 node_id: "work".into(),

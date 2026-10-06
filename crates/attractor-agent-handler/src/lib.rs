@@ -6,13 +6,17 @@
 //! Spawning a local process lives in `attractor-agent-process`, and each
 //! mechanism lives in its own handler crate.
 
+mod config;
 mod env;
 mod profile;
 mod registry;
 mod types;
 
-pub use env::{child_env, STRIPPED_ENV};
-pub use profile::{argv, builtin_profiles, fill, Profile, DEFAULT_KILL_GRACE};
+pub use config::{
+    builtin_profiles, parse_duration, AgentsConfig, CommandLine, EnvConfig, ProfileConfig,
+};
+pub use env::child_env;
+pub use profile::{argv, fill, selected_model, selected_reasoning, Profile, ProfileEnv};
 pub use registry::{AgentHandler, AgentObserver, Agents, ConfigError, HARD_DEADLINE_MARGIN};
 pub use tokio_util::sync::CancellationToken;
 pub use types::{

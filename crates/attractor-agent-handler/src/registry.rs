@@ -9,8 +9,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::env::child_env;
-use crate::profile::{argv, Profile};
-use crate::types::{AgentRequest, AgentResult, FailureClass, Invocation, Spawned, Started, Usage};
+use crate::profile::{argv, selected_model, Profile};
+use crate::types::{
+    AgentRequest, AgentResult, FailureClass, Invocation, Selection, Spawned, Started, Usage,
+};
 
 /// How long past `timeout + kill_grace` `Agents` waits for a handler that
 /// ignores its timeout before giving up on it.
@@ -41,12 +43,43 @@ pub trait AgentObserver: Send + Sync {
     fn finished(&self, result: &AgentResult);
 }
 
-/// A profile set or handler set `Agents::new` refuses.
+/// Agent configuration PAS refuses: a profile set or handler set, or a
+/// selection that cannot run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigError {
     DuplicateMechanism(String),
     DuplicateProfile(String),
-    NoHandler { profile: String, mechanism: String },
+    NoHandler {
+        profile: String,
+        mechanism: String,
+    },
+    /// An agents file that is not valid TOML of the expected shape.
+    Parse(String),
+    UnknownProfile(String),
+    UnknownParent {
+        profile: String,
+        parent: String,
+    },
+    InheritCycle {
+        profile: String,
+    },
+    MissingField {
+        profile: String,
+        field: &'static str,
+    },
+    BadDuration {
+        profile: String,
+        field: &'static str,
+        value: String,
+    },
+    /// A reasoning level on a profile with no `reasoning_args`.
+    NoReasoningArgs {
+        profile: String,
+    },
+    /// A `test_only` profile in a run that does not allow test agents.
+    TestOnly {
+        profile: String,
+    },
 }
 
 impl fmt::Display for ConfigError {
@@ -57,6 +90,34 @@ impl fmt::Display for ConfigError {
             Self::NoHandler { profile, mechanism } => write!(
                 f,
                 "agent profile {profile} uses mechanism {mechanism}, which has no handler"
+            ),
+            Self::Parse(message) => write!(f, "invalid agent profiles: {message}"),
+            Self::UnknownProfile(p) => write!(f, "unknown agent profile {p}"),
+            Self::UnknownParent { profile, parent } => write!(
+                f,
+                "agent profile {profile} inherits from {parent}, which is not defined"
+            ),
+            Self::InheritCycle { profile } => {
+                write!(f, "agent profile {profile} inherits from itself")
+            }
+            Self::MissingField { profile, field } => {
+                write!(f, "agent profile {profile} has no {field}")
+            }
+            Self::BadDuration {
+                profile,
+                field,
+                value,
+            } => write!(
+                f,
+                "agent profile {profile}: {field} {value:?} is not a duration such as \"30s\" or \"10m\""
+            ),
+            Self::NoReasoningArgs { profile } => write!(
+                f,
+                "agent profile {profile} has no reasoning_args, so it takes no reasoning level"
+            ),
+            Self::TestOnly { profile } => write!(
+                f,
+                "agent profile {profile} is test_only; pass --allow-test-agents to use it"
             ),
         }
     }
@@ -70,6 +131,7 @@ pub struct Agents {
     handlers: BTreeMap<&'static str, Arc<dyn AgentHandler>>,
     profiles: BTreeMap<String, Profile>,
     parent_env: BTreeMap<String, String>,
+    allow_test_agents: bool,
     hard_deadline_margin: Duration,
 }
 
@@ -86,11 +148,13 @@ impl Agents {
     /// `parent_env` is the caller's environment, read once by the caller at
     /// its edge; every child environment is derived from it (see
     /// [`crate::child_env`]). It is a `String` map, so a variable whose name
-    /// or value is not UTF-8 is not passed to agents.
+    /// or value is not UTF-8 is not passed to agents. A `test_only`
+    /// profile runs only when `allow_test_agents` is set.
     pub fn new(
         handlers: Vec<Arc<dyn AgentHandler>>,
         profiles: Vec<Profile>,
         parent_env: BTreeMap<String, String>,
+        allow_test_agents: bool,
     ) -> Result<Self, ConfigError> {
         let mut by_mechanism = BTreeMap::new();
         for handler in handlers {
@@ -116,6 +180,7 @@ impl Agents {
             handlers: by_mechanism,
             profiles: by_name,
             parent_env,
+            allow_test_agents,
             hard_deadline_margin: HARD_DEADLINE_MARGIN,
         })
     }
@@ -151,21 +216,56 @@ impl Agents {
             handlers: BTreeMap::new(),
             profiles: BTreeMap::new(),
             parent_env: BTreeMap::new(),
+            allow_test_agents: false,
             hard_deadline_margin: HARD_DEADLINE_MARGIN,
         }
     }
 
+    /// The profile named `name`, if any.
+    pub fn profile(&self, name: &str) -> Option<&Profile> {
+        self.profiles.get(name)
+    }
+
+    /// Whether `selection` can run: its profile exists, takes a reasoning
+    /// level if one is selected (by the node or the profile), and is not
+    /// `test_only` unless test agents are allowed.
+    pub fn check(&self, selection: &Selection) -> Result<(), ConfigError> {
+        let profile = self
+            .profiles
+            .get(&selection.profile)
+            .ok_or_else(|| ConfigError::UnknownProfile(selection.profile.clone()))?;
+        let reasoning = selection.reasoning.is_some() || profile.reasoning.is_some();
+        if reasoning && profile.reasoning_args.is_empty() {
+            return Err(ConfigError::NoReasoningArgs {
+                profile: profile.name.clone(),
+            });
+        }
+        if profile.test_only && !self.allow_test_agents {
+            return Err(ConfigError::TestOnly {
+                profile: profile.name.clone(),
+            });
+        }
+        Ok(())
+    }
+
     /// Run one invocation through the selected profile's handler. Never an
-    /// error: an unknown profile is `Failed(Launch)`. The request's observer,
+    /// error: a selection [`Agents::check`] refuses is `Failed(Launch)`, and
+    /// starts nothing. The request's observer,
     /// if any, is told each process start and the returned value exactly
     /// once.
     ///
-    /// A handler that has not returned by `timeout + kill_grace` plus the
+    /// The timeout is the request's, else the profile's. A handler that has
+    /// not returned by `timeout + kill_grace` plus the
     /// hard-deadline margin is dropped (its process guard kills any child)
     /// and the result is `Failed(Timeout)`.
     pub async fn run(&self, req: AgentRequest<'_>) -> AgentResult {
-        let result = match self.resolve(&req.selection.profile) {
-            Some((profile, handler)) => {
+        let resolved = self.check(&req.selection).and_then(|()| {
+            self.resolve(&req.selection.profile)
+                .ok_or_else(|| ConfigError::UnknownProfile(req.selection.profile.clone()))
+        });
+        let result = match resolved {
+            Ok((profile, handler)) => {
+                let timeout = req.timeout.unwrap_or(profile.timeout);
                 let spawns = AtomicU32::new(0);
                 let spawned = |spawn: Spawned| {
                     let index = spawns.fetch_add(1, Ordering::SeqCst).saturating_add(1);
@@ -176,18 +276,17 @@ impl Agents {
                 let inv = Invocation {
                     invocation_id: &req.record.invocation_id,
                     argv: argv(profile, &req),
-                    env: child_env(&self.parent_env, &req.record),
+                    env: child_env(&self.parent_env, &profile.env, &req.record),
                     prompt: &req.prompt,
                     workdir: &req.workdir,
-                    timeout: req.timeout,
+                    timeout,
                     kill_grace: profile.kill_grace,
                     transcript: req.transcript.as_deref(),
                     stderr: req.stderr.as_deref(),
                     cancel: req.cancel.clone(),
                     spawned: &spawned,
                 };
-                let deadline = req
-                    .timeout
+                let deadline = timeout
                     .saturating_add(profile.kill_grace)
                     .saturating_add(self.hard_deadline_margin);
                 match tokio::time::timeout(deadline, handler.run(inv)).await {
@@ -199,10 +298,10 @@ impl Agents {
                     ),
                 }
             }
-            None => AgentResult::failed(
+            Err(error) => AgentResult::failed(
                 req.record.invocation_id.clone(),
                 FailureClass::Launch,
-                format!("unknown agent profile {}", req.selection.profile),
+                error.to_string(),
             ),
         };
         if let Some(observer) = req.observer {
@@ -234,7 +333,7 @@ fn started(req: &AgentRequest<'_>, profile: &Profile, spawn: u32, process: Spawn
         node_id: req.record.node_id.clone(),
         attempt: req.record.attempt,
         profile: profile.name.clone(),
-        model: req.selection.model.clone(),
+        model: selected_model(profile, req).map(str::to_owned),
         pid: process.pid,
         pgid: process.pgid,
         host: process.host,

@@ -2,18 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::profile::ProfileEnv;
 use crate::types::Record;
-
-/// Removed from every child environment (design §2's default list), so an
-/// agent bills the operator's subscription, never an API key it inherited.
-pub const STRIPPED_ENV: &[&str] = &[
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    "ANTHROPIC_BASE_URL",
-    "OPENAI_API_KEY",
-    "CLAUDE_CODE_USE_BEDROCK",
-    "CLAUDE_CODE_USE_VERTEX",
-];
 
 /// The `PAS_*` variables set from the record. A parent value is never kept.
 const PAS_VARS: &[&str] = &[
@@ -23,15 +13,22 @@ const PAS_VARS: &[&str] = &[
     "PAS_INVOCATION_ID",
 ];
 
-/// The parent environment minus [`STRIPPED_ENV`] and any `PAS_*` variable
-/// above, plus `PAS_NODE_ID`, `PAS_ATTEMPT`, `PAS_INVOCATION_ID`, and
-/// `PAS_RUN_ID` when the record has a run id.
-pub fn child_env(parent: &BTreeMap<String, String>, record: &Record) -> BTreeMap<String, String> {
+/// The parent environment minus the profile's `env.remove` and any `PAS_*`
+/// variable above, plus the profile's `env.set`, then `PAS_NODE_ID`,
+/// `PAS_ATTEMPT`, `PAS_INVOCATION_ID`, and `PAS_RUN_ID` when the record has
+/// a run id. So `env.set` beats `env.remove`, and `PAS_*` beat both.
+pub fn child_env(
+    parent: &BTreeMap<String, String>,
+    profile_env: &ProfileEnv,
+    record: &Record,
+) -> BTreeMap<String, String> {
+    let removed = |key: &str| profile_env.remove.iter().any(|r| r == key);
     let mut env: BTreeMap<String, String> = parent
         .iter()
-        .filter(|(k, _)| !STRIPPED_ENV.contains(&k.as_str()) && !PAS_VARS.contains(&k.as_str()))
+        .filter(|(k, _)| !removed(k) && !PAS_VARS.contains(&k.as_str()))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
+    env.extend(profile_env.set.iter().map(|(k, v)| (k.clone(), v.clone())));
     if let Some(run_id) = &record.run_id {
         env.insert("PAS_RUN_ID".into(), run_id.clone());
     }
@@ -44,6 +41,7 @@ pub fn child_env(parent: &BTreeMap<String, String>, record: &Record) -> BTreeMap
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builtin_profiles;
 
     fn record(run_id: Option<&str>) -> Record {
         Record {
@@ -61,22 +59,66 @@ mod tests {
             .collect()
     }
 
+    fn default_env() -> ProfileEnv {
+        builtin_profiles().unwrap().remove(0).env
+    }
+
+    fn env(remove: &[&str], set: &[(&str, &str)]) -> ProfileEnv {
+        ProfileEnv {
+            remove: remove.iter().map(|k| k.to_string()).collect(),
+            set: parent(set),
+        }
+    }
+
     #[test]
-    fn strips_every_listed_key_and_keeps_the_rest() {
-        let mut pairs: Vec<(&str, &str)> = STRIPPED_ENV.iter().map(|k| (*k, "secret")).collect();
+    fn strips_every_default_key_and_keeps_the_rest() {
+        let defaults = default_env();
+        let mut pairs: Vec<(&str, &str)> = defaults
+            .remove
+            .iter()
+            .map(|k| (k.as_str(), "secret"))
+            .collect();
         pairs.push(("PATH", "/bin"));
         pairs.push(("HOME", "/home/x"));
-        let env = child_env(&parent(&pairs), &record(Some("run-1")));
-        for key in STRIPPED_ENV {
-            assert!(!env.contains_key(*key), "{key} was passed through");
+        let env = child_env(&parent(&pairs), &defaults, &record(Some("run-1")));
+        for key in &defaults.remove {
+            assert!(!env.contains_key(key), "{key} was passed through");
         }
         assert_eq!(env.get("PATH").map(String::as_str), Some("/bin"));
         assert_eq!(env.get("HOME").map(String::as_str), Some("/home/x"));
     }
 
     #[test]
+    fn a_profile_remove_list_replaces_the_default_one() {
+        // Design decision 8: a profile that sets `env.remove` replaces the
+        // default strip list, so ANTHROPIC_API_KEY then passes through.
+        let env = child_env(
+            &parent(&[("ANTHROPIC_API_KEY", "k"), ("X", "x")]),
+            &env(&["X"], &[]),
+            &record(None),
+        );
+        assert_eq!(env.get("ANTHROPIC_API_KEY").map(String::as_str), Some("k"));
+        assert!(!env.contains_key("X"));
+    }
+
+    #[test]
+    fn set_beats_remove_and_pas_variables_beat_set() {
+        let env = child_env(
+            &parent(&[("K", "parent")]),
+            &env(&["K"], &[("K", "profile"), ("PAS_NODE_ID", "mine")]),
+            &record(None),
+        );
+        assert_eq!(env.get("K").map(String::as_str), Some("profile"));
+        assert_eq!(env.get("PAS_NODE_ID").map(String::as_str), Some("work"));
+    }
+
+    #[test]
     fn adds_the_four_pas_variables_from_the_record() {
-        let env = child_env(&parent(&[("PAS_NODE_ID", "stale")]), &record(Some("run-1")));
+        let env = child_env(
+            &parent(&[("PAS_NODE_ID", "stale")]),
+            &default_env(),
+            &record(Some("run-1")),
+        );
         assert_eq!(env.get("PAS_RUN_ID").map(String::as_str), Some("run-1"));
         assert_eq!(env.get("PAS_NODE_ID").map(String::as_str), Some("work"));
         assert_eq!(env.get("PAS_ATTEMPT").map(String::as_str), Some("2"));
@@ -88,7 +130,11 @@ mod tests {
 
     #[test]
     fn no_run_id_omits_pas_run_id_even_when_the_parent_has_one() {
-        let env = child_env(&parent(&[("PAS_RUN_ID", "outer")]), &record(None));
+        let env = child_env(
+            &parent(&[("PAS_RUN_ID", "outer")]),
+            &default_env(),
+            &record(None),
+        );
         assert!(!env.contains_key("PAS_RUN_ID"));
         assert_eq!(env.get("PAS_NODE_ID").map(String::as_str), Some("work"));
     }

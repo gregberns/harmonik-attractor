@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use attractor_agent_handler::{
@@ -76,8 +76,6 @@ impl CodergenHandler {
 
 /// The agent profile Claude nodes run with.
 const CLAUDE_PROFILE: &str = "claude";
-/// A Claude node's timeout when it sets none.
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 
 struct CodergenExecutionControls<'a> {
     dry_run: bool,
@@ -595,7 +593,6 @@ impl CodergenHandler {
             }),
             _ => None,
         };
-        let timeout = node.timeout.unwrap_or(DEFAULT_TIMEOUT);
         let failure_invocation_id = invocation_id.clone();
         let result = self
             .agents
@@ -603,11 +600,13 @@ impl CodergenHandler {
                 selection: Selection {
                     profile: CLAUDE_PROFILE.to_string(),
                     model: model.map(str::to_owned),
+                    reasoning: None,
                 },
                 prompt,
                 extra_args: claude_extra_args(&controls.claude, node),
                 workdir: PathBuf::from(controls.workdir.as_deref().unwrap_or(".")),
-                timeout,
+                // None: the profile's timeout.
+                timeout: node.timeout,
                 record: Record {
                     run_id: controls.run_id.map(str::to_owned),
                     node_id: node.id.clone(),
@@ -646,6 +645,11 @@ impl CodergenHandler {
             cost_usd = result.usage.cost_usd,
             "Claude Code finished"
         );
+        // The timeout the agent ran under: the node's, else the profile's.
+        let timeout = node
+            .timeout
+            .or_else(|| self.agents.profile(CLAUDE_PROFILE).map(|p| p.timeout))
+            .unwrap_or_default();
         claude_outcome(
             &result,
             node,
