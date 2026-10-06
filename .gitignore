@@ -12,3 +12,8 @@
 .dolt/
 *.db
 .beads-credential-key
+
+# hk3 (harmonik-v3) project files
+.harmonik-v3/build/
+.harmonik/
+HANDOFF*.md

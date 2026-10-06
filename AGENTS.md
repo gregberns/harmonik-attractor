@@ -1,81 +1,78 @@
-# PAS (Pascal's Discrete Attractor) - Agent Instructions
+# PAS (harmonik-attractor): agent context
 
-## Build & Test
+PAS is an Attractor: a pipeline engine that walks a DOT graph of agent and
+tool nodes. Binary `pas`; Rust workspace; MIT OR Apache-2.0. This is the
+operator's fork of citadelgrad/pascals-discrete-attractor, driven by
+harmonik-v3 (hk3). `CLAUDE.md` is a symlink to this file; edit `AGENTS.md`.
 
-```bash
-cargo build --release          # Build CLI binary
-cargo test                     # Run all tests
-cargo test -p attractor-dot    # Test a single crate
-cargo clippy --workspace       # Lint
-cargo fmt --all -- --check     # Format check
-```
+## Rules for this file
 
-The CLI binary is `pas`. Install with `./install.sh` or `cargo install --path crates/attractor-cli`.
+Loaded into every agent session, so every line costs context. Only: what
+the project is, rules to follow, and one-line pointers to `docs/`. Put
+explanations in `docs/` and link them here. Keep it under 80 lines.
 
-## Versioning
+## Where the work comes from
 
-All crates share a single version in workspace root `Cargo.toml` under `[workspace.package]`. Each crate inherits via `version.workspace = true`. **Never set versions directly in individual crates.** Bump only in the workspace root, then run `cargo check`.
+- The plan: [plans/2026-10-04-attractor/](plans/2026-10-04-attractor/README.md)
+  (`spec.md`, `design.md`, `CONTEXT.md` glossary, ticket table and status).
+- Work comes from its `tickets/`, in order, one at a time. Build only what
+  a ticket asks; no speculative options. Use the glossary's terms.
+- No other tracker for our own work: no `bd`/beads, TodoWrite or TODO
+  lists. (PAS's beads integration, docs/guide.md, is a product feature.)
+- Until ticket 02a, codergen runs the local `claude` CLI (`claude -p`), with
+  no API key; tests never do, they use the fakes.
 
-## Key Gotchas
-
-- The default `codergen` handler shells out to the local `claude` CLI — it requires Claude Code installed, no API key needed
-- Direct LLM handlers (OpenAI/Anthropic/Gemini) need their respective `*_API_KEY` env vars
-- Pipeline files use a strict DOT subset — see `docs/dot-dialect.md` for the grammar, supported features, and what breaks the parser. Read this before generating or editing `.dot` files.
-- Integration tests are in `crates/attractor-pipeline/tests/integration.rs`
-
-## Docs Reference
-
-| Doc | Contents |
-|-----|----------|
-| `docs/dot-dialect.md` | **Attractor DOT dialect** — grammar, value types, supported/unsupported features, pipeline semantics |
-| `docs/guide.md` | Pipeline patterns, planning workflow, handler dispatch |
-| `docs/cli-reference.md` | CLI commands, flags, environment setup |
-| `docs/task-verification.md` | Handler dispatch, goal gates, edge routing, budget guards |
-
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
-## Beads Issue Tracker
-
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
-
-### Quick Reference
+## Build and test
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
+cargo build --release                    # binary: target/release/pas
+cargo test --workspace                   # all tests
+cargo clippy --workspace --all-targets   # lint: no new warnings (baseline 1)
+cargo fmt --all -- --check               # format check
 ```
 
-### Rules
+All crates share one version in the root `Cargo.toml` (`[workspace.package]`);
+crates use `version.workspace = true`. Never set a version in a crate.
 
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+## Programming rules
 
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
+Pure core, imperative shell; detail in [docs/engineering.md](docs/engineering.md).
+- Decisions (graph compilation, routing, outcome and failure mapping) are
+  pure functions over immutable data.
+- Side effects (processes, files, git, clock) live at the edges behind
+  traits, injected, never created deep inside.
+- Total functions in new and changed code: no `unwrap`/`expect`/`panic!`
+  outside tests; exhaustive `match`; errors are typed values (`Result`).
+  Don't rewrite existing code just for this.
+- Small composable functions; newtypes for ids; no shared mutable state.
 
-## Session Completion
+## Testing rules
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+Detail in [docs/engineering.md](docs/engineering.md#testing).
+- New tests go through the two public seams: the agent registry's `run`
+  with a fake, and `pas run` end to end with a fake.
+- No real agent, API key or subscription in any test: use the shell fakes.
+- Every bug fix starts with a failing test.
+- Deterministic tests: no wall-clock sleeps where a file, fifo or signal
+  can be waited on; temp dirs and temp git repos only.
 
-**MANDATORY WORKFLOW:**
+## Zero framework cognition
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+The engine provides structure (graph, routing, commits, process control)
+and never judgment; judgment belongs to agents and graph authors. Read
+[docs/concepts/zero-framework-cognition.md](docs/concepts/zero-framework-cognition.md).
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
+## Git workflow
+
+One ticket at a time on its own branch from `main` (the crew shares one
+checkout); only the integrator merges to `main`, after the full checks, and
+pushes it. Builders may push ticket branches. See
+[docs/git-workflow.md](docs/git-workflow.md).
+
+## Docs
+
+- [docs/dot-dialect.md](docs/dot-dialect.md): the DOT dialect; read before writing `.dot` files
+- [docs/guide.md](docs/guide.md): pipeline patterns and handler dispatch
+- [docs/cli-reference.md](docs/cli-reference.md): CLI commands, flags, environment
+- [docs/task-verification.md](docs/task-verification.md): goal gates, edge routing, budget guards
+- [docs/execution-capabilities.md](docs/execution-capabilities.md): what the engine supports and rejects

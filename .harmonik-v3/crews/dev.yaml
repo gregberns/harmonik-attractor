@@ -1,0 +1,26 @@
+# Development team for PAS: builds the plan's tickets, one branch per ticket.
+# Launch from a plain terminal in this repo:
+#   hk3 crew start dev --team dev
+# From inside another hk3 agent, clear the inherited project first, or hk3
+# uses that agent's project:
+#   env -u HK3_PROJECT_DIR -u HK3_TEAM -u HK3_AGENT_NAME -u HK3_AGENT_ID hk3 crew start dev --team dev
+description: Build the attractor plan's tickets into PAS, one branch per ticket, with reviewed plans, reviewed and tested code, and one integrator merging to main.
+workflow: build-branches
+members:
+  - role: captain
+    responsibility: Picks up the next ready ticket, shares out the work, tracks progress and reports to the operator.
+  - role: planner
+    responsibility: Breaks each ticket into ordered build steps and sends them to plan-reviewer.
+  - role: reviewer
+    name: plan-reviewer
+    responsibility: Reviews each build plan against the ticket and the spec before building starts.
+  - role: builder
+    responsibility: Builds a ticket on its own branch from main in small verified steps, committing each change with its docs and tests.
+  - role: reviewer
+    name: code-reviewer
+    responsibility: Reviews each change on the ticket branch for correctness, the spec and the AGENTS.md rules.
+  - role: tester
+    responsibility: Tests the ticket branch against the ticket's acceptance checks with the fake agents and reports defects to the builder.
+  - role: builder
+    name: integrator
+    responsibility: The only member who merges to main; updates a passed ticket branch with main, resolves conflicts, runs the full checks, then merges.
