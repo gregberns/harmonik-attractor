@@ -134,3 +134,68 @@ fn non_git_workdir_runs_in_place_with_a_warning() {
         stderr(&output)
     );
 }
+
+#[test]
+fn main_checkout_stays_clean_with_default_logs_and_worktrees() {
+    let fake = FakeAgent::new();
+
+    // No --workdir or --logs: both default to the repo (cwd).
+    let output = fake
+        .pas_run(&agent_node("edit_commit"))
+        .current_dir(fake.repo())
+        .output()
+        .unwrap();
+    assert_success(&output);
+
+    assert!(fake.repo().join(".pas/logs").is_dir());
+    assert!(fake.repo().join(".pas/worktrees").is_dir());
+    assert_eq!(
+        fs::read_to_string(fake.repo().join(".pas/.gitignore")).unwrap(),
+        "*\n"
+    );
+    assert_eq!(fake.git(&["status", "--porcelain"]), "");
+}
+
+#[test]
+fn existing_pas_gitignore_is_left_alone() {
+    let fake = FakeAgent::new();
+    fs::create_dir_all(fake.repo().join(".pas")).unwrap();
+    fs::write(fake.repo().join(".pas/.gitignore"), "worktrees/\nlogs/\n").unwrap();
+
+    let output = fake
+        .pas_run(&agent_node("edit_commit"))
+        .current_dir(fake.repo())
+        .output()
+        .unwrap();
+    assert_success(&output);
+
+    assert_eq!(
+        fs::read_to_string(fake.repo().join(".pas/.gitignore")).unwrap(),
+        "worktrees/\nlogs/\n"
+    );
+}
+
+#[test]
+fn default_logs_in_a_subdirectory_are_ignored_too() {
+    let fake = FakeAgent::new();
+    let sub = fake.repo().join("sub");
+    fs::create_dir_all(&sub).unwrap();
+    fs::write(sub.join("keep"), "").unwrap();
+    fake.git(&["add", "sub/keep"]);
+    fake.git(&["commit", "-q", "-m", "sub"]);
+
+    // cwd = <repo>/sub: the logs go to <repo>/sub/.pas/logs.
+    let output = fake
+        .pas_run(&tool_node("true"))
+        .current_dir(&sub)
+        .output()
+        .unwrap();
+    assert_success(&output);
+
+    assert!(sub.join(".pas/logs").is_dir());
+    assert_eq!(
+        fs::read_to_string(sub.join(".pas/.gitignore")).unwrap(),
+        "*\n"
+    );
+    assert_eq!(fake.git(&["status", "--porcelain"]), "");
+}

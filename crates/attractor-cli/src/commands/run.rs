@@ -916,6 +916,17 @@ async fn prepare_run(
         run_worktree::place_resumed_run(&workdir_abs, recorded_worktree(&recorded))
     }
     .map_err(|e| SetupError::new(e.code(), e))?;
+    // The default logs folder is `.pas/logs/..` under the cwd: keep it out
+    // of `git status` too.
+    if is_new_run && logs.is_none() {
+        let pas_dir = std::path::Path::new(run_worktree::PAS_DIR);
+        run_worktree::ensure_pas_gitignore(pas_dir).map_err(|e| {
+            setup(&format!(
+                "cannot write {}: {e}",
+                pas_dir.join(".gitignore").display()
+            ))
+        })?;
+    }
     for warning in &place.warnings {
         eprintln!("warning: {warning}");
     }

@@ -235,6 +235,19 @@ impl FakeAgent {
 
     /// [`FakeAgent::command`] with `--workdir <workdir>`.
     pub fn command_in(&self, dot: &str, workdir: &Path, extra: &[&str]) -> Command {
+        let mut command = self.pas_run(dot);
+        command
+            .arg("--workdir")
+            .arg(workdir)
+            .arg("--logs")
+            .arg(self.logs())
+            .args(extra);
+        command
+    }
+
+    /// `pas run <pipeline>` for `dot`, with no `--workdir` or `--logs`,
+    /// in the scratch folder, with the fake's environment.
+    pub fn pas_run(&self, dot: &str) -> Command {
         let pipeline = self.path().join("p.dot");
         fs::write(&pipeline, dot).unwrap();
         let path = std::env::var_os("PATH").unwrap_or_default();
@@ -244,11 +257,6 @@ impl FakeAgent {
         command
             .arg("run")
             .arg(&pipeline)
-            .arg("--workdir")
-            .arg(workdir)
-            .arg("--logs")
-            .arg(self.logs())
-            .args(extra)
             .env("PATH", std::env::join_paths(paths).unwrap())
             .env("FAKE_AGENT_SCENARIOS", self.scenarios())
             .env("PAS_STATE_DIR", self.path().join("state"))
