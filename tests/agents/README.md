@@ -113,3 +113,31 @@ and `hang_ignore_term`'s loop just starts another `sleep`.
    never put data in a printf format string.
 2. Add a row to the table above.
 3. Add a test in `fake_agent_harness.rs` that runs it through `pas run`.
+
+## fake-codex and fake-gemini
+
+Twins of `codex exec --json` and the Gemini CLI, for the `codex-exec` and
+`gemini` handlers. They find their scenario like `fake-claude` (the node
+files, else `scenario=<name>` in the node's prompt), log the environment to
+`env.log` and argv to `invocations.log` (the positional prompt as
+`<prompt>`), and the prompt to `prompts.log`. The CLI harness selects them
+with `agent="fake-codex"` / `agent="fake-gemini"` (its `pas.toml` profiles
+inherit the built-in `codex`/`gemini` profiles with the fake as `command`),
+or shims them on `PATH` as `codex`/`gemini` for the `llm_provider` aliases.
+
+| Scenario | fake-codex | fake-gemini |
+|----------|------------|-------------|
+| `success` | `agent_message` `fake-codex: success`, `turn.completed` | answer `fake-gemini: success` in the requested format |
+| `turn_failed` / `failure` | a message, then `turn.failed`, exit 1 | an error (json) or error `result` (stream-json), exit 1 |
+| `crash` | no stdout, `fake-codex: crashed` on stderr, exit 3 | no stdout, `fake-gemini: crashed` on stderr, exit 3 |
+| `garbage` | non-JSON stdout, exit 0 | non-JSON stdout, exit 0 |
+| `silent` | nothing, exit 0 | (none) |
+| `hang` | starts, then sleeps `FAKE_HANG_SECS` | sleeps `FAKE_HANG_SECS` |
+| `label` | message ending with `label=<L>` on its own line | (none) |
+
+`fake-gemini --help` answers the format probe: it appends one line (`$0`,
+its arguments, its pid, and `via=$FAKE_VIA`) to `probes.log` and writes
+nothing to the other logs. The first line of `gemini-help` in the scenario
+folder picks the answer: `json` (help without `stream-json`), `fail`
+(exit 1), `hang` (writes its pid to `probe.pid` and sleeps); anything else,
+or no file, lists `stream-json`.
