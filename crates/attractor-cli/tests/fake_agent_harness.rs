@@ -536,7 +536,13 @@ fn a_stop_still_kills_an_agent_that_ignores_term() {
     });
     // From LlmStarted, not env.log: LlmStarted is journalled at spawn, before
     // the fake has written env.log.
-    let pid = fake.events_of("LlmStarted")[0]["pid"].as_u64().unwrap() as u32;
+    let started = &fake.events_of("LlmStarted")[0];
+    let pid = started["pid"].as_u64().unwrap() as u32;
+    // The trap that ignores TERM is set before the init line is printed.
+    let transcript = fake.run_dirs()[0].join(started["transcript"].as_str().unwrap());
+    wait_for("the init line", Duration::from_secs(20), || {
+        fs::read_to_string(&transcript).is_ok_and(|s| s.contains("init"))
+    });
 
     sigterm(&child);
     let status = wait_exit(&mut child, Duration::from_secs(40));
