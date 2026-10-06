@@ -602,9 +602,8 @@ impl CodergenHandler {
             (Some(events), Some(_)) => Some(StartedJournal { events }),
             _ => None,
         };
-        let summarize = |stdout: &str| {
-            invocation_usage(&self.agents.transcript_usage(&profile_name, stdout))
-        };
+        let summarize =
+            |stdout: &str| invocation_usage(&self.agents.transcript_usage(&profile_name, stdout));
         // Armed before the agent starts: if the engine's outer deadline drops
         // this future, `Drop` still emits `LlmInvoked` with status `timeout`.
         let invocation = match (controls.events, &controls.run_dir) {

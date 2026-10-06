@@ -21,7 +21,7 @@ fn agent_node(scenario: &str) -> String {
     format!(
         r#"digraph G {{
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="claude", timeout="30s", prompt="scenario={scenario}"]
+            work [shape="box", agent="fake", timeout="30s", prompt="scenario={scenario}"]
             done [shape="Msquare"]
             start -> work -> done
         }}"#
@@ -540,7 +540,7 @@ fn edit_gate_check() -> String {
     format!(
         r#"digraph G {{
             start [shape="Mdiamond"]
-            edit [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=edit_commit"]
+            edit [shape="box", agent="fake", timeout="30s", prompt="scenario=edit_commit"]
             gate [shape="parallelogram", tool_command="touch at-gate; {wait}"]
             check [shape="parallelogram", tool_command="test -f fake-edit.txt && echo ok > seen"]
             done [shape="Msquare"]
