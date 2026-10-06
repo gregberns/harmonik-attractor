@@ -29,7 +29,8 @@ pub struct Profile {
     /// How long to wait after TERM before KILL, on timeout or cancel.
     pub kill_grace: Duration,
     /// How long a rate-limited agent may keep waiting and retrying inside
-    /// one invocation (`claude-p` re-spawns; `pi` sets its own retry).
+    /// one invocation, from its first rate limit, re-spawns included
+    /// (`claude-p` re-spawns; `pi` sets its own retry).
     /// Zero: no waiting.
     pub rate_limit_window: Duration,
     pub env: ProfileEnv,

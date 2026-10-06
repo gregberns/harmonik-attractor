@@ -390,7 +390,7 @@ test_only = true
 | `reasoning_args` | Added when a reasoning level is selected; `{reasoning}` is replaced, e.g. `["--effort", "{reasoning}"]`. Without it, a reasoning level is an error. |
 | `timeout` | How long an invocation may run when the node sets no `timeout` (built-in `10m`). |
 | `kill_grace` | How long to wait after TERM before KILL, on timeout or stop (built-in `10s`). |
-| `rate_limit_window` | How long a rate-limited invocation may wait for the limit to lift, on top of its timeout (built-in `2m`; `"0s"` turns waiting off). See [Rate limits](#rate-limits). |
+| `rate_limit_window` | How long a rate-limited invocation may keep waiting and re-spawning, from its first rate limit, on top of its timeout (built-in `2m`; `"0s"` turns waiting off). See [Rate limits](#rate-limits). |
 | `env.remove` | Variables removed from the agent's environment. |
 | `env.set` | Variables set in the agent's environment, after `env.remove`; the `PAS_*` ids are set last. Values are literal and committed with `pas.toml`: never secrets. |
 | `test_only` | Refused unless `pas run` / `pas validate` get `--allow-test-agents`. |
@@ -447,10 +447,11 @@ rate-limited spawn never reported its session (no init line), with the same
 `LlmStarted`; the invocation ends with one `LlmInvoked`, whose usage adds
 up every spawn.
 
-The waits together never exceed the window, and the whole invocation never
-exceeds its timeout plus the window: each spawn gets the timeout, or what is
-left of that total if less. When the next wait doesn't fit what is left of
-the window, or the profile has no resume form, the node fails as reported
+The window runs from the first rate limit, re-spawns included: a wait must
+fit in what is left of it, so the time the re-spawns run uses it up as well
+as the waits. The whole invocation never exceeds its timeout plus the
+window: each spawn gets the timeout, or what is left of that total if less.
+When the next wait doesn't fit what is left of the window, or the profile has no resume form, the node fails as reported
 with "rate limited: <the agent's error>; waited <s> s over <n> spawns",
 which a fail edge can route on. A stop or cancel during a wait ends it at
 once. `rate_limit_window = "0s"` fails the first rate-limited spawn this way.

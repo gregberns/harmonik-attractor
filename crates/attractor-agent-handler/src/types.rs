@@ -119,7 +119,8 @@ pub struct Invocation<'a> {
     /// a re-spawn; `None` when the profile can't resume.
     pub continue_argv: Option<Vec<String>>,
     /// How long a rate-limited agent may keep waiting and retrying inside
-    /// this invocation (the profile's `rate_limit_window`).
+    /// this invocation, from its first rate limit, re-spawns included (the
+    /// profile's `rate_limit_window`).
     pub rate_limit_window: Duration,
     pub prompt: &'a str,
     pub workdir: &'a Path,
