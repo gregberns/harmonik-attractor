@@ -27,7 +27,7 @@ pub use index::{
 pub use layout::{
     new_invocation_id, new_run_id, parse_run_id, prompt_rel_path, stderr_rel_path,
     transcript_rel_path, PipelineDir, RunDir, ANSWERS_DIR, CHECKPOINT_FILE, CONSOLE_LOG,
-    CONTROL_DIR, EVENTS_FILE, RUNS_DIR, RUN_JSON, RUN_LOCK, STOP_FILE, TRANSCRIPTS_DIR,
+    CONTROL_DIR, EVENTS_FILE, FINAL_JSON, RUNS_DIR, RUN_JSON, RUN_LOCK, STOP_FILE, TRANSCRIPTS_DIR,
 };
 pub use meta::{read_run_meta, write_run_meta, RunMeta};
 pub use reader::{read_all, read_all_raw, tail, tail_with_interval};
