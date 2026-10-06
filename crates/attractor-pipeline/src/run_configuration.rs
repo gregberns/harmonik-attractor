@@ -395,6 +395,19 @@ impl RunConfiguration {
         &self.controls
     }
 
+    /// The same configuration working in `workdir`, e.g. the Run's git
+    /// worktree. `pas.toml` stays the one resolved from the caller's workdir.
+    pub fn with_workdir(self, workdir: PathBuf) -> Self {
+        let source = self.controls.workdir.source();
+        Self {
+            controls: ResolvedConfig {
+                workdir: ResolvedValue::new(workdir, source),
+                ..self.controls
+            },
+            ..self
+        }
+    }
+
     pub fn graph_context_defaults(&self) -> &HashMap<String, Value> {
         &self.graph_context_defaults
     }

@@ -26,6 +26,22 @@ pub struct RunMeta {
     pub argv: Vec<String>,
     pub pas_version: String,
     pub epic_id: Option<String>,
+    /// The git worktree the Run works in, on `branch`; `null` when the Run
+    /// works in place (no git repository, or a dry run).
+    #[serde(default)]
+    pub worktree: Option<PathBuf>,
+    /// `pas/run/<run-id>`.
+    #[serde(default)]
+    pub branch: Option<String>,
+    /// The base ref as given (`--base`, default `HEAD`).
+    #[serde(default)]
+    pub base: Option<String>,
+    /// The commit `base` named when the Run started.
+    #[serde(default)]
+    pub base_sha: Option<String>,
+    /// Warnings recorded when the Run started, e.g. a dirty source checkout.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 impl RunMeta {

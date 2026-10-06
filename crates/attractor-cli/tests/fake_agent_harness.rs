@@ -155,9 +155,14 @@ fn edit_and_commit_leaves_the_file_and_commit_in_the_workdir() {
     let output = fake.run(&one_node(r#"timeout="30s", prompt="scenario=edit_commit""#));
 
     assert!(output.status.success(), "{}", stderr(&output));
-    assert!(fake.repo().join("fake-edit.txt").is_file());
-    assert_eq!(fake.git(&["log", "-1", "--format=%s"]), "fake-claude edit");
-    let head = fake.git(&["rev-parse", "HEAD"]);
+    // The Run works in its own worktree (ticket 06).
+    let wt = fake.worktree();
+    assert!(wt.join("fake-edit.txt").is_file());
+    assert_eq!(
+        fake.git_in(&wt, &["log", "-1", "--format=%s"]),
+        "fake-claude edit"
+    );
+    let head = fake.git_in(&wt, &["rev-parse", "HEAD"]);
     let created = fake.events_of("CommitsCreated");
     assert_eq!(created.len(), 1, "{created:?}");
     assert_eq!(created[0]["node_id"], "work");

@@ -413,6 +413,11 @@ mod tests {
             argv: argv.iter().map(|s| s.to_string()).collect(),
             pas_version: "1".into(),
             epic_id: None,
+            worktree: None,
+            branch: None,
+            base: None,
+            base_sha: None,
+            warnings: Vec::new(),
         }
     }
 

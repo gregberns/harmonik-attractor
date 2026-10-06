@@ -11,6 +11,7 @@ pub mod plan;
 mod plan_input;
 pub mod run;
 mod run_lock;
+mod run_worktree;
 pub mod runs;
 pub mod scaffold;
 pub mod stop;

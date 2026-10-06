@@ -91,6 +91,11 @@ fn add_run(e: &Env, ended: Option<AttemptEndReason>, choices: &[&str]) -> (Strin
             argv: vec!["pas".into(), "run".into(), "p.dot".into()],
             pas_version: "1".into(),
             epic_id: None,
+            worktree: None,
+            branch: None,
+            base: None,
+            base_sha: None,
+            warnings: Vec::new(),
         },
     )
     .unwrap();

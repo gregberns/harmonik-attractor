@@ -7,6 +7,7 @@ use anyhow;
 use attractor_journal::{AttemptEndReason, EventData, IndexEntry, PipelineDir, RunMeta};
 
 use super::run_lock::{LockError, RunLock, WORKTREE_LOCK};
+use super::run_worktree::{self, RunWorktree};
 
 /// Print a human-facing line: to stdout normally, to stderr in `--json` mode,
 /// where stdout carries only the machine-readable first line (C6).
@@ -374,14 +375,8 @@ impl RunLocks {
     }
 }
 
-/// Take the Pipeline lock on `<logs_dir>/run.lock`, then the Worktree lock on
-/// `<git-dir>/pas-run.lock` when `workdir` is in a git worktree. Returns the
-/// locks and whether the Run shares its worktree with another Run.
-fn acquire_run_locks(
-    logs_dir: &std::path::Path,
-    workdir: &std::path::Path,
-    allow_shared_workdir: bool,
-) -> Result<(RunLocks, bool), SetupError> {
+/// Take the Pipeline lock on `<logs_dir>/run.lock`, creating the folder.
+fn acquire_pipeline_lock(logs_dir: &std::path::Path) -> Result<RunLocks, SetupError> {
     let setup = |e: &dyn std::fmt::Display| SetupError::new("run_setup_failed", e);
     std::fs::create_dir_all(logs_dir).map_err(|e| {
         setup(&format!(
@@ -406,15 +401,26 @@ fn acquire_run_locks(
             )))
         }
     };
-    let mut locks = RunLocks {
+    let locks = RunLocks {
         pipeline,
         worktree: None,
     };
     locks.record(None);
+    Ok(locks)
+}
 
+/// Take the Worktree lock on `<git-dir>/pas-run.lock` when `workdir` is in a
+/// git worktree (the Run's own, so the lock is per Run). Returns whether the
+/// Run shares its worktree with another Run.
+fn acquire_worktree_lock(
+    locks: &mut RunLocks,
+    workdir: &std::path::Path,
+    allow_shared_workdir: bool,
+) -> Result<bool, SetupError> {
+    let setup = |e: &dyn std::fmt::Display| SetupError::new("run_setup_failed", e);
     // Not a git worktree, or no `git`: only the Pipeline lock.
     let Some(git_dir) = git_rev_parse(workdir, "--absolute-git-dir") else {
-        return Ok((locks, false));
+        return Ok(false);
     };
     let worktree_path = PathBuf::from(git_dir).join(WORKTREE_LOCK);
     let shared = match RunLock::try_acquire(&worktree_path) {
@@ -444,7 +450,7 @@ fn acquire_run_locks(
             )))
         }
     };
-    Ok((locks, shared))
+    Ok(shared)
 }
 
 /// Which Run this `pas run` works on (spec C2).
@@ -523,6 +529,16 @@ fn last_attempt(events: &std::path::Path) -> u32 {
         .filter_map(|event| event.get("attempt")?.as_u64())
         .max()
         .map_or(0, |attempt| u32::try_from(attempt).unwrap_or(u32::MAX))
+}
+
+/// The worktree a Run's `run.json` recorded, if it has one.
+fn recorded_worktree(meta: &RunMeta) -> Option<RunWorktree> {
+    Some(RunWorktree {
+        path: meta.worktree.clone()?,
+        branch: meta.branch.clone()?,
+        base: meta.base.clone()?,
+        base_sha: meta.base_sha.clone()?,
+    })
 }
 
 /// `git -C <dir> rev-parse <args>`, or `None` outside a git worktree.
@@ -839,11 +855,10 @@ async fn prepare_run(
         None => stable_logs_dir(path),
     };
 
-    // Locks come before the checkpoint is read or anything is written, so a
-    // refused Run leaves no trace (C5).
+    // The Pipeline lock comes before the checkpoint is read or anything is
+    // written, so a refused Run leaves no trace (C5).
     let workdir_abs = absolute(configured.controls().workdir().value());
-    let (locks, shared_workdir) =
-        acquire_run_locks(&logs_dir, &workdir_abs, invocation.allow_shared_workdir)?;
+    let mut locks = acquire_pipeline_lock(&logs_dir)?;
 
     // Check for existing checkpoint. Loaded (not just existence-checked) so
     // the resume banner can show real progress instead of a bare notice.
@@ -881,6 +896,33 @@ async fn prepare_run(
             ),
         ));
     }
+
+    // Then the Run's worktree (created or reused), then its Worktree lock.
+    let place = if is_new_run {
+        run_worktree::place_new_run(&run_worktree::PlaceRequest {
+            source: &workdir_abs,
+            run_id: &run_id,
+            base: "HEAD",
+            root: None,
+            dry_run: *configured.controls().dry_run().value(),
+        })
+    } else {
+        let recorded = attractor_journal::read_run_meta(run_dir.path()).map_err(|e| {
+            setup(&format!(
+                "cannot read {}: {e}",
+                run_dir.run_json().display()
+            ))
+        })?;
+        run_worktree::place_resumed_run(&workdir_abs, recorded_worktree(&recorded))
+    }
+    .map_err(|e| SetupError::new(e.code(), e))?;
+    for warning in &place.warnings {
+        eprintln!("warning: {warning}");
+    }
+    let shared_workdir =
+        acquire_worktree_lock(&mut locks, &place.workdir, invocation.allow_shared_workdir)?;
+    locks.record(Some(&run_id));
+    let configured = configured.with_workdir(place.workdir.clone());
 
     // --fresh: clear any existing checkpoint before starting
     if fresh {
@@ -920,6 +962,11 @@ async fn prepare_run(
             argv: invocation.argv.clone(),
             pas_version: pas_version.clone(),
             epic_id: None,
+            worktree: place.worktree.as_ref().map(|wt| wt.path.clone()),
+            branch: place.worktree.as_ref().map(|wt| wt.branch.clone()),
+            base: place.worktree.as_ref().map(|wt| wt.base.clone()),
+            base_sha: place.worktree.as_ref().map(|wt| wt.base_sha.clone()),
+            warnings: place.warnings.clone(),
         };
         attractor_journal::write_run_meta(run_dir.path(), &meta).map_err(|e| {
             setup(&format!(
@@ -975,7 +1022,7 @@ async fn prepare_run(
             pid: std::process::id(),
             pas_version,
             argv: invocation.argv.clone(),
-            git_head: git_rev_parse(&workdir_abs, "HEAD"),
+            git_head: git_rev_parse(&place.workdir, "HEAD"),
             resumed_from_node: checkpoint.as_ref().map(|cp| cp.current_node_id.clone()),
         })
         .map_err(journal_error)?;

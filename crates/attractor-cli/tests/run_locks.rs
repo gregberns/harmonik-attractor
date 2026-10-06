@@ -174,6 +174,16 @@ impl Holder {
         self.child.id()
     }
 
+    /// The Run's git worktree, from its `run.json`.
+    fn worktree(&self) -> PathBuf {
+        PathBuf::from(run_meta(&self.run_dir)["worktree"].as_str().unwrap())
+    }
+
+    /// Let the holder's `wait` stage finish.
+    fn go(&self) {
+        fs::write(self.worktree().join("go"), "").unwrap();
+    }
+
     fn wait(&mut self, timeout: Duration) -> std::process::ExitStatus {
         let deadline = Instant::now() + timeout;
         loop {
@@ -264,6 +274,19 @@ fn only_run_dir(logs: &Path) -> PathBuf {
     let dirs = run_dirs(&logs.join("runs"));
     assert_eq!(dirs.len(), 1, "expected one Run folder, got {dirs:?}");
     dirs.into_iter().next().unwrap()
+}
+
+fn run_meta(run_dir: &Path) -> Value {
+    serde_json::from_str(&fs::read_to_string(run_dir.join("run.json")).unwrap()).unwrap()
+}
+
+/// The Worktree lock of the Run `run_id` in `repo`: its worktree's git dir
+/// is `.git/worktrees/<run-id>`.
+fn run_worktree_lock(repo: &Path, run_id: &str) -> PathBuf {
+    repo.join(".git")
+        .join("worktrees")
+        .join(run_id)
+        .join("pas-run.lock")
 }
 
 fn lock_contents(path: &Path) -> Value {
@@ -363,7 +386,7 @@ fn lock_files_contain_pid_and_run_id() {
 
     for path in [
         s.logs("a").join("run.lock"),
-        s.repo().join(".git").join("pas-run.lock"),
+        run_worktree_lock(&s.repo(), &holder.run_id),
     ] {
         let contents = lock_contents(&path);
         assert_eq!(contents["pid"], holder.pid(), "{}", path.display());
@@ -371,16 +394,41 @@ fn lock_files_contain_pid_and_run_id() {
     }
 }
 
-// AC2: a different Pipeline in the same worktree exits 6 naming the other
-// Run, and creates no Run folder or Index line.
+// AC2 (ticket 06): a different Pipeline in the same repository gets its own
+// worktree and Worktree lock, so it starts while the other Run is active.
 #[test]
-fn other_pipeline_in_same_worktree_exits_6() {
+fn other_pipeline_in_same_repo_gets_its_own_worktree() {
     let s = Scratch::git();
     s.pipeline("a", WAITS);
     s.pipeline("b", QUICK);
     let holder = s.hold("a", &s.repo(), &[]);
 
     let output = s.run("b", &s.repo(), &[]);
+    assert_success(&output);
+    let b = only_run_dir(&s.logs("b"));
+    assert_eq!(run_started(&b)["data"]["shared_workdir"], false);
+    assert_ne!(
+        run_meta(&b)["worktree"],
+        run_meta(&holder.run_dir)["worktree"]
+    );
+    assert_eq!(
+        lock_contents(&run_worktree_lock(&s.repo(), &holder.run_id))["pid"],
+        holder.pid()
+    );
+}
+
+// AC2: two processes in one Run's worktree (the same Run id from another
+// Pipeline folder) exit 6 naming the other Run, and create no Run folder or
+// Index line.
+#[test]
+fn same_run_worktree_from_another_pipeline_folder_exits_6() {
+    let s = Scratch::git();
+    s.pipeline("a", WAITS);
+    s.pipeline("b", QUICK);
+    let holder = s.hold("a", &s.repo(), &[]);
+    let same_run = ["--run-id", holder.run_id.as_str()];
+
+    let output = s.run("b", &s.repo(), &same_run);
     assert_exit(&output, 6);
     let err = stderr(&output);
     assert!(
@@ -396,27 +444,15 @@ fn other_pipeline_in_same_worktree_exits_6() {
     assert!(RunLockProbe::is_free(&b_lock));
 
     // The same refusal in --json.
-    let output = s.run("b", &s.repo(), &["--json"]);
+    let output = s.run("b", &s.repo(), &["--json", "--run-id", &holder.run_id]);
     assert_exit(&output, 6);
     let line: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(line["error"]["code"], "worktree_locked");
 }
 
-// AC2 from a subdirectory: the lock is per worktree, not per workdir path.
-#[test]
-fn subdirectory_of_busy_worktree_exits_6() {
-    let s = Scratch::git();
-    s.pipeline("a", WAITS);
-    s.pipeline("b", QUICK);
-    let sub = s.repo().join("sub");
-    fs::create_dir_all(&sub).unwrap();
-    let _holder = s.hold("a", &s.repo(), &[]);
-
-    assert_exit(&s.run("b", &sub, &[]), 6);
-}
-
-// AC3: --allow-shared-workdir starts the second Pipeline and records
-// shared_workdir = true; the holder's RunStarted says false.
+// AC3: --allow-shared-workdir starts the second process in the busy
+// worktree and records shared_workdir = true; the holder's RunStarted says
+// false.
 #[test]
 fn allow_shared_workdir_starts_and_records_it() {
     let s = Scratch::git();
@@ -424,7 +460,11 @@ fn allow_shared_workdir_starts_and_records_it() {
     s.pipeline("b", QUICK);
     let holder = s.hold("a", &s.repo(), &[]);
 
-    let output = s.run("b", &s.repo(), &["--allow-shared-workdir"]);
+    let output = s.run(
+        "b",
+        &s.repo(),
+        &["--allow-shared-workdir", "--run-id", &holder.run_id],
+    );
     assert_success(&output);
     assert!(
         stderr(&output).contains("sharing this git worktree"),
@@ -439,7 +479,7 @@ fn allow_shared_workdir_starts_and_records_it() {
     );
     // The holder still owns the Worktree lock.
     assert_eq!(
-        lock_contents(&s.repo().join(".git").join("pas-run.lock"))["pid"],
+        lock_contents(&run_worktree_lock(&s.repo(), &holder.run_id))["pid"],
         holder.pid()
     );
 }
@@ -452,7 +492,8 @@ fn allow_shared_workdir_without_contention_records_false() {
     assert_success(&s.run("b", &s.repo(), &["--allow-shared-workdir"]));
     let b = only_run_dir(&s.logs("b"));
     assert_eq!(run_started(&b)["data"]["shared_workdir"], false);
-    assert!(s.repo().join(".git").join("pas-run.lock").is_file());
+    let run_id = run_started(&b)["run_id"].as_str().unwrap().to_string();
+    assert!(run_worktree_lock(&s.repo(), &run_id).is_file());
 }
 
 // AC4: two worktrees of one repository each have their own Worktree lock.
@@ -473,16 +514,20 @@ fn pipelines_in_two_worktrees_run_concurrently() {
     let b = only_run_dir(&s.logs("b"));
     assert_eq!(run_started(&b)["data"]["shared_workdir"], false);
 
-    let main_lock = s.repo().join(".git").join("pas-run.lock");
-    let wt2_lock = s
-        .repo()
-        .join(".git")
-        .join("worktrees")
-        .join("wt2")
-        .join("pas-run.lock");
-    assert_eq!(lock_contents(&main_lock)["run_id"], holder.run_id);
-    let b_run_id = run_started(&b)["run_id"].clone();
-    assert_eq!(lock_contents(&wt2_lock)["run_id"], b_run_id);
+    // Each Run has its own worktree, made from the checkout it was given.
+    let b_run_id = run_started(&b)["run_id"].as_str().unwrap().to_string();
+    assert_eq!(
+        lock_contents(&run_worktree_lock(&s.repo(), &holder.run_id))["run_id"],
+        holder.run_id
+    );
+    assert_eq!(
+        lock_contents(&run_worktree_lock(&s.repo(), &b_run_id))["run_id"],
+        b_run_id
+    );
+    assert!(run_meta(&b)["worktree"]
+        .as_str()
+        .unwrap()
+        .starts_with(fs::canonicalize(&wt2).unwrap().to_str().unwrap()));
 }
 
 // AC5: after `kill -9` both locks are free with no cleanup: another
@@ -511,7 +556,7 @@ fn kill_9_releases_both_locks() {
 
     assert_success(&s.run("b", &s.repo(), &[]));
 
-    fs::write(s.repo().join("go"), "").unwrap();
+    holder.go();
     let output = s.run("a", &s.repo(), &[]);
     assert_success(&output);
     let events = read_events(&holder.run_dir);
@@ -537,7 +582,7 @@ fn sigterm_releases_both_locks() {
     assert_eq!(holder.wait(Duration::from_secs(15)).code(), Some(143));
 
     assert_success(&s.run("b", &s.repo(), &[]));
-    fs::write(s.repo().join("go"), "").unwrap();
+    holder.go();
     assert_success(&s.run("a", &s.repo(), &[]));
 }
 
@@ -590,9 +635,9 @@ fn git_missing_takes_only_pipeline_lock() {
     assert!(!s.repo().join(".git").join("pas-run.lock").exists());
 }
 
-// C5 for directory Runs: each Pipeline takes and releases its own locks, so
-// two Pipelines in one worktree run one after the other; a busy worktree
-// refuses the whole directory Run with exit 6.
+// C5 for directory Runs: each Pipeline takes and releases its own locks and
+// (ticket 06) gets its own worktree, so a Run active in the same repository
+// does not refuse the directory Run.
 #[test]
 fn directory_run_locks_each_pipeline() {
     let s = Scratch::git();
@@ -611,25 +656,19 @@ fn directory_run_locks_each_pipeline() {
     };
 
     s.pipeline("w", WAITS);
-    let holder = s.hold("w", &s.repo(), &[]);
-    let output = dir_run();
-    assert_exit(&output, 6);
-    assert!(
-        stderr(&output).contains(&holder.run_id),
-        "{}",
-        stderr(&output)
-    );
-    drop(holder);
-
+    let _holder = s.hold("w", &s.repo(), &[]);
     let output = dir_run();
     assert_success(&output);
     let mut run_starts = Vec::new();
     find_files(&s.path().join(".pas"), "events.jsonl", &mut run_starts);
     assert_eq!(run_starts.len(), 2, "{run_starts:?}");
+    let mut worktrees = Vec::new();
     for events in run_starts {
-        let started = run_started(events.parent().unwrap());
-        assert_eq!(started["data"]["shared_workdir"], false);
+        let run_dir = events.parent().unwrap();
+        assert_eq!(run_started(run_dir)["data"]["shared_workdir"], false);
+        worktrees.push(run_meta(run_dir)["worktree"].clone());
     }
+    assert_ne!(worktrees[0], worktrees[1]);
 }
 
 // The new flag is documented in `pas run --help`.

@@ -207,3 +207,108 @@ impl FakeAgent {
 pub fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
+
+// --- Worktree per Run (ticket 06) ---
+
+// Each test crate that includes this module uses a subset of these.
+#[allow(dead_code)]
+impl FakeAgent {
+    /// The scratch folder holding the repo, logs and scenarios.
+    pub fn root(&self) -> &Path {
+        self.path()
+    }
+
+    /// The Pipeline's logs folder (`--logs`).
+    pub fn logs_dir(&self) -> PathBuf {
+        self.logs()
+    }
+
+    /// `pas run` like [`FakeAgent::run`], with `extra` arguments.
+    pub fn run_with(&self, dot: &str, extra: &[&str]) -> Output {
+        self.command(dot, extra).output().unwrap()
+    }
+
+    /// The `pas run` command [`FakeAgent::run_with`] runs, to spawn it.
+    pub fn command(&self, dot: &str, extra: &[&str]) -> Command {
+        self.command_in(dot, &self.repo(), extra)
+    }
+
+    /// [`FakeAgent::command`] with `--workdir <workdir>`.
+    pub fn command_in(&self, dot: &str, workdir: &Path, extra: &[&str]) -> Command {
+        let pipeline = self.path().join("p.dot");
+        fs::write(&pipeline, dot).unwrap();
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let mut paths = vec![self.bin()];
+        paths.extend(std::env::split_paths(&path));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_pas"));
+        command
+            .arg("run")
+            .arg(&pipeline)
+            .arg("--workdir")
+            .arg(workdir)
+            .arg("--logs")
+            .arg(self.logs())
+            .args(extra)
+            .env("PATH", std::env::join_paths(paths).unwrap())
+            .env("FAKE_AGENT_SCENARIOS", self.scenarios())
+            .env("PAS_STATE_DIR", self.path().join("state"))
+            .env("GIT_CEILING_DIRECTORIES", self.path())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("PAS_HEARTBEAT_INTERVAL_MS")
+            .current_dir(self.path());
+        command
+    }
+
+    /// The folders under `<logs>/runs`, sorted.
+    pub fn run_dirs(&self) -> Vec<PathBuf> {
+        let Ok(entries) = fs::read_dir(self.logs().join("runs")) else {
+            return vec![];
+        };
+        let mut dirs: Vec<PathBuf> = entries.map(|entry| entry.unwrap().path()).collect();
+        dirs.sort();
+        dirs
+    }
+
+    /// The one Run's `run.json`.
+    pub fn run_meta(&self) -> Value {
+        let runs = self.run_dirs();
+        assert_eq!(runs.len(), 1, "expected one Run folder: {runs:?}");
+        serde_json::from_str(&fs::read_to_string(runs[0].join("run.json")).unwrap()).unwrap()
+    }
+
+    /// The one Run's worktree, from its `run.json`.
+    pub fn worktree(&self) -> PathBuf {
+        PathBuf::from(
+            self.run_meta()["worktree"]
+                .as_str()
+                .expect("run.json worktree"),
+        )
+    }
+
+    /// `git <args>` in `dir` as the fixed test user; returns trimmed stdout.
+    pub fn git_in(&self, dir: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .args([
+                "-c",
+                "user.name=pas-test",
+                "-c",
+                "user.email=pas-test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+            ])
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_CEILING_DIRECTORIES", self.path())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}: {output:?}");
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    }
+}
