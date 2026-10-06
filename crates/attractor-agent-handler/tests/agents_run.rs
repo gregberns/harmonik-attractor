@@ -10,8 +10,8 @@ use async_trait::async_trait;
 
 use attractor_agent_handler::{
     AgentHandler, AgentObserver, AgentRequest, AgentResult, AgentStatus, Agents, CancellationToken,
-    ConfigError, FailureClass, Invocation, Limits, Profile, ProfileEnv, Record, Selection, Spawned,
-    Started, Usage,
+    ConfigError, FailureClass, Invocation, Limits, Profile, ProfileEnv, RateLimited, Record,
+    Resume, Selection, Spawned, Started, Usage,
 };
 
 /// The argv, env and prompt one invocation was given.
@@ -94,6 +94,7 @@ impl AgentHandler for Stuck {
 struct Counter {
     finished: Mutex<Vec<AgentResult>>,
     started: Mutex<Vec<Started>>,
+    rate_limited: Mutex<Vec<RateLimited>>,
 }
 
 impl AgentObserver for Counter {
@@ -103,6 +104,10 @@ impl AgentObserver for Counter {
 
     fn finished(&self, result: &AgentResult) {
         self.finished.lock().unwrap().push(result.clone());
+    }
+
+    fn rate_limited(&self, rate_limited: &RateLimited) {
+        self.rate_limited.lock().unwrap().push(rate_limited.clone());
     }
 }
 
@@ -118,6 +123,7 @@ fn profile(name: &str, mechanism: &str) -> Profile {
         reasoning_args: vec!["--effort".into(), "{reasoning}".into()],
         timeout: Duration::from_secs(600),
         kill_grace: Duration::from_millis(50),
+        rate_limit_window: Duration::ZERO,
         env: ProfileEnv {
             remove: vec!["ANTHROPIC_API_KEY".into()],
             set: BTreeMap::new(),
@@ -816,4 +822,133 @@ async fn a_profile_without_api_key_env_hands_no_key() {
     let seen = keyed.seen.lock().unwrap();
     assert_eq!(seen[0].api_key, None);
     assert_eq!(seen[0].state_dir, None);
+}
+
+/// What [`TwoSpawns`] was given: the continue argv, window and timeout.
+type GivenLimits = (Option<Vec<String>>, Duration, Duration);
+
+/// Spawns twice, reporting a 1.2 s rate-limit wait in between.
+struct TwoSpawns(Mutex<Vec<GivenLimits>>);
+
+#[async_trait]
+impl AgentHandler for TwoSpawns {
+    fn mechanism(&self) -> &'static str {
+        "two"
+    }
+
+    async fn run(&self, inv: Invocation<'_>) -> AgentResult {
+        self.0.lock().unwrap().push((
+            inv.continue_argv.clone(),
+            inv.rate_limit_window,
+            inv.timeout,
+        ));
+        let spawn = |pid| Spawned {
+            pid,
+            pgid: pid,
+            host: None,
+        };
+        (inv.spawned)(spawn(11));
+        (inv.rate_limited)(Duration::from_millis(1200));
+        (inv.spawned)(spawn(12));
+        AgentResult::failed(inv.invocation_id, FailureClass::Reported, "")
+    }
+
+    fn transcript_usage(&self, _transcript: &str) -> Usage {
+        Usage::default()
+    }
+}
+
+#[tokio::test]
+async fn each_spawn_is_started_with_its_own_files_and_a_wait_is_reported() {
+    let handler = Arc::new(TwoSpawns(Mutex::new(Vec::new())));
+    let mut p = profile("p", "two");
+    p.session_args = vec!["--session-id".into(), "{session_id}".into()];
+    p.resume = Some(Resume::Args(vec!["--resume".into(), "{session_id}".into()]));
+    p.rate_limit_window = Duration::from_secs(120);
+    let agents = Agents::new(vec![handler.clone()], vec![p], BTreeMap::new(), false).unwrap();
+    let counter = Counter::default();
+
+    agents.run(request("p", Some(&counter))).await;
+
+    let started = counter.started.lock().unwrap();
+    let files: Vec<_> = started
+        .iter()
+        .map(|s| (s.spawn, s.pid, s.transcript.clone(), s.stderr.clone()))
+        .collect();
+    assert_eq!(
+        files,
+        [
+            (
+                1,
+                11,
+                Some(PathBuf::from("/run/transcripts/inv-1.jsonl")),
+                Some(PathBuf::from("/run/transcripts/inv-1.stderr.log"))
+            ),
+            (
+                2,
+                12,
+                Some(PathBuf::from("/run/transcripts/inv-1.2.jsonl")),
+                Some(PathBuf::from("/run/transcripts/inv-1.2.stderr.log"))
+            ),
+        ]
+    );
+    assert_eq!(
+        *counter.rate_limited.lock().unwrap(),
+        [RateLimited {
+            invocation_id: "inv-1".into(),
+            spawn: 1,
+            wait_s: 2,
+        }]
+    );
+    let (continue_argv, window, _) = handler.0.lock().unwrap()[0].clone();
+    assert_eq!(
+        continue_argv.unwrap(),
+        ["agent", "--quiet", "--resume", "sess-1", "--extra", "--model", "m1"]
+    );
+    assert_eq!(window, Duration::from_secs(120));
+}
+
+#[tokio::test]
+async fn a_profile_that_cant_resume_gets_no_continue_argv() {
+    let handler = Arc::new(TwoSpawns(Mutex::new(Vec::new())));
+    let agents = Agents::new(
+        vec![handler.clone()],
+        vec![profile("p", "two")],
+        BTreeMap::new(),
+        false,
+    )
+    .unwrap();
+    agents.run(request("p", None)).await;
+    assert_eq!(handler.0.lock().unwrap()[0].0, None);
+}
+
+#[test]
+fn spawn_paths_insert_the_spawn_number_after_the_invocation_id() {
+    use attractor_agent_handler::spawn_path;
+    use std::path::Path;
+    let jsonl = Path::new("/r/transcripts/0192-ab.jsonl");
+    let stderr = Path::new("/r/transcripts/0192-ab.stderr.log");
+    assert_eq!(spawn_path(jsonl, 1), jsonl);
+    assert_eq!(
+        spawn_path(jsonl, 2),
+        Path::new("/r/transcripts/0192-ab.2.jsonl")
+    );
+    assert_eq!(
+        spawn_path(stderr, 3),
+        Path::new("/r/transcripts/0192-ab.3.stderr.log")
+    );
+}
+
+#[tokio::test]
+async fn the_hard_deadline_leaves_room_for_the_rate_limit_window() {
+    let mut p = profile("p", "stuck");
+    p.rate_limit_window = Duration::from_millis(200);
+    let agents = Agents::new(vec![Arc::new(Stuck)], vec![p], BTreeMap::new(), false)
+        .unwrap()
+        .with_hard_deadline_margin(Duration::from_millis(50));
+    let mut req = request("p", None);
+    req.timeout = Some(Duration::from_millis(100));
+    let result = agents.run(req).await;
+    // timeout 100 + window 200 + kill_grace 50 + margin 50.
+    assert_eq!(result.detail, "handler did not return within 400ms");
 }

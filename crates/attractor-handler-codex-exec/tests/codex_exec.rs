@@ -31,6 +31,7 @@ fn profile() -> Profile {
     Profile {
         command: vec![fake_codex().to_string_lossy().into_owned()],
         kill_grace: Duration::from_secs(1),
+        rate_limit_window: Duration::ZERO,
         ..builtin
     }
 }

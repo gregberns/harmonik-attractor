@@ -115,6 +115,12 @@ pub struct Invocation<'a> {
     /// The session: `argv` already carries its flags (`session_args`,
     /// `resume_args` or `resume_command`).
     pub session: Session,
+    /// The argv (like `argv`) that continues this invocation's session, for
+    /// a re-spawn; `None` when the profile can't resume.
+    pub continue_argv: Option<Vec<String>>,
+    /// How long a rate-limited agent may keep waiting and retrying inside
+    /// this invocation (the profile's `rate_limit_window`).
+    pub rate_limit_window: Duration,
     pub prompt: &'a str,
     pub workdir: &'a Path,
     /// The request's timeout, else the profile's.
@@ -125,8 +131,11 @@ pub struct Invocation<'a> {
     pub stderr: Option<&'a Path>,
     pub cancel: CancellationToken,
     /// Call once per process, right after it exists and its transcript and
-    /// stderr files exist, and before any of its output is written.
+    /// stderr files exist, and before any of its output is written. Spawn
+    /// `n` writes to [`crate::spawn_path`] of `transcript` and `stderr`.
     pub spawned: &'a (dyn Fn(Spawned) + Sync),
+    /// Call before each wait for a rate limit, with how long it will wait.
+    pub rate_limited: &'a (dyn Fn(Duration) + Sync),
 }
 
 impl std::fmt::Debug for Invocation<'_> {
@@ -141,6 +150,8 @@ impl std::fmt::Debug for Invocation<'_> {
             .field("profile", &self.profile.name)
             .field("model", &self.model)
             .field("session", &self.session)
+            .field("continue_argv", &self.continue_argv)
+            .field("rate_limit_window", &self.rate_limit_window)
             .field("prompt", &self.prompt)
             .field("workdir", &self.workdir)
             .field("timeout", &self.timeout)
@@ -177,6 +188,17 @@ pub struct Started {
     pub host: Option<String>,
     pub transcript: Option<PathBuf>,
     pub stderr: Option<PathBuf>,
+}
+
+/// A rate-limited agent is about to wait before its next spawn (the
+/// journal's `LlmRateLimited`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RateLimited {
+    pub invocation_id: String,
+    /// The spawn that was rate limited, from 1.
+    pub spawn: u32,
+    /// How long the handler waits, in whole seconds (rounded up).
+    pub wait_s: u64,
 }
 
 /// How an invocation ended.

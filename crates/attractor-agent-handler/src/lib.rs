@@ -18,8 +18,8 @@ pub use config::{
 };
 pub use env::child_env;
 pub use profile::{
-    argv, fill, resolve_argv, selected_model, selected_reasoning, Limits, Profile, ProfileEnv,
-    ResolvedArgv, Resume,
+    argv, fill, resolve_argv, resolve_argv_for, selected_model, selected_reasoning, spawn_path,
+    Limits, Profile, ProfileEnv, ResolvedArgv, Resume,
 };
 pub use prompt_file::prompt_file_text;
 pub use registry::{
@@ -27,6 +27,6 @@ pub use registry::{
 };
 pub use tokio_util::sync::CancellationToken;
 pub use types::{
-    AgentRequest, AgentResult, AgentStatus, ExitInfo, FailureClass, Invocation, Record, Selection,
-    Session, Spawned, Started, Usage,
+    AgentRequest, AgentResult, AgentStatus, ExitInfo, FailureClass, Invocation, RateLimited,
+    Record, Selection, Session, Spawned, Started, Usage,
 };

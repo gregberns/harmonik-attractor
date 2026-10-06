@@ -81,6 +81,8 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
             command_len: claude.command.len(),
             env: Default::default(),
             session: request.session.clone(),
+            continue_argv: None,
+            rate_limit_window: claude.rate_limit_window,
             api_key: None,
             state_dir: None,
             profile: &claude,
@@ -93,6 +95,7 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
             stderr: None,
             cancel: CancellationToken::new(),
             spawned: &|_| {},
+            rate_limited: &|_| {},
         },
     )
 }

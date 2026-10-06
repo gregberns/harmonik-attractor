@@ -284,6 +284,7 @@ mod tests {
             reasoning_args: vec!["--thinking".into(), "{reasoning}".into()],
             timeout: Duration::from_secs(1),
             kill_grace: Duration::from_secs(1),
+            rate_limit_window: Duration::ZERO,
             env: ProfileEnv::default(),
             test_only: false,
             session_args: vec![],
@@ -313,6 +314,8 @@ mod tests {
             profile: &p,
             model: Some("deepseek-v4-flash"),
             session,
+            continue_argv: None,
+            rate_limit_window: Duration::ZERO,
             prompt: "do it",
             workdir: Path::new("/work"),
             timeout: Duration::from_secs(1),
@@ -321,6 +324,7 @@ mod tests {
             stderr: None,
             cancel: CancellationToken::new(),
             spawned: &|_| {},
+            rate_limited: &|_| {},
         })
     }
 

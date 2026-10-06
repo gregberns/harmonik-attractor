@@ -5,6 +5,9 @@
 [defaults]
 timeout = "10m"
 kill_grace = "10s"
+# How long a rate-limited agent may keep waiting and retrying inside one
+# invocation (claude-p re-spawns; pi sets its own retry). "0s": no waiting.
+rate_limit_window = "2m"
 
 [defaults.env]
 # Removed from every agent's environment, so an agent bills the operator's

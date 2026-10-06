@@ -9,11 +9,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::env::child_env;
-use crate::profile::{resolve_argv, selected_model, Profile};
+use crate::profile::{resolve_argv, resolve_argv_for, selected_model, spawn_path, Profile};
 use crate::prompt_file::{prompt_file_text, write_prompt_file};
 use crate::types::{
-    AgentRequest, AgentResult, AgentStatus, FailureClass, Invocation, Selection, Spawned, Started,
-    Usage,
+    AgentRequest, AgentResult, AgentStatus, FailureClass, Invocation, RateLimited, Selection,
+    Session, Spawned, Started, Usage,
 };
 
 /// How long past `timeout + kill_grace` `Agents` waits for a handler that
@@ -77,6 +77,9 @@ pub trait AgentObserver: Send + Sync {
     fn started(&self, started: &Started);
     /// Called once per invocation, with the value `Agents::run` returns.
     fn finished(&self, result: &AgentResult);
+    /// Called before each wait for a rate limit (a handler that retries
+    /// inside the invocation, e.g. `claude-p`).
+    fn rate_limited(&self, _rate_limited: &RateLimited) {}
 }
 
 /// Agent configuration PAS refuses: a profile set or handler set, or a
@@ -370,7 +373,7 @@ impl Agents {
     /// once.
     ///
     /// The timeout is the request's, else the profile's. A handler that has
-    /// not returned by `timeout + kill_grace` plus the
+    /// not returned by `timeout + rate_limit_window + kill_grace` plus the
     /// hard-deadline margin is dropped (its process guard kills any child)
     /// and the result is `Failed(Timeout)`.
     pub async fn run(&self, req: AgentRequest<'_>) -> AgentResult {
@@ -394,7 +397,31 @@ impl Agents {
                         observer.started(&started(&req, profile, index, spawn));
                     }
                 };
+                let rate_limited = |wait: Duration| {
+                    if let Some(observer) = req.observer {
+                        observer.rate_limited(&RateLimited {
+                            invocation_id: req.record.invocation_id.clone(),
+                            spawn: spawns.load(Ordering::SeqCst),
+                            wait_s: wait
+                                .as_millis()
+                                .div_ceil(1000)
+                                .try_into()
+                                .unwrap_or(u64::MAX),
+                        });
+                    }
+                };
                 let resolved = resolve_argv(profile, &req);
+                // A re-spawn continues the request's session (a new one is
+                // the id the agent adopts).
+                let continue_argv =
+                    (profile.can_resume() || handler.resumes_natively()).then(|| {
+                        resolve_argv_for(
+                            profile,
+                            &req,
+                            &Session::Continue(req.session.id().to_string()),
+                        )
+                        .argv
+                    });
                 let inv = Invocation {
                     invocation_id: &req.record.invocation_id,
                     argv: resolved.argv,
@@ -413,6 +440,8 @@ impl Agents {
                     profile,
                     model: selected_model(profile, &req),
                     session: req.session.clone(),
+                    continue_argv,
+                    rate_limit_window: profile.rate_limit_window,
                     prompt: &req.prompt,
                     workdir: &req.workdir,
                     timeout,
@@ -421,6 +450,7 @@ impl Agents {
                     stderr: req.stderr.as_deref(),
                     cancel: req.cancel.clone(),
                     spawned: &spawned,
+                    rate_limited: &rate_limited,
                 };
                 handler.prepare(&inv).await;
                 if let Some(path) = &req.prompt_file {
@@ -441,7 +471,10 @@ impl Agents {
                         );
                     }
                 }
+                // The window is waiting the handler may do on top of the
+                // timeout (rate limits), so the hard deadline covers it.
                 let deadline = timeout
+                    .saturating_add(profile.rate_limit_window)
                     .saturating_add(profile.kill_grace)
                     .saturating_add(self.hard_deadline_margin);
                 match tokio::time::timeout(deadline, handler.run(inv)).await {
@@ -564,7 +597,10 @@ fn started(req: &AgentRequest<'_>, profile: &Profile, spawn: u32, process: Spawn
         pid: process.pid,
         pgid: process.pgid,
         host: process.host,
-        transcript: req.transcript.clone(),
-        stderr: req.stderr.clone(),
+        transcript: req
+            .transcript
+            .as_deref()
+            .map(|path| spawn_path(path, spawn)),
+        stderr: req.stderr.as_deref().map(|path| spawn_path(path, spawn)),
     }
 }

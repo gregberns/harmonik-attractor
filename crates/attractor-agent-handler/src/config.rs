@@ -31,6 +31,8 @@ pub struct ProfileConfig {
     /// A duration such as `"10m"`, `"30s"` or `"500ms"`.
     pub timeout: Option<String>,
     pub kill_grace: Option<String>,
+    /// A duration; absent (with no default) means no rate-limit waiting.
+    pub rate_limit_window: Option<String>,
     pub env: Option<EnvConfig>,
     pub test_only: Option<bool>,
     /// Added when starting a new session; `{session_id}` is the minted id.
@@ -196,6 +198,9 @@ fn overlay(child: ProfileConfig, parent: &ProfileConfig) -> ProfileConfig {
             .or_else(|| parent.reasoning_args.clone()),
         timeout: child.timeout.or_else(|| parent.timeout.clone()),
         kill_grace: child.kill_grace.or_else(|| parent.kill_grace.clone()),
+        rate_limit_window: child
+            .rate_limit_window
+            .or_else(|| parent.rate_limit_window.clone()),
         env,
         test_only: child.test_only.or(parent.test_only),
         session_args: child.session_args.or_else(|| parent.session_args.clone()),
@@ -259,6 +264,10 @@ fn into_profile(name: &str, config: ProfileConfig) -> Result<Profile, ConfigErro
         reasoning_args: config.reasoning_args.unwrap_or_default(),
         timeout: duration("timeout", config.timeout)?,
         kill_grace: duration("kill_grace", config.kill_grace)?,
+        rate_limit_window: match config.rate_limit_window {
+            Some(value) => duration("rate_limit_window", Some(value))?,
+            None => Duration::ZERO,
+        },
         env: ProfileEnv {
             remove: env.remove.unwrap_or_default(),
             set: env.set.unwrap_or_default(),
@@ -345,6 +354,7 @@ mod tests {
         assert_eq!(claude.reasoning_args, ["--effort", "{reasoning}"]);
         assert_eq!(claude.timeout, Duration::from_secs(600));
         assert_eq!(claude.kill_grace, Duration::from_secs(10));
+        assert_eq!(claude.rate_limit_window, Duration::from_secs(120));
         assert_eq!(
             claude.env.remove,
             [
@@ -712,5 +722,28 @@ mod tests {
         assert_eq!(parse_duration("10"), None);
         assert_eq!(parse_duration("s"), None);
         assert_eq!(parse_duration("1d"), None);
+    }
+
+    #[test]
+    fn rate_limit_window_is_inherited_and_absent_means_none() {
+        let profiles = config(BASE)
+            .with_overrides(&overrides(
+                "[short]\ninherit_from = \"base\"\nrate_limit_window = \"0s\"\n",
+            ))
+            .resolve()
+            .unwrap();
+        // BASE's [defaults] sets no window.
+        assert_eq!(profile(&profiles, "base").rate_limit_window, Duration::ZERO);
+        assert_eq!(
+            profile(&profiles, "short").rate_limit_window,
+            Duration::ZERO
+        );
+        let err = config(BASE)
+            .with_overrides(&overrides(
+                "[x]\ninherit_from = \"base\"\nrate_limit_window = \"soon\"\n",
+            ))
+            .resolve()
+            .unwrap_err();
+        assert!(err.to_string().contains("rate_limit_window"), "{err}");
     }
 }

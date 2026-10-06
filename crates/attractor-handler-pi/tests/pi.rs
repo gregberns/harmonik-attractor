@@ -40,6 +40,7 @@ fn profile() -> Profile {
         reasoning_args: vec!["--thinking".into(), "{reasoning}".into()],
         timeout: Duration::from_secs(20),
         kill_grace: Duration::from_millis(200),
+        rate_limit_window: Duration::ZERO,
         env: ProfileEnv {
             remove: vec!["OPENAI_API_KEY".into(), "ANTHROPIC_API_KEY".into()],
             set: BTreeMap::new(),

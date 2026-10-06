@@ -132,6 +132,7 @@ mod tests {
             reasoning_args: vec![],
             timeout: Duration::from_secs(1),
             kill_grace: Duration::from_secs(1),
+            rate_limit_window: Duration::ZERO,
             env: ProfileEnv::default(),
             test_only: false,
             session_args: vec![],

@@ -28,6 +28,10 @@ pub struct Profile {
     pub timeout: Duration,
     /// How long to wait after TERM before KILL, on timeout or cancel.
     pub kill_grace: Duration,
+    /// How long a rate-limited agent may keep waiting and retrying inside
+    /// one invocation (`claude-p` re-spawns; `pi` sets its own retry).
+    /// Zero: no waiting.
+    pub rate_limit_window: Duration,
     pub env: ProfileEnv,
     /// Refused unless the run allows test agents.
     pub test_only: bool,
@@ -127,9 +131,19 @@ pub fn selected_reasoning<'a>(profile: &'a Profile, req: &'a AgentRequest<'_>) -
 ///
 /// then the request's extra args, the filled model args and reasoning args.
 pub fn resolve_argv(profile: &Profile, req: &AgentRequest<'_>) -> ResolvedArgv {
-    let id = req.session.id();
+    resolve_argv_for(profile, req, &req.session)
+}
+
+/// [`resolve_argv`] for `session` in place of the request's (a re-spawn
+/// continues the request's session).
+pub fn resolve_argv_for(
+    profile: &Profile,
+    req: &AgentRequest<'_>,
+    session: &Session,
+) -> ResolvedArgv {
+    let id = session.id();
     let fill_id = |t: &String| fill(t, "session_id", id);
-    let (mut argv, command_len): (Vec<String>, usize) = match (&req.session, &profile.resume) {
+    let (mut argv, command_len): (Vec<String>, usize) = match (session, &profile.resume) {
         (Session::Continue(_), Some(Resume::Command(template))) => {
             let mut argv = Vec::new();
             let mut command_len = None;
@@ -171,6 +185,23 @@ pub fn resolve_argv(profile: &Profile, req: &AgentRequest<'_>) -> ResolvedArgv {
         selected_reasoning(profile, req),
     ));
     ResolvedArgv { argv, command_len }
+}
+
+/// Where spawn `n` of an invocation writes, given spawn 1's file
+/// `<inv>.<rest>`: spawn 1 uses it as is, spawn `n >= 2` uses
+/// `<inv>.<n>.<rest>` (`<inv>.2.jsonl`, `<inv>.2.stderr.log`; design §4).
+pub fn spawn_path(base: &std::path::Path, n: u32) -> std::path::PathBuf {
+    if n <= 1 {
+        return base.to_path_buf();
+    }
+    let Some(name) = base.file_name().and_then(|name| name.to_str()) else {
+        return base.to_path_buf();
+    };
+    let renamed = match name.split_once('.') {
+        Some((id, rest)) => format!("{id}.{n}.{rest}"),
+        None => format!("{name}.{n}"),
+    };
+    base.with_file_name(renamed)
 }
 
 /// [`resolve_argv`]'s argv.
@@ -227,6 +258,7 @@ mod tests {
             reasoning_args: vec!["--effort".into(), "{reasoning}".into()],
             timeout: Duration::from_secs(600),
             kill_grace: Duration::from_secs(10),
+            rate_limit_window: Duration::ZERO,
             env: ProfileEnv::default(),
             test_only: false,
             session_args: vec![],
