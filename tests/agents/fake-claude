@@ -101,6 +101,60 @@ case $scenario in
     success)
         succeed 'fake-claude: success'
         ;;
+    fail)
+        init
+        assistant 'fake-claude: failed'
+        result error_during_execution true 'fake-claude: failed'
+        exit 1
+        ;;
+    error_max_turns)
+        init
+        assistant 'fake-claude: out of turns'
+        result error_max_turns false 'fake-claude: out of turns'
+        ;;
+    label)
+        [ -n "$label" ] || die "scenario label needs label=<label>"
+        succeed "fake-claude: routed\\n$label"
+        ;;
+    crash)
+        init
+        assistant 'fake-claude: working'
+        printf '%s\n' 'fake-claude: crashed' >&2
+        exit 3
+        ;;
+    crash_after_result)
+        succeed 'fake-claude: success'
+        printf '%s\n' 'fake-claude: crashed after result' >&2
+        exit 3
+        ;;
+    garbage)
+        printf '%s\n' 'fake-claude: this is not json' '{"type":' 'garbage'
+        ;;
+    silent) ;;
+    hang)
+        hang
+        ;;
+    slow)
+        init
+        for part in one two three; do
+            sleep 0.2
+            assistant "fake-claude: part $part"
+        done
+        result success false 'fake-claude: slow done'
+        ;;
+    edit_commit)
+        printf '%s\n' 'written by fake-claude' >fake-edit.txt
+        git add fake-edit.txt || exit 3
+        git -c user.name=fake-claude -c user.email=fake-claude@example.invalid \
+            -c commit.gpgsign=false commit -q -m 'fake-claude edit' || exit 3
+        succeed 'fake-claude: edited and committed'
+        ;;
+    flaky)
+        if [ "$attempt" -le "$fails" ]; then
+            hang
+        fi
+        succeed 'fake-claude: success'
+        ;;
     *)
         die "unknown scenario $scenario"
         ;;
