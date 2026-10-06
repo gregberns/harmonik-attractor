@@ -40,4 +40,4 @@ branch, as part of merging it.
 | 09 | [The Pi handler for DeepSeek, GLM and the hosted Qwen](tickets/09-pi-handler.md) | 08 | ready |
 | 10 | [(low) Rate-limit retry window in the claude-p handler](tickets/10-rate-limit-window.md) | 08, 09 | ready |
 | 11 | [(low) Retry prompt names the previous failure](tickets/11-retry-prompt.md) | 08 | ready |
-| 12 | [(low) Prompt file and run-folder documentation](tickets/12-prompt-file-and-run-folder-doc.md) | 07 | ready |
+| 12 | [(low) Prompt file and run-folder documentation](tickets/12-prompt-file-and-run-folder-doc.md) | 07 | done |
