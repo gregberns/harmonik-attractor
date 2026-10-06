@@ -2,7 +2,6 @@
 //! `claude-p` failure table (design §1). Pure functions over the output.
 
 use std::collections::BTreeMap;
-use std::os::unix::process::ExitStatusExt;
 use std::process::ExitStatus;
 use std::time::Duration;
 
@@ -67,6 +66,18 @@ pub struct Exited<'a> {
     pub stderr: &'a str,
 }
 
+/// The signal that ended the process, where the platform has signals.
+#[cfg(unix)]
+fn signal(status: ExitStatus) -> Option<i32> {
+    use std::os::unix::process::ExitStatusExt;
+    status.signal()
+}
+
+#[cfg(not(unix))]
+fn signal(_status: ExitStatus) -> Option<i32> {
+    None
+}
+
 /// Borrow the first `max` characters of `s`. Unlike byte slicing (`&s[..500]`),
 /// this never panics on a multi-byte UTF-8 boundary — CLI output is arbitrary
 /// text and may contain non-ASCII bytes exactly at the cutoff.
@@ -102,7 +113,7 @@ pub fn classify(invocation_id: &str, out: &Exited<'_>, duration: Duration) -> Ag
     let base = AgentResult {
         exit: Some(ExitInfo {
             code: out.status.code(),
-            signal: out.status.signal(),
+            signal: signal(out.status),
         }),
         duration,
         usage,
@@ -238,8 +249,10 @@ pub fn summarize(stdout: &str) -> Usage {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
+    use std::os::unix::process::ExitStatusExt;
+
     use super::*;
 
     const CLAUDE_RESULT_LINE: &str = r#"{"type":"result","subtype":"success","is_error":false,"result":"done","total_cost_usd":0.01,"num_turns":2}"#;

@@ -358,6 +358,9 @@ impl PipelineExecutor {
     }
 
     /// Create an executor pre-loaded with the default built-in handlers.
+    /// It has no agents: Claude nodes fail with "Failed to spawn Claude
+    /// Code: unknown agent profile claude". Pass a registry from
+    /// `default_registry_with_agents` to [`Self::new`] to run them.
     pub fn with_default_registry() -> Self {
         Self {
             registry: default_registry(),

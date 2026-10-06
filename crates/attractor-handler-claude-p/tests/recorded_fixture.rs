@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! The recorded Claude Code 2.1.282 `stream-json` output, through the
 //! `claude-p` classifier.
 

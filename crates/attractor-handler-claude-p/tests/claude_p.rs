@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! Seam 1: `Agents::run` with the `claude-p` handler and a `claude` profile
 //! whose command is the shell fake (`tests/agents/fake-claude`). One test
 //! per fake scenario, plus the environment, stdin, argv and transcript.
@@ -5,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -44,6 +46,30 @@ impl Fixture {
         fs::write(self.scenarios().join("work"), format!("{line}\n")).unwrap();
     }
 
+    fn workdir(&self) -> PathBuf {
+        self.dir.path().join("work")
+    }
+
+    /// Runs git in the workdir with the same hermetic settings the fake gets.
+    fn git(&self, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(self.workdir())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CEILING_DIRECTORIES", self.dir.path())
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    }
+
     fn read(&self, name: &str) -> String {
         fs::read_to_string(self.scenarios().join(name)).unwrap()
     }
@@ -58,6 +84,14 @@ impl Fixture {
             self.scenarios().to_string_lossy().into_owned(),
         );
         env.insert("FAKE_HANG_SECS".to_string(), "30".to_string());
+        // Git, for edit_commit: ignore the developer's config and any repo
+        // above the temp dir.
+        env.insert("GIT_CONFIG_GLOBAL".to_string(), "/dev/null".to_string());
+        env.insert("GIT_CONFIG_NOSYSTEM".to_string(), "1".to_string());
+        env.insert(
+            "GIT_CEILING_DIRECTORIES".to_string(),
+            self.dir.path().to_string_lossy().into_owned(),
+        );
         for (k, v) in extra {
             env.insert(k.to_string(), v.to_string());
         }
@@ -262,6 +296,10 @@ async fn the_child_env_has_the_pas_ids_and_no_api_key() {
     assert!(!env_log.contains("ANTHROPIC_API_KEY"), "{env_log}");
 }
 
+// When the test process's own stdin is already /dev/null (CI, a non-tty
+// `cargo test`) this passes even if the runner inherited stdin. The real
+// guard is fake_agent_harness.rs
+// `the_agent_reads_dev_null_even_when_pas_stdin_is_an_open_pipe`.
 #[tokio::test]
 async fn stdin_is_dev_null() {
     let fx = Fixture::new();
@@ -296,4 +334,81 @@ async fn argv_is_profile_args_extra_args_model_then_handler_flags() {
             "--verbose",
         ]
     );
+}
+
+#[tokio::test]
+async fn label_completes_with_the_label_on_the_last_line() {
+    let fx = Fixture::new();
+    let result = fx.run("scenario=label label=beta_route").await;
+    assert_eq!(result.status, AgentStatus::Completed, "{}", result.detail);
+    assert_eq!(result.text, "fake-claude: routed\nbeta_route");
+}
+
+#[tokio::test]
+async fn slow_completes_with_every_line_in_the_transcript() {
+    let fx = Fixture::new();
+    let result = fx.run("scenario=slow").await;
+    assert_eq!(result.status, AgentStatus::Completed, "{}", result.detail);
+    assert_eq!(result.text, "fake-claude: slow done");
+    let transcript = fs::read_to_string(fx.transcript()).unwrap();
+    let lines: Vec<&str> = transcript.lines().collect();
+    assert_eq!(
+        lines.len(),
+        5,
+        "init, 3 assistant lines, result: {transcript}"
+    );
+    assert!(lines[0].contains(r#""subtype":"init""#), "{transcript}");
+    for line in &lines[1..4] {
+        assert!(line.contains(r#""type":"assistant""#), "{transcript}");
+    }
+    assert_eq!(claude_result_line(&transcript), Some(lines[4]));
+}
+
+#[tokio::test]
+async fn edit_commit_completes_and_commits_in_the_workdir() {
+    let fx = Fixture::new();
+    fx.git(&["init", "-q"]);
+    fx.git(&[
+        "-c",
+        "user.name=test",
+        "-c",
+        "user.email=test@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "base",
+    ]);
+    let result = fx.run("scenario=edit_commit").await;
+    assert_eq!(result.status, AgentStatus::Completed, "{}", result.detail);
+    assert!(fx.workdir().join("fake-edit.txt").exists());
+    assert_eq!(fx.git(&["log", "-1", "--format=%s"]), "fake-claude edit");
+}
+
+#[tokio::test]
+async fn flaky_times_out_on_attempt_one_then_completes_on_attempt_two() {
+    let fx = Fixture::new();
+    fx.scenario("scenario=flaky fails=1");
+    let agents = fx.agents(fake_claude(), &[]);
+
+    let first = agents.run(fx.request(Duration::from_secs(1))).await;
+    assert_eq!(first.status, AgentStatus::Failed(FailureClass::Timeout));
+
+    let mut retry = fx.request(Duration::from_secs(1));
+    retry.record.attempt = 3;
+    retry.record.invocation_id = "inv-43".into();
+    retry.transcript = Some(fx.dir.path().join("transcript-2.jsonl"));
+    let second = agents.run(retry).await;
+    assert_eq!(second.status, AgentStatus::Completed, "{}", second.detail);
+    assert_eq!(second.text, "fake-claude: success");
+
+    let env_log = fx.read("env.log");
+    let attempts: Vec<&str> = env_log
+        .lines()
+        .filter_map(|l| l.strip_prefix("PAS_ATTEMPT="))
+        .collect();
+    assert_eq!(attempts, ["2", "3"]);
+    assert_eq!(fx.read("attempts.flaky").trim(), "2");
 }
