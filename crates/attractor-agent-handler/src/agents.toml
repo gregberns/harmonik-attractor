@@ -30,3 +30,18 @@ args = [
 ]
 model_args = ["--model", "{model}"]
 reasoning_args = ["--effort", "{reasoning}"]
+
+# `codex-exec` appends `--cd <workdir>` and the prompt (positional, last).
+[profiles.codex]
+mechanism = "codex-exec"
+command = ["codex"]
+args = ["exec", "--json", "--yolo", "--skip-git-repo-check", "--ephemeral"]
+model_args = ["--model", "{model}"]
+
+# `gemini` puts `--output-format <json|stream-json>` (probed with `--help`)
+# right after the command, and appends the prompt (positional, last).
+[profiles.gemini]
+mechanism = "gemini"
+command = ["gemini"]
+args = ["--approval-mode", "yolo"]
+model_args = ["--model", "{model}"]

@@ -36,3 +36,5 @@ attractor-dot = { path = "../attractor-dot" }
 attractor-types = { path = "../attractor-types" }
 tracing-subscriber = { workspace = true }
 attractor-handler-claude-p = { path = "../attractor-handler-claude-p" }
+attractor-handler-codex-exec = { path = "../attractor-handler-codex-exec" }
+attractor-handler-gemini = { path = "../attractor-handler-gemini" }

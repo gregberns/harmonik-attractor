@@ -1099,13 +1099,13 @@ fn resolve_node(
 }
 
 /// The profile a provider-consuming node runs with: `agent=` wins over
-/// `llm_provider` (no error); `llm_provider="claude"` is profile `claude`;
-/// Codex and Gemini have no profile yet (ticket 04).
+/// `llm_provider` (no error); `llm_provider` names the built-in profile
+/// `claude`, `codex` or `gemini`.
 fn agent_profile(agent: Option<String>, provider: Option<LlmProvider>) -> Option<String> {
     match (agent, provider) {
         (Some(profile), _) => Some(profile),
-        (None, Some(LlmProvider::Claude)) => Some(crate::handlers::CLAUDE_PROFILE.to_string()),
-        (None, Some(LlmProvider::Codex | LlmProvider::Gemini) | None) => None,
+        (None, Some(provider)) => Some(provider.as_str().to_string()),
+        (None, None) => None,
     }
 }
 
@@ -1536,7 +1536,7 @@ mod tests {
                 "fidelity",
             ),
             (
-                r#"work [shape="box", prompt="work", llm_provider="codex", reasoning_effort="high"]"#,
+                r#"work [shape="parallelogram", tool_command="true", reasoning_effort="high"]"#,
                 "reasoning_effort",
             ),
             (
@@ -1557,11 +1557,11 @@ mod tests {
             ),
             (r#"work [shape="house"]"#, "manager-loop"),
             (
-                r#"work [shape="box", prompt="work", llm_provider="codex", allowed_tools="Read"]"#,
+                r#"work [shape="parallelogram", tool_command="true", allowed_tools="Read"]"#,
                 "allowed_tools",
             ),
             (
-                r#"work [shape="box", prompt="work", llm_provider="gemini", max_budget_usd=1.0]"#,
+                r#"work [shape="parallelogram", tool_command="true", max_budget_usd="1.0"]"#,
                 "max_budget_usd",
             ),
         ];
@@ -1632,9 +1632,9 @@ mod tests {
             agent("styled"),
             selection("claude", Some("m2"), Some("low"))
         );
-        assert_eq!(agent("codex"), None);
+        assert_eq!(agent("codex"), selection("codex", None, None));
         assert!(plan.node("named").unwrap().runs_through_agents());
-        assert!(!plan.node("codex").unwrap().runs_through_agents());
+        assert!(plan.node("codex").unwrap().runs_through_agents());
     }
 
     #[test]
@@ -1647,23 +1647,34 @@ mod tests {
     }
 
     #[test]
-    fn stylesheet_reasoning_effort_is_rejected_on_a_node_without_a_profile() {
-        let error = ExecutionPlan::compile(graph(
+    fn reasoning_effort_and_claude_flags_on_codex_and_gemini_fail_the_profile_check() {
+        // Codex and Gemini nodes run their built-in profiles, which take no
+        // reasoning level and no `claude-p` node flags.
+        let plan = ExecutionPlan::compile(graph(
             r##"digraph G {
-                model_stylesheet="#work { reasoning_effort: high; }"
+                model_stylesheet="#styled { reasoning_effort: high; }"
                 start [shape="Mdiamond"]
-                work [shape="box", prompt="work", llm_provider="codex"]
+                attr [shape="box", prompt="p", llm_provider="codex", reasoning_effort="high"]
+                styled [shape="box", prompt="p", llm_provider="codex"]
+                tools [shape="box", prompt="p", llm_provider="codex", allowed_tools="Read"]
+                budget [shape="box", prompt="p", llm_provider="gemini", max_budget_usd="1.0"]
                 done [shape="Msquare"]
-                start -> work -> done
+                start -> attr -> styled -> tools -> budget -> done
             }"##,
         ))
-        .expect_err("unsupported stylesheet declarations must fail closed");
-
-        assert!(error.diagnostics.iter().any(|diagnostic| {
-            diagnostic.kind == SemanticDiagnosticKind::UnsupportedExecutionCapability
-                && diagnostic.node_id.as_deref() == Some("work")
-                && diagnostic.message.contains("reasoning_effort")
-        }));
+        .unwrap();
+        let agents = crate::handlers::tests::stub_agents(std::path::Path::new("never-run"));
+        let diagnostics = crate::validation::check_agents(&plan, &agents);
+        let has = |node: &str, text: &str| {
+            diagnostics
+                .iter()
+                .any(|d| d.node_id.as_deref() == Some(node) && d.message.contains(text))
+        };
+        assert!(has("attr", "reasoning_args"), "{diagnostics:?}");
+        assert!(has("styled", "reasoning_args"), "{diagnostics:?}");
+        assert!(has("tools", "allowed_tools"), "{diagnostics:?}");
+        assert!(has("budget", "max_budget_usd"), "{diagnostics:?}");
+        assert_eq!(diagnostics.len(), 4, "{diagnostics:?}");
     }
 
     #[test]

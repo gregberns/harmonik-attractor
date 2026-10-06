@@ -3676,7 +3676,7 @@ impl crate::handler::ProviderNodeHandler for StubbedCodergen {
         graph: &PipelineGraph,
     ) -> Result<Outcome> {
         crate::handlers::CodergenHandler::new(crate::handlers::tests::claude_agents(&self.0))
-            .execute_configured_with_program(node, resolved, execution, graph, Some(self.0.clone()))
+            .execute_configured(node, resolved, execution, graph)
             .await
     }
 }

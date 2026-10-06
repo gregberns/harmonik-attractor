@@ -573,9 +573,11 @@ mod tests {
             .await
             .unwrap();
 
+        // The `claude` profile; with no handler registered (an empty
+        // `Agents`) there is no display name, so the profile's name shows.
         assert_eq!(
             outcome.context_updates["work.provider"],
-            serde_json::Value::String("Claude Code".into())
+            serde_json::Value::String("claude".into())
         );
     }
 
@@ -639,9 +641,14 @@ mod tests {
         .unwrap();
         // The builtin `claude` profile, run by `claude-p`: `claude` from the
         // shim-only PATH the parent test set.
+        let claude = attractor_agent_handler::builtin_profiles()
+            .unwrap()
+            .into_iter()
+            .filter(|profile| profile.name == "claude")
+            .collect();
         let agents = attractor_agent_handler::Agents::new(
             vec![std::sync::Arc::new(attractor_handler_claude_p::ClaudeP)],
-            attractor_agent_handler::builtin_profiles().unwrap(),
+            claude,
             std::env::vars().collect(),
             false,
         )

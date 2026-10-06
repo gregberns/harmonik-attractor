@@ -20,27 +20,13 @@ use crate::execution_plan::{HandlerIdentity, LlmProvider, ResolvedNode, Resolved
 use crate::graph::{PipelineGraph, PipelineNode};
 use crate::handler::{EventSink, HandlerExecutionContext, NodeHandler, ProviderNodeHandler};
 
-use attractor_agent_process::process_group::{self, ProcessGroupGuard};
-use attractor_agent_process::{run_streaming, Transcript};
-
 #[path = "codergen_claude.rs"]
 mod claude;
-#[path = "codergen_provider.rs"]
-mod provider;
-pub use claude::{agent_profiles, CLAUDE_PROFILE};
 use claude::{
-    claude_node_args, claude_outcome, claude_settings_args, invocation_usage, AgentAttempt,
-    ClaudeCliConfig,
+    agent_outcome, claude_node_args, claude_settings_args, invocation_usage, AgentAttempt,
+    ClaudeCliConfig, InvocationUsage,
 };
-#[cfg(test)]
-use provider::{
-    build_cli_command, parse_codex_output, parse_gemini_output, parse_gemini_stream_output,
-    LlmCliProvider,
-};
-use provider::{
-    build_cli_command_with_program, gemini_output_format, has_final_result, parse_cli_output,
-    summarize_stream, CliProvider, CliRunConfig, GeminiOutputFormat, InvocationUsage,
-};
+pub use claude::{agent_profiles, CLAUDE_PROFILE};
 
 // ---------------------------------------------------------------------------
 // CodergenHandler — LLM task handler (box shape)
@@ -87,9 +73,6 @@ struct CodergenExecutionControls<'a> {
     claude: Option<ClaudeCliConfig>,
     /// Run folder that receives Transcripts; `None` writes no Transcript.
     run_dir: Option<PathBuf>,
-    /// Executable to start instead of the provider's binary (test stubs).
-    /// Codex and Gemini only: Claude runs the `claude` profile's command.
-    program: Option<PathBuf>,
     /// Receives `LlmInvoked`; `None` emits nothing.
     events: Option<&'a dyn EventSink>,
     /// The Run's id, for `PAS_RUN_ID`; `None` outside a Run.
@@ -118,7 +101,9 @@ struct LlmInvocation<'a> {
     run_dir: PathBuf,
     invocation_id: String,
     node_id: String,
-    provider: LlmProvider,
+    /// The agent profile's name (for `llm_provider` nodes: `claude`,
+    /// `codex` or `gemini`).
+    provider: String,
     model_requested: Option<String>,
     started: Instant,
     emitted: bool,
@@ -151,7 +136,7 @@ impl LlmInvocation<'_> {
         self.events.emit(PipelineEvent::LlmInvoked {
             invocation_id: self.invocation_id.clone(),
             node_id: self.node_id.clone(),
-            provider: self.provider.as_str().to_owned(),
+            provider: self.provider.clone(),
             model_requested: self.model_requested.clone(),
             model_actual: usage.model_actual,
             input_tokens: usage.input_tokens,
@@ -255,18 +240,19 @@ impl CodergenHandler {
     ) -> Result<Outcome> {
         let prompt = node.prompt.as_deref().unwrap_or("No prompt specified");
         let label = node.label.clone();
-        // An `agent=` node has a profile and no provider.
-        let display_name = match (resolved.provider, &resolved.agent) {
-            (Some(provider), _) => provider.display_name().to_string(),
-            (None, Some(agent)) => format!("agent {}", agent.profile),
-            (None, None) => {
-                return Err(AttractorError::HandlerError {
-                    handler: "codergen".into(),
-                    node: node.id.clone(),
-                    message: "compiled codergen node has no provider or agent".into(),
-                })
-            }
+        let Some(agent) = &resolved.agent else {
+            return Err(AttractorError::HandlerError {
+                handler: "codergen".into(),
+                node: node.id.clone(),
+                message: "compiled codergen node has no agent profile".into(),
+            });
         };
+        // The handler's name ("Claude Code", "Codex CLI", ...), else the
+        // profile's.
+        let display_name = self
+            .agents
+            .display_name(&agent.profile)
+            .map_or_else(|| agent.profile.clone(), str::to_owned);
 
         tracing::info!(
             node = %node.id,
@@ -357,227 +343,22 @@ impl CodergenHandler {
             Some(AttributeValue::String(m)) => Some(m.as_str()),
             _ => None,
         };
-        if let Some(agent) = &resolved.agent {
-            let profile_model = self
-                .agents
-                .profile(&agent.profile)
-                .and_then(|p| p.model.as_deref());
-            let selection = Selection {
-                profile: agent.profile.clone(),
-                model: select_model(agent.model.as_deref(), profile_model, graph_model),
-                reasoning: agent.reasoning.clone(),
-            };
-            return self
-                .run_claude(node, resolved, graph, full_prompt, selection, controls)
-                .await;
-        }
-        // Resolve model: node attribute, then graph-level fallback
-        let model = node.llm_model.as_deref().or(graph_model);
-
-        let (provider, cli) = match resolved.provider {
-            Some(provider @ LlmProvider::Codex) => (provider, CliProvider::Codex),
-            Some(provider @ LlmProvider::Gemini) => (provider, CliProvider::Gemini),
-            Some(LlmProvider::Claude) | None => {
-                return Err(AttractorError::HandlerError {
-                    handler: "codergen".into(),
-                    node: node.id.clone(),
-                    message: "a Claude codergen node has no agent profile".into(),
-                })
-            }
+        let profile_model = self
+            .agents
+            .profile(&agent.profile)
+            .and_then(|p| p.model.as_deref());
+        let selection = Selection {
+            profile: agent.profile.clone(),
+            model: select_model(agent.model.as_deref(), profile_model, graph_model),
+            reasoning: agent.reasoning.clone(),
         };
-        let summarize = move |stdout: &str| summarize_stream(cli, stdout);
-
-        // Build the CLI command via the provider-specific builder
-        let program = controls
-            .program
-            .clone()
-            .unwrap_or_else(|| PathBuf::from(provider.binary_name()));
-        let gemini_format = if cli == CliProvider::Gemini {
-            gemini_output_format(&program).await
-        } else {
-            GeminiOutputFormat::Json
-        };
-        let mut cmd = build_cli_command_with_program(
-            &CliRunConfig {
-                provider: cli,
-                prompt: &full_prompt,
-                model,
-                workdir: controls.workdir.as_deref(),
-                graph,
-            },
-            program.as_os_str(),
-            gemini_format,
-        );
-        cmd.kill_on_drop(true);
-        process_group::configure(&mut cmd);
-
-        // One Model Invocation per spawn. The Transcript exists before any
-        // output arrives, so a silent provider still leaves an empty file.
-        let invocation_id = attractor_journal::new_invocation_id();
-        let transcript = match &controls.run_dir {
-            Some(run_dir) => {
-                let path = attractor_journal::RunDir::from_path(run_dir).transcript(&invocation_id);
-                Transcript::create(path).await
-            }
-            None => None,
-        };
-
-        // Spawn the CLI process — detect missing binary
-        let mut child = match cmd.spawn() {
-            Ok(child) => child,
-            Err(e) => {
-                // No Model Invocation happened, so no Transcript either.
-                if let Some(transcript) = transcript {
-                    transcript.discard().await;
-                }
-                return Err(if e.kind() == std::io::ErrorKind::NotFound {
-                    AttractorError::CliNotFound {
-                        binary: provider.binary_name().to_string(),
-                    }
-                } else {
-                    AttractorError::HandlerError {
-                        handler: "codergen".into(),
-                        node: node.id.clone(),
-                        message: format!("Failed to spawn {}: {}", provider.display_name(), e),
-                    }
-                });
-            }
-        };
-        tracing::debug!(
-            node = %node.id,
-            invocation_id = %invocation_id,
-            transcript = ?transcript.as_ref().map(Transcript::path),
-            "Started {}",
-            provider.display_name()
-        );
-        // `LlmInvoked` needs a Run folder: its `transcript` is relative to it.
-        let invocation = match (controls.events, &controls.run_dir) {
-            (Some(events), Some(run_dir)) => Some(LlmInvocation {
-                events,
-                summarize: &summarize,
-                run_dir: run_dir.clone(),
-                invocation_id: invocation_id.clone(),
-                node_id: node.id.clone(),
-                provider,
-                model_requested: model.map(str::to_owned),
-                started: Instant::now(),
-                emitted: false,
-            }),
-            _ => None,
-        };
-        let finish =
-            |invocation: Option<LlmInvocation<'_>>, status: &str, usage: InvocationUsage| {
-                if let Some(invocation) = invocation {
-                    invocation.finish(status, usage);
-                }
-            };
-
-        // Apply timeout (default 10 minutes, configurable via node.timeout).
-        // The guard owns process-tree cleanup even if the executor's outer
-        // deadline drops this handler future before its local timeout fires.
-        // Every stdout line is flushed to the Transcript as it arrives, so a
-        // timeout or cancellation keeps the partial Transcript.
-        let mut process_group = ProcessGroupGuard::new(child.id());
-        let timeout_dur = node.timeout.unwrap_or(std::time::Duration::from_secs(600));
-        let streaming = run_streaming(&mut child, transcript, None);
-        let output = match tokio::time::timeout(timeout_dur, streaming).await {
-            Ok(Ok(output)) => {
-                process_group.disarm();
-                output
-            }
-            Ok(Err(error)) => {
-                if let Some(invocation) = invocation {
-                    let usage = invocation.transcript_usage();
-                    invocation.finish(INVOKED_FAILED, usage);
-                }
-                return Err(AttractorError::HandlerError {
-                    handler: "codergen".into(),
-                    node: node.id.clone(),
-                    message: format!("{} execution failed: {error}", provider.display_name()),
-                });
-            }
-            Err(_elapsed) => {
-                tracing::warn!(
-                    node = %node.id,
-                    timeout_secs = timeout_dur.as_secs(),
-                    "Killing timed-out {} process group",
-                    provider.display_name()
-                );
-                // Dropping `invocation` emits `LlmInvoked` with status `timeout`.
-                drop(invocation);
-                return Err(AttractorError::CommandTimeout {
-                    timeout_ms: timeout_dur.as_millis() as u64,
-                });
-            }
-        };
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        // A stream that ends without its final `result` line carries no
-        // answer; report the exit like an empty stdout, as before streaming.
-        if !output.status.success() && !has_final_result(cli, &stdout) {
-            finish(invocation, INVOKED_FAILED, summarize_stream(cli, &stdout));
-            return Err(AttractorError::HandlerError {
-                handler: "codergen".into(),
-                node: node.id.clone(),
-                message: format!(
-                    "{} exited with {}: {}",
-                    provider.display_name(),
-                    output.status,
-                    stderr.trim()
-                ),
-            });
-        }
-
-        // Parse output via the provider-specific parser
-        let cli_result = match parse_cli_output(cli, &stdout, &stderr, &node.id) {
-            Ok(cli_result) => cli_result,
-            Err(error) => {
-                finish(invocation, INVOKED_FAILED, summarize_stream(cli, &stdout));
-                return Err(error);
-            }
-        };
-        finish(
-            invocation,
-            if cli_result.is_error {
-                INVOKED_FAILED
-            } else {
-                INVOKED_SUCCESS
-            },
-            cli_result.usage.clone(),
-        );
-
-        tracing::info!(
-            node = %node.id,
-            provider = provider.display_name(),
-            is_error = cli_result.is_error,
-            has_cost = cli_result.cost_usd.is_some(),
-            model_actual = cli_result.usage.model_actual.as_deref(),
-            input_tokens = cli_result.usage.input_tokens,
-            output_tokens = cli_result.usage.output_tokens,
-            usage_cost_usd = cli_result.usage.cost_usd,
-            "{} completed",
-            provider.display_name()
-        );
-
-        Ok(provider_outcome(
-            node,
-            resolved,
-            graph,
-            provider,
-            ProviderResult {
-                text: &cli_result.text,
-                is_error: cli_result.is_error,
-                cost_usd: cli_result.cost_usd,
-                turns: cli_result.turns,
-            },
-        ))
+        self.run_agent(node, resolved, graph, full_prompt, selection, controls)
+            .await
     }
 
     /// An agent node: one invocation of its profile through `Agents`, with
     /// the model already resolved (see [`select_model`]).
-    async fn run_claude(
+    async fn run_agent(
         &self,
         node: &PipelineNode,
         resolved: &ResolvedNode,
@@ -614,7 +395,7 @@ impl CodergenHandler {
                 run_dir: run_dir.clone(),
                 invocation_id: invocation_id.clone(),
                 node_id: node.id.clone(),
-                provider: LlmProvider::Claude,
+                provider: profile_name.clone(),
                 model_requested: selection.model.clone(),
                 started: Instant::now(),
                 emitted: false,
@@ -675,19 +456,30 @@ impl CodergenHandler {
             input_tokens = result.usage.input_tokens,
             output_tokens = result.usage.output_tokens,
             cost_usd = result.usage.cost_usd,
-            "Claude Code finished"
+            "{} finished",
+            self.agents
+                .display_name(&profile_name)
+                .unwrap_or(profile_name.as_str())
         );
         // The timeout the agent ran under: the node's, else the profile's.
         let timeout = node
             .timeout
             .or_else(|| profile.map(|p| p.timeout))
             .unwrap_or_default();
-        claude_outcome(
+        agent_outcome(
             &result,
             node,
             resolved,
             graph,
             &AgentAttempt {
+                agent: self
+                    .agents
+                    .display_name(&profile_name)
+                    .unwrap_or(profile_name.as_str()),
+                program: profile
+                    .and_then(|p| p.command.first())
+                    .map_or(profile_name.as_str(), String::as_str),
+                reports_cost: self.agents.reports_cost(&profile_name).unwrap_or(true),
                 attempt: controls.attempt,
                 timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
                 run_dir: controls.run_dir.as_deref(),
@@ -697,15 +489,15 @@ impl CodergenHandler {
     }
 }
 
-/// The agent selection the compiler gives a node with `provider`: profile
-/// `claude` for Claude, none otherwise (tests building `ResolvedNode`s).
+/// The agent selection the compiler gives a node with `provider`: the
+/// built-in profile of that name (tests building `ResolvedNode`s).
 #[cfg(test)]
 pub(crate) fn test_agent<P: Into<Option<LlmProvider>>>(
     provider: P,
     model: Option<String>,
 ) -> Option<Selection> {
-    (provider.into() == Some(LlmProvider::Claude)).then(|| Selection {
-        profile: CLAUDE_PROFILE.to_string(),
+    provider.into().map(|provider| Selection {
+        profile: provider.as_str().to_string(),
         model,
         reasoning: None,
     })
@@ -733,7 +525,7 @@ fn provider_outcome(
     node: &PipelineNode,
     resolved: &ResolvedNode,
     graph: &PipelineGraph,
-    provider: LlmProvider,
+    agent: &str,
     answer: ProviderResult<'_>,
 ) -> Outcome {
     // Determine status
@@ -767,7 +559,7 @@ fn provider_outcome(
     );
     updates.insert(
         format!("{}.provider", node.id),
-        serde_json::Value::String(provider.display_name().into()),
+        serde_json::Value::String(agent.to_string()),
     );
     if let Some(cost) = answer.cost_usd {
         updates.insert(format!("{}.cost_usd", node.id), serde_json::json!(cost));
@@ -789,7 +581,7 @@ fn provider_outcome(
         context_updates: updates,
         notes: answer.text.to_string(),
         failure_reason: if status == StageStatus::Fail {
-            Some(format!("{} returned an error", provider.display_name()))
+            Some(format!("{agent} returned an error"))
         } else {
             None
         },
@@ -825,7 +617,6 @@ impl ProviderNodeHandler for CodergenHandler {
                 workdir,
                 claude: Some(claude),
                 run_dir: None,
-                program: None,
                 events: None,
                 run_id: None,
                 attempt: 1,
@@ -843,22 +634,6 @@ impl ProviderNodeHandler for CodergenHandler {
         execution: HandlerExecutionContext<'_>,
         graph: &PipelineGraph,
     ) -> Result<Outcome> {
-        self.execute_configured_with_program(node, resolved, execution, graph, None)
-            .await
-    }
-}
-
-impl CodergenHandler {
-    /// `execute_configured`, starting `program` instead of the provider's
-    /// binary when given (engine-level tests with stub providers).
-    pub(crate) async fn execute_configured_with_program(
-        &self,
-        node: &PipelineNode,
-        resolved: &ResolvedNode,
-        execution: HandlerExecutionContext<'_>,
-        graph: &PipelineGraph,
-        program: Option<PathBuf>,
-    ) -> Result<Outcome> {
         let config = execution.config();
         self.execute_with_controls(
             node,
@@ -870,7 +645,6 @@ impl CodergenHandler {
                 workdir: Some(config.workdir().value().to_string_lossy().into_owned()),
                 claude: None,
                 run_dir: execution.run_dir().map(Path::to_path_buf),
-                program,
                 events: execution.events(),
                 run_id: execution.run_id(),
                 attempt: execution.attempt(),

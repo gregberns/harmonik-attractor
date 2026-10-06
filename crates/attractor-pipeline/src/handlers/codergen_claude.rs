@@ -13,9 +13,8 @@ use attractor_journal::RunDir;
 use attractor_quality::ClaudeSettingsMode;
 use attractor_types::{AgentFiles, AttractorError, FailureKind, Outcome, Result};
 
-use super::provider::InvocationUsage;
 use super::{provider_outcome, ProviderResult};
-use crate::execution_plan::{LlmProvider, ResolvedNode};
+use crate::execution_plan::ResolvedNode;
 use crate::graph::{PipelineGraph, PipelineNode};
 use crate::run_configuration::{ResolvedClaudeConfig, ResolvedConfig};
 
@@ -183,10 +182,29 @@ pub(super) fn invocation_usage(usage: &Usage) -> InvocationUsage {
     }
 }
 
-/// Which attempt of a node one invocation was, as its failure messages
-/// name it.
+/// Facts about one Model Invocation read from its agent's output, for
+/// `LlmInvoked`. Every field is optional: data the output does not carry is
+/// `None`.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(super) struct InvocationUsage {
+    pub(super) model_actual: Option<String>,
+    /// Prompt tokens, including cached and cache-creation tokens.
+    pub(super) input_tokens: Option<u64>,
+    pub(super) output_tokens: Option<u64>,
+    pub(super) cost_usd: Option<f64>,
+}
+
+/// Which agent, and which attempt of a node, one invocation was, as its
+/// outcome and failure messages name them.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct AgentAttempt<'a> {
+    /// The handler's display name, e.g. "Codex CLI".
+    pub(super) agent: &'a str,
+    /// The profile's program, named when it cannot be found.
+    pub(super) program: &'a str,
+    /// Whether the agent reports a cost (Claude does; Codex and Gemini
+    /// don't, so their `<node>.cost_usd` stays unset).
+    pub(super) reports_cost: bool,
     /// 1-based.
     pub(super) attempt: u32,
     pub(super) timeout_ms: u64,
@@ -229,23 +247,22 @@ pub(super) fn crash_message(
     format!("attempt {attempt}: {agent} {detail}; last stderr lines:\n{tail}{files}")
 }
 
-/// A Claude node's outcome:
-/// - `Completed`: Success; `Failed(Reported)`: Fail, "Claude Code returned an error";
+/// An agent node's outcome, for every handler:
+/// - `Completed`: Success; `Failed(Reported)`: Fail, "<agent> returned an error";
 /// - `Failed(Timeout)`: `AgentTimeout` (node, attempt, files), the only
 ///   retryable error;
 /// - `Failed(Crash)`: [`crash_message`];
 /// - `Failed(NoResult)`: the parse or no-output message;
-/// - `Failed(Launch)`: `CliNotFound` when the command is missing, else
-///   "Failed to spawn Claude Code: ...";
+/// - `Failed(Launch)`: `CliNotFound` naming the program when it is missing,
+///   else "Failed to spawn <agent>: ...";
 /// - `Cancelled` (the Run was stopped): `AttractorError::Cancelled`.
-pub(super) fn claude_outcome(
+pub(super) fn agent_outcome(
     result: &AgentResult,
     node: &PipelineNode,
     resolved: &ResolvedNode,
     graph: &PipelineGraph,
     attempt: &AgentAttempt<'_>,
 ) -> Result<Outcome> {
-    let claude = LlmProvider::Claude;
     // Displays as codergen's `HandlerError` always did; `kind` is the
     // attempt's failure class for its commit.
     let agent_failed = |kind: FailureKind, message: String| AttractorError::AgentFailed {
@@ -274,7 +291,7 @@ pub(super) fn claude_outcome(
             return Err(agent_failed(
                 FailureKind::Crash,
                 crash_message(
-                    claude.display_name(),
+                    attempt.agent,
                     attempt.attempt,
                     &result.detail,
                     &result.stderr_tail,
@@ -289,16 +306,12 @@ pub(super) fn claude_outcome(
             return Err(
                 if result.launch_error == Some(std::io::ErrorKind::NotFound) {
                     AttractorError::CliNotFound {
-                        binary: claude.binary_name().to_string(),
+                        binary: attempt.program.to_string(),
                     }
                 } else {
                     agent_failed(
                         FailureKind::Launch,
-                        format!(
-                            "Failed to spawn {}: {}",
-                            claude.display_name(),
-                            result.detail
-                        ),
+                        format!("Failed to spawn {}: {}", attempt.agent, result.detail),
                     )
                 },
             )
@@ -308,11 +321,13 @@ pub(super) fn claude_outcome(
         node,
         resolved,
         graph,
-        claude,
+        attempt.agent,
         ProviderResult {
             text: &result.text,
             is_error,
-            cost_usd: Some(result.usage.cost_usd.unwrap_or(0.0)),
+            cost_usd: attempt
+                .reports_cost
+                .then(|| result.usage.cost_usd.unwrap_or(0.0)),
             turns: result.usage.turns,
         },
     ))

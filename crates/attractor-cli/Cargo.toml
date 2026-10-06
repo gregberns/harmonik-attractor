@@ -21,6 +21,8 @@ attractor-tools = { path = "../attractor-tools" }
 attractor-pipeline = { path = "../attractor-pipeline" }
 attractor-agent-handler = { path = "../attractor-agent-handler" }
 attractor-handler-claude-p = { path = "../attractor-handler-claude-p" }
+attractor-handler-codex-exec = { path = "../attractor-handler-codex-exec" }
+attractor-handler-gemini = { path = "../attractor-handler-gemini" }
 attractor-journal = { path = "../attractor-journal" }
 attractor-quality = { path = "../attractor-quality" }
 attractor-monitor = { path = "../attractor-monitor", optional = true }

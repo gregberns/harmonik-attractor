@@ -6,10 +6,16 @@ use std::sync::Arc;
 
 use attractor_agent_handler::{AgentHandler, Agents, ConfigError, Profile};
 use attractor_handler_claude_p::ClaudeP;
+use attractor_handler_codex_exec::CodexExec;
+use attractor_handler_gemini::Gemini;
 
 /// The handlers `pas` ships with.
 fn handlers() -> Vec<Arc<dyn AgentHandler>> {
-    vec![Arc::new(ClaudeP)]
+    vec![
+        Arc::new(ClaudeP),
+        Arc::new(CodexExec),
+        Arc::new(Gemini::default()),
+    ]
 }
 
 /// This process's environment, keeping only variables whose name and value

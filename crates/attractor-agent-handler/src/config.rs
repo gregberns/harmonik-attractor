@@ -274,8 +274,8 @@ mod tests {
     #[test]
     fn embedded_defaults_give_todays_claude_profile() {
         let profiles = builtin_profiles().unwrap();
-        assert_eq!(profiles.len(), 1);
-        let claude = &profiles[0];
+        assert_eq!(profiles.len(), 3);
+        let claude = profile(&profiles, "claude");
         assert_eq!(claude.name, "claude");
         assert_eq!(claude.mechanism, "claude-p");
         assert_eq!(claude.command, ["claude"]);
@@ -306,6 +306,36 @@ mod tests {
         );
         assert!(claude.env.set.is_empty());
         assert!(!claude.test_only);
+    }
+
+    #[test]
+    fn embedded_defaults_give_codex_and_gemini_todays_flags() {
+        let profiles = builtin_profiles().unwrap();
+        let codex = profile(&profiles, "codex");
+        assert_eq!(codex.mechanism, "codex-exec");
+        assert_eq!(codex.command, ["codex"]);
+        assert_eq!(
+            codex.args,
+            [
+                "exec",
+                "--json",
+                "--yolo",
+                "--skip-git-repo-check",
+                "--ephemeral"
+            ]
+        );
+        assert_eq!(codex.model_args, ["--model", "{model}"]);
+        assert!(codex.reasoning_args.is_empty());
+        let gemini = profile(&profiles, "gemini");
+        assert_eq!(gemini.mechanism, "gemini");
+        assert_eq!(gemini.command, ["gemini"]);
+        assert_eq!(gemini.args, ["--approval-mode", "yolo"]);
+        assert_eq!(gemini.model_args, ["--model", "{model}"]);
+        // Both get the defaults, OPENAI_API_KEY in the strip list included.
+        for p in [codex, gemini] {
+            assert_eq!(p.timeout, Duration::from_secs(600));
+            assert!(p.env.remove.contains(&"OPENAI_API_KEY".to_string()));
+        }
     }
 
     #[test]

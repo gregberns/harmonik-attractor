@@ -72,6 +72,33 @@ pub(crate) mod tests {
         )
     }
 
+    /// `Agents` with the three shipped handlers and the built-in `claude`,
+    /// `codex` and `gemini` profiles, each running `command` (a stub
+    /// script), with this process's environment as the parent.
+    pub(crate) fn stub_agents(command: &std::path::Path) -> std::sync::Arc<Agents> {
+        let profiles = builtin_profiles()
+            .unwrap()
+            .into_iter()
+            .map(|profile| Profile {
+                command: vec![command.to_string_lossy().into_owned()],
+                ..profile
+            })
+            .collect();
+        std::sync::Arc::new(
+            Agents::new(
+                vec![
+                    std::sync::Arc::new(attractor_handler_claude_p::ClaudeP),
+                    std::sync::Arc::new(attractor_handler_codex_exec::CodexExec),
+                    std::sync::Arc::new(attractor_handler_gemini::Gemini::default()),
+                ],
+                profiles,
+                std::env::vars().collect(),
+                false,
+            )
+            .unwrap(),
+        )
+    }
+
     pub(crate) fn make_minimal_graph() -> PipelineGraph {
         let dot = r#"digraph G { A -> B }"#;
         let parsed = attractor_dot::parse(dot).unwrap();

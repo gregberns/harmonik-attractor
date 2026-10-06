@@ -599,7 +599,7 @@ async fn run_both(
     let program = stub(dir.path(), &response.streamed, code);
     let run_dir = dir.path().join("run");
 
-    let new = CodergenHandler::new(crate::handlers::tests::claude_agents(&program))
+    let new = CodergenHandler::new(crate::handlers::tests::stub_agents(&program))
         .execute_with_controls(
             &stage.node,
             &stage.resolved,
@@ -610,7 +610,6 @@ async fn run_both(
                 workdir: None,
                 claude: Some(ClaudeCliConfig::default()),
                 run_dir: with_run_dir.then(|| run_dir.clone()),
-                program: Some(program),
                 events: None,
                 run_id: None,
                 attempt: 1,
@@ -841,7 +840,7 @@ async fn nonzero_exit_with_final_result_gives_pre_streaming_outcome() {
 
 /// Ticket 05's crash message for `node`'s first attempt, naming the one
 /// Claude invocation's files in `run_dir`.
-fn claude_crash_error(node: &str, code: i32, run_dir: &Path) -> String {
+fn crash_error(agent: &str, node: &str, code: i32, run_dir: &Path) -> String {
     let transcripts: Vec<PathBuf> = std::fs::read_dir(run_dir.join("transcripts"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -855,7 +854,7 @@ fn claude_crash_error(node: &str, code: i32, run_dir: &Path) -> String {
         handler: "codergen".into(),
         node: node.into(),
         message: format!(
-            "attempt 1: Claude Code exited with exit status: {code}; \
+            "attempt 1: {agent} exited with exit status: {code}; \
              last stderr lines:\n{STDERR}\ntranscript {}; stderr {}",
             transcript.display(),
             stderr.display()
@@ -865,8 +864,8 @@ fn claude_crash_error(node: &str, code: i32, run_dir: &Path) -> String {
 }
 
 /// With no output there is no Outcome, before or after streaming, and the
-/// error is the same, except a Claude crash, whose message ticket 05
-/// changed.
+/// error is the same, except a crash, whose message ticket 05 changed (for
+/// Codex and Gemini since they run through `Agents`, ticket 04).
 #[tokio::test]
 async fn empty_stdout_is_the_same_error_on_both_sides() {
     for provider in [LlmProvider::Claude, LlmProvider::Codex, LlmProvider::Gemini] {
@@ -886,9 +885,14 @@ async fn empty_stdout_is_the_same_error_on_both_sides() {
                 let (both, dir) = run_both(&response, &stage, code, true).await;
                 let case = format!("{} exit {code} stream={gemini_stream}", response.case);
                 match (&both.new, &both.old) {
-                    (Err(new), Err(_)) if provider == LlmProvider::Claude && code != 0 => {
+                    (Err(new), Err(_)) if code != 0 => {
+                        let agent = match provider {
+                            LlmProvider::Claude => "Claude Code",
+                            LlmProvider::Codex => "Codex CLI",
+                            LlmProvider::Gemini => "Gemini CLI",
+                        };
                         let expected =
-                            claude_crash_error(&stage.node.id, code, &dir.path().join("run"));
+                            crash_error(agent, &stage.node.id, code, &dir.path().join("run"));
                         assert_eq!(new.to_string(), expected, "{case}")
                     }
                     (Err(new), Err(old)) => {

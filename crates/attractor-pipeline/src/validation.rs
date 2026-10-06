@@ -215,10 +215,12 @@ pub fn check_agents(
         .filter_map(|node| Some((node.node_id.as_str(), node.agent.as_ref()?)))
         .collect::<Vec<_>>();
     nodes.sort_unstable_by_key(|(id, _)| *id);
-    nodes
-        .into_iter()
-        .filter_map(|(node_id, selection)| {
-            let error = agents.check(selection).err()?;
+    let profile_errors = nodes.iter().filter_map(|(node_id, selection)| {
+        let error = agents.check(selection).err()?;
+        Some((*node_id, selection, error))
+    });
+    let mut diagnostics: Vec<Diagnostic> = profile_errors
+        .map(|(node_id, selection, error)| {
             let fix = match &error {
                 ConfigError::UnknownProfile(_) => format!(
                     "Use a defined profile, or define [agents.{}] in pas.toml",
@@ -232,17 +234,51 @@ pub fn check_agents(
                 }
                 _ => "Fix the agent profile in pas.toml".into(),
             };
-            Some(Diagnostic {
+            Diagnostic {
                 rule: "agent_profile".into(),
                 severity: Severity::Error,
                 message: format!("Node '{node_id}': {error}"),
                 node_id: Some(node_id.to_string()),
                 edge: None,
                 fix: Some(fix),
-            })
+            }
         })
-        .collect()
+        .collect();
+    // `allowed_tools` and `max_budget_usd` reach the agent as `claude-p`
+    // flags, so only a `claude-p` profile takes them.
+    for (node_id, selection) in &nodes {
+        let mechanism = agents
+            .profile(&selection.profile)
+            .map(|profile| profile.mechanism.as_str());
+        if mechanism.is_none_or(|m| m == CLAUDE_P_MECHANISM) {
+            continue;
+        }
+        let Some(source) = plan.source_node(node_id) else {
+            continue;
+        };
+        for attribute in ["allowed_tools", "max_budget_usd"] {
+            if source.raw_attrs.contains_key(attribute) {
+                diagnostics.push(Diagnostic {
+                    rule: "unsupported_execution_capability".into(),
+                    severity: Severity::Error,
+                    message: format!(
+                        "Node '{node_id}' uses unsupported execution capability '{attribute}'"
+                    ),
+                    node_id: Some(node_id.to_string()),
+                    edge: None,
+                    fix: Some(format!(
+                        "Remove '{attribute}' or use it on a Claude-backed codergen node"
+                    )),
+                });
+            }
+        }
+    }
+    diagnostics
 }
+
+/// The handler whose argv takes the node flags `allowed_tools` and
+/// `max_budget_usd` (`extra_args`).
+const CLAUDE_P_MECHANISM: &str = "claude-p";
 
 /// One `beads_available` error per `beads.select` / `beads.close` node when
 /// `bd` is not on `PATH`, so a Run fails before it starts rather than at the
