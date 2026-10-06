@@ -54,6 +54,8 @@ In `$FAKE_AGENT_SCENARIOS`:
 | `env.log` | per start: a `--- start` line, a `FAKE_PID=<pid>` line (the fake's own pid: PAS execs it directly, so this is the agent's pid), then the sorted `PAS_*`, `ANTHROPIC_*`, `OPENAI_*` and `CLAUDE_CODE_USE_*` environment variables |
 | `invocations.log` | per start: a `--- start` line, then each argument on its own line, without the `-p` value |
 | `prompts.log` | per start: a `--- start` line, then the full `-p` prompt |
+| `prompt.<PAS_NODE_ID>.<PAS_ATTEMPT>` | per start when both variables are set: the full `-p` prompt and a newline, overwritten on each start of that attempt |
+| `committed` | created (empty) by `commit_hang` after its commit |
 | `stdin.bytes` | written by `stdin`: how many bytes it read from stdin |
 | `go` | created by the test: lets `stderr_live` finish |
 | `term` | written by `hang_term` and `hang_ignore_term` when they get TERM (`hang_ignore_term` appends a line per TERM) |
@@ -76,6 +78,9 @@ isn't atomic: use one `flaky` node per test and no parallel branches.
 | `hang` | init, then `exec sleep $FAKE_HANG_SECS` (killed by the node timeout) | - |
 | `slow` | init, three assistant lines 0.2 s apart, then success | 0 |
 | `edit_commit` | writes `fake-edit.txt` in its cwd, commits it as `fake-claude edit`, then success | 0 |
+| `edit_hang` | writes `partial.txt` in its cwd (uncommitted), then hangs like `hang` | - |
+| `commit_hang` | writes `committed.txt` in its cwd, commits it as `fake-claude commit` (like `edit_commit`), creates `committed`, then hangs like `hang` | - |
+| `pas_dir` | creates `.pas/x` (holding `x`) and `visible.txt` in its cwd, then success | 0 |
 | `flaky` | hangs while its start count is at most `fails` (default 1), then success | 0 |
 | `bad_result` | init, then `{"type":"result","subtype":"success","is_error":false,"num_turns":"many"}`, a result line that doesn't deserialize (`num_turns` is a string) | `exit` (default 0) |
 | `stdin` | reads stdin to the end, writes the byte count to `stdin.bytes`, then success | 0 |

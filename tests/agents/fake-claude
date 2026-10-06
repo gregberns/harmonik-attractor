@@ -51,6 +51,10 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$have_prompt" ] || die "-p is required"
 printf '%s\n' '--- start' "$prompt" >>"$FAKE_AGENT_SCENARIOS/prompts.log"
+# Each attempt's prompt on its own, named by PAS_NODE_ID and PAS_ATTEMPT.
+if [ -n "${PAS_NODE_ID:-}" ] && [ -n "${PAS_ATTEMPT:-}" ]; then
+    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID.$PAS_ATTEMPT"
+fi
 
 # The scenario text, first match wins: the first line of the file
 # <node>.<attempt>, then of the file <node>, in $FAKE_AGENT_SCENARIOS (named by
@@ -211,6 +215,23 @@ case $scenario in
         git -c user.name=fake-claude -c user.email=fake-claude@example.invalid \
             -c commit.gpgsign=false commit -q -m 'fake-claude edit' || exit 3
         succeed 'fake-claude: edited and committed'
+        ;;
+    edit_hang)
+        printf '%s\n' 'partial work by fake-claude' >partial.txt
+        hang
+        ;;
+    commit_hang)
+        printf '%s\n' 'committed by fake-claude' >committed.txt
+        git add committed.txt || exit 3
+        git -c user.name=fake-claude -c user.email=fake-claude@example.invalid \
+            -c commit.gpgsign=false commit -q -m 'fake-claude commit' || exit 3
+        : >"$FAKE_AGENT_SCENARIOS/committed"
+        hang
+        ;;
+    pas_dir)
+        mkdir -p .pas && echo x >.pas/x
+        printf '%s\n' 'visible by fake-claude' >visible.txt
+        succeed 'fake-claude: success'
         ;;
     flaky)
         if [ "$attempt" -le "$fails" ]; then
