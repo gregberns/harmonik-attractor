@@ -157,6 +157,7 @@ dependencies = [
  "attractor-handler-claude-p",
  "attractor-handler-codex-exec",
  "attractor-handler-gemini",
+ "attractor-handler-pi",
  "attractor-journal",
  "attractor-llm",
  "attractor-monitor",
@@ -230,6 +231,19 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "attractor-handler-pi"
+version = "0.11.0"
+dependencies = [
+ "async-trait",
+ "attractor-agent-handler",
+ "attractor-agent-process",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

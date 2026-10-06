@@ -6,7 +6,7 @@ use std::collections::{HashMap, VecDeque};
 use std::process::Command;
 
 const ROOT: &str = "attractor-monitor";
-const FORBIDDEN: [&str; 10] = [
+const FORBIDDEN: [&str; 11] = [
     "attractor-pipeline",
     "attractor-llm",
     "attractor-agent",
@@ -17,6 +17,7 @@ const FORBIDDEN: [&str; 10] = [
     "attractor-handler-claude-p",
     "attractor-handler-codex-exec",
     "attractor-handler-gemini",
+    "attractor-handler-pi",
 ];
 
 /// Walks every dependency edge (normal, build and dev) from `root` and returns
@@ -133,6 +134,7 @@ fn synthetic(edges: &[(&str, &str, &str)]) -> Value {
         "attractor-handler-claude-p",
         "attractor-handler-codex-exec",
         "attractor-handler-gemini",
+        "attractor-handler-pi",
     ];
     let packages: Vec<Value> = all.iter().map(|n| json!({"id": n, "name": n})).collect();
     let nodes: Vec<Value> = all

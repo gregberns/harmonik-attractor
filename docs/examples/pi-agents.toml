@@ -1,0 +1,47 @@
+# Example `pi` agent profiles: DeepSeek, Z.ai's GLM and a hosted Qwen, run
+# through the Pi coding agent (`pi`, Node 22.19+; PAS uses whatever version is
+# installed). Copy the profiles you want into your project's `pas.toml` and
+# select one with `agent="<name>"` on a node.
+#
+# Each profile names the environment variable that holds its API key
+# (`api_key_env`). PAS reads it from its own environment (or the profile's
+# `env.set`), writes it into a private models.json in the run folder for the
+# invocation, and never puts it on pi's command line or in pi's environment.
+# See docs/cli-reference.md, "The pi mechanism".
+
+# DeepSeek: Pi's built-in `deepseek` provider, with its own model catalog.
+[agents.deepseek]
+mechanism = "pi"
+command = ["pi"]
+args = ["--mode", "json"]
+reasoning_args = ["--thinking", "{reasoning}"]
+provider = "deepseek"
+model = "deepseek-v4-pro"
+reasoning = "high"
+api_key_env = "DEEPSEEK_API_KEY"
+
+# GLM on Z.ai's pay-as-you-go API: Pi's built-in `zai` provider, pointed away
+# from its Coding Plan URL.
+[agents.glm]
+mechanism = "pi"
+command = ["pi"]
+args = ["--mode", "json"]
+reasoning_args = ["--thinking", "{reasoning}"]
+provider = "zai"
+base_url = "https://api.z.ai/api/paas/v4"
+model = "glm-5.3"
+api_key_env = "ZAI_API_KEY"
+
+# A hosted Qwen behind an OpenAI-compatible endpoint. Pi doesn't know this
+# provider, so the profile gives the model's limits; set `base_url` to your
+# endpoint.
+[agents.qwen]
+mechanism = "pi"
+command = ["pi"]
+args = ["--mode", "json"]
+reasoning_args = ["--thinking", "{reasoning}"]
+provider = "qwen-lan"
+# base_url = "http://<host>:<port>/v1"  # placeholder: your hosted Qwen endpoint
+model = "qwen3.8"
+api_key_env = "QWEN_API_KEY"
+limits = { context = 262144, max_output = 32768 }

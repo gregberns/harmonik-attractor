@@ -1,0 +1,18 @@
+[package]
+name = "attractor-handler-pi"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+description = "The pi agent handler: the Pi coding agent in JSON mode, for OpenAI-compatible providers"
+
+[dependencies]
+attractor-agent-handler = { path = "../attractor-agent-handler" }
+attractor-agent-process = { path = "../attractor-agent-process" }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = "3"
+serde_json = { workspace = true }

@@ -13,7 +13,9 @@
 //! `gemini`. The `pas.toml` also has `fake-codex`, `fake-gemini` and
 //! `fake-claude` profiles (the built-in `codex`/`gemini`/`claude` profiles
 //! with the fakes as command, `test_only`; `fake-claude` resumes sessions,
-//! `fake` doesn't).
+//! `fake` doesn't), and `fake-pi`: a `pi` profile run by
+//! `tests/agents/fake-pi`, whose key variable `FAKE_PI_KEY` only the Pi tests
+//! set (to the dummy [`FAKE_PI_KEY`]).
 //! Git ignores the developer's global and system config (hooks, templates).
 
 use std::collections::BTreeMap;
@@ -36,6 +38,10 @@ fn fake_claude() -> PathBuf {
 /// Agent CLIs a test must never reach on the user's `PATH`: each gets a
 /// stub in `bin/` that exits 2 unless a test shims the fake in its place.
 pub const BLOCKED_AGENTS: [&str; 4] = ["claude", "codex", "gemini", "pi"];
+
+/// The dummy API key the Pi tests give `pas` as `FAKE_PI_KEY`.
+#[allow(dead_code)]
+pub const FAKE_PI_KEY: &str = "sk-secret";
 
 pub struct FakeAgent {
     dir: tempfile::TempDir,
@@ -66,6 +72,7 @@ impl FakeAgent {
         let fake = fake_claude().canonicalize().unwrap();
         let codex = fake_script("fake-codex").canonicalize().unwrap();
         let gemini = fake_script("fake-gemini").canonicalize().unwrap();
+        let pi = fake_script("fake-pi").canonicalize().unwrap();
         fs::write(
             self.repo().join("pas.toml"),
             format!(
@@ -73,6 +80,10 @@ impl FakeAgent {
                  [agents.fake-codex]\ninherit_from = \"codex\"\ncommand = {codex:?}\ntest_only = true\n\n\
                  [agents.fake-gemini]\ninherit_from = \"gemini\"\ncommand = {gemini:?}\ntest_only = true\n\n\
                  [agents.fake-claude]\ninherit_from = \"claude\"\ncommand = {fake:?}\ntest_only = true\n\n\
+                 [agents.fake-pi]\nmechanism = \"pi\"\ncommand = [{pi:?}]\nargs = [\"--mode\", \"json\"]\n\
+                 reasoning_args = [\"--thinking\", \"{{reasoning}}\"]\nprovider = \"fakeprov\"\n\
+                 base_url = \"http://127.0.0.1:9/v1\"\nmodel = \"fake-model\"\napi_key_env = \"FAKE_PI_KEY\"\n\
+                 limits = {{ context = 1000, max_output = 100 }}\ntest_only = true\n\n\
                  [agents.fake]\nmechanism = \"claude-p\"\ncommand = {fake:?}\ntest_only = true\n{agents}\n"
             ),
         )
