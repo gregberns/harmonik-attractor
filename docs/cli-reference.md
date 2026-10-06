@@ -310,8 +310,9 @@ profile's `env.set`, else its own environment; naming it lets it through
 even when `env.remove` lists it (the default list has `OPENAI_API_KEY`).
 PAS writes the key into a `models.json` in a per-invocation
 `PI_CODING_AGENT_DIR` in the run folder (`pi-agent/<inv>/`, folder 0700,
-files created 0600), with an empty `settings.json`, and removes the folder
-when the invocation ends. The key is never on Pi's command line (where `ps`
+files created 0600), with a `settings.json` holding Pi's retry settings
+(see [Rate limits](#rate-limits)), and removes the folder when the
+invocation ends. The key is never on Pi's command line (where `ps`
 shows it) and never in its environment: the variable is removed from it. A
 named variable that is unset or empty fails the node to launch
 ("API key variable <NAME> is not set") without starting Pi. If `pas` itself
@@ -389,6 +390,7 @@ test_only = true
 | `reasoning_args` | Added when a reasoning level is selected; `{reasoning}` is replaced, e.g. `["--effort", "{reasoning}"]`. Without it, a reasoning level is an error. |
 | `timeout` | How long an invocation may run when the node sets no `timeout` (built-in `10m`). |
 | `kill_grace` | How long to wait after TERM before KILL, on timeout or stop (built-in `10s`). |
+| `rate_limit_window` | How long a rate-limited invocation may wait for the limit to lift, on top of its timeout (built-in `2m`; `"0s"` turns waiting off). See [Rate limits](#rate-limits). |
 | `env.remove` | Variables removed from the agent's environment. |
 | `env.set` | Variables set in the agent's environment, after `env.remove`; the `PAS_*` ids are set last. Values are literal and committed with `pas.toml`: never secrets. |
 | `test_only` | Refused unless `pas run` / `pas validate` get `--allow-test-agents`. |
@@ -398,7 +400,8 @@ Resolution: a `pas.toml` profile replaces the built-in profile of the same
 name whole. Then `inherit_from` is followed field by field: a field the
 profile sets replaces the parent's whole value (lists are not merged).
 Last, the built-in defaults fill any field still unset: `timeout = "10m"`,
-`kill_grace = "10s"` and the `env.remove` list below. An unknown field, an
+`kill_grace = "10s"`, `rate_limit_window = "2m"` and the `env.remove` list
+below. An unknown field, an
 unknown or cyclic `inherit_from`, a missing `mechanism` or `command`, or a
 bad duration fails `pas run` and `pas validate`, naming the profile.
 
@@ -417,6 +420,60 @@ the profile's `timeout`. `pas run` and `pas validate` check every profile a
 pipeline uses before anything starts, and name the node: an unknown profile,
 a reasoning level on a profile without `reasoning_args`, or a `test_only`
 profile without `--allow-test-agents`.
+
+#### Rate limits
+
+A rate-limited agent waits for the limit to lift and continues, within its
+profile's `rate_limit_window` (built-in `2m`), instead of failing the node.
+
+**Claude (`claude-p`).** An invocation is rate limited when its result is an
+error and either the last `rate_limit_event` line's status is neither
+`allowed` nor `allowed_warning`, or the error says "rate limit", "usage
+limit" or `429` (as a whole word). PAS then waits:
+
+- until the event's `resetsAt`, when that is in the future;
+- 1 s, when `resetsAt` is now or past (the limit has already reset);
+- with no `resetsAt`, 5 s, doubling on each further spawn (5, 10, 20 s ...).
+
+Each wait is journaled as `LlmRateLimited` (`wait_s`, and `spawn`, the
+spawn that was limited). Then PAS spawns Claude again with the profile's
+resume form (`--resume <id>`), continuing the session, or, when the
+rate-limited spawn never reported its session (no init line), with the same
+`--session-id` again. Every spawn after the first writes its own
+`transcripts/<inv>.<n>.jsonl` and `<inv>.<n>.stderr.log` and journals its own
+`LlmStarted`; the invocation ends with one `LlmInvoked`, whose usage adds
+up every spawn.
+
+The waits together never exceed the window, and the whole invocation never
+exceeds its timeout plus the window: each spawn gets the timeout, or what is
+left of that total if less. When the next wait doesn't fit what is left of
+the window, or the profile has no resume form, the node fails as reported
+with "rate limited: <the agent's error>; waited <s> s over <n> spawns",
+which a fail edge can route on. A stop or cancel during a wait ends it at
+once. `rate_limit_window = "0s"` fails the first rate-limited spawn this way.
+
+**Pi (`pi`).** Pi retries a rate-limited request itself. PAS writes its
+`settings.json` so that its retries cover the window (base delay 2 s,
+doubling; with `2m`, 6 retries, and a retry delay of at most the window),
+and lets a Pi invocation run for its timeout plus the window. A `"0s"`
+window turns Pi's retries off.
+
+**Codex and Gemini** ignore the window: a rate-limited attempt fails as it
+did before.
+
+> **Unconfirmed assumptions.** These rest on what PAS could not check
+> against a real rate limit:
+>
+> - Claude's `resetsAt` is in Unix seconds. If it is in milliseconds, PAS
+>   reads a reset far in the future, the wait doesn't fit the window, and
+>   the node fails as rate limited at once.
+> - A `rate_limit_event` with status `allowed_warning` means the request was
+>   allowed (near the limit), so on its own it never makes an error a rate
+>   limit; the error text still can.
+> - Pi's retry keys (`retry.enabled`, `retry.baseDelayMs`,
+>   `retry.maxRetries`, `retry.provider.maxRetryDelayMs`) come from Pi
+>   0.80.2's documentation. If a Pi version names them differently, Pi
+>   ignores them and uses its own retry defaults.
 
 ---
 
