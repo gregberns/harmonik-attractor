@@ -22,16 +22,24 @@ helper is `crates/attractor-cli/tests/fake_agent/mod.rs`; the tests are in
 
 - **Flags.** It accepts exactly the flags PAS passes to `claude` (the
   built-in `claude` profile's args, the `[codergen.claude]` and node flags,
-  `--model`, `--effort`, and the `claude-p` handler's own); value flags take
+  `--model`, `--effort`, the session flags `--session-id <id>` and
+  `--resume <id>`, and the `claude-p` handler's own); value flags take
   their value. An unknown flag
   exits 2 with `fake-claude: unknown flag <x>`, so argv drift shows up in
   tests. `-p` is required.
+- **Start counter.** On every start with `PAS_NODE_ID` set, the fake adds
+  one to `$FAKE_AGENT_SCENARIOS/starts.<PAS_NODE_ID>`; the new count `k`
+  makes this start `<node>@<k>`, whatever its attempt number. A loop-back
+  revisit starts again at attempt 1, so only `<node>@<k>` tells the second
+  visit from the first.
 - **Scenario.** The scenario text is the first match of:
-  1. the first line of `$FAKE_AGENT_SCENARIOS/<PAS_NODE_ID>.<PAS_ATTEMPT>`
+  1. the first line of `$FAKE_AGENT_SCENARIOS/<PAS_NODE_ID>@<k>`, for the
+     node's k-th start (when `PAS_NODE_ID` is set and the file exists);
+  2. the first line of `$FAKE_AGENT_SCENARIOS/<PAS_NODE_ID>.<PAS_ATTEMPT>`
      (only when both variables are set and the file exists);
-  2. the first line of `$FAKE_AGENT_SCENARIOS/<PAS_NODE_ID>` (when
+  3. the first line of `$FAKE_AGENT_SCENARIOS/<PAS_NODE_ID>` (when
      `PAS_NODE_ID` is set and the file exists);
-  3. otherwise the `-p` prompt, from the text after its last `Task (`: that
+  4. otherwise the `-p` prompt, from the text after its last `Task (`: that
      is the node's own `prompt`. The text before it holds the goal and
      earlier nodes' results.
 
@@ -40,12 +48,15 @@ helper is `crates/attractor-cli/tests/fake_agent/mod.rs`; the tests are in
   `fails=<N>` and `exit=<N>` (letters, digits, `_` and `-` only; `exit`
   must be a number). An unknown or missing scenario exits 2. A node file
   lets one node act differently on each attempt, e.g. `work.1` holding
-  `scenario=bad_result exit=1` and `work` holding `scenario=success`.
+  `scenario=bad_result exit=1` and `work` holding `scenario=success`; or on
+  each visit, e.g. `review@1` routing back and `review@2` routing on.
 - **Environment.** `FAKE_AGENT_SCENARIOS` (required): an existing folder
   where the fake keeps its state. `FAKE_HANG_SECS`: how long `hang` sleeps
   (default 30). `PAS_NODE_ID`, `PAS_ATTEMPT`: optional, for the scenario
   lookup above.
 - **stdin** is read only by the `stdin` scenario.
+- **Session.** The `session_id` on its output lines is the `--session-id`
+  or `--resume` value, else a made-up id from its pid. Both together exit 2.
 - **Output.** A `system`/`init` line with a `session_id`, `assistant`
   message lines, and a final `result` line (`subtype`, `is_error`,
   `result`, `session_id`, `num_turns`, `total_cost_usd`), in the shape of
@@ -58,17 +69,21 @@ In `$FAKE_AGENT_SCENARIOS`:
 | File | Contents |
 |---|---|
 | `attempts.<scenario>` | how many times this scenario started |
+| `starts.<PAS_NODE_ID>` | how many times this node started (the start counter above) |
 | `env.log` | per start: a `--- start` line, a `FAKE_PID=<pid>` line (the fake's own pid: PAS execs it directly, so this is the agent's pid), then the sorted `PAS_*`, `ANTHROPIC_*`, `OPENAI_*` and `CLAUDE_CODE_USE_*` environment variables |
 | `invocations.log` | per start: a `--- start` line, then each argument on its own line, without the `-p` value |
 | `prompts.log` | per start: a `--- start` line, then the full `-p` prompt |
 | `prompt.<PAS_NODE_ID>.<PAS_ATTEMPT>` | per start when both variables are set: the full `-p` prompt and a newline, overwritten on each start of that attempt |
+| `prompt.<PAS_NODE_ID>@<k>` | per start when `PAS_NODE_ID` is set: the full `-p` prompt and a newline, for the node's k-th start (never overwritten, so a revisit keeps the earlier visit's prompt) |
 | `committed` | created (empty) by `commit_hang` after its commit |
 | `stdin.bytes` | written by `stdin`: how many bytes it read from stdin |
 | `go` | created by the test: lets `stderr_live` finish |
 | `term` | written by `hang_term` and `hang_ignore_term` when they get TERM (`hang_ignore_term` appends a line per TERM) |
 
-The counter is per scenario name, not per node, and its read-modify-write
-isn't atomic: use one `flaky` node per test and no parallel branches.
+The `attempts.<scenario>` counter is per scenario name, not per node, and
+its read-modify-write isn't atomic: use one `flaky` node per test and no
+parallel branches. `starts.<node>` is per node; it isn't atomic either, but
+PAS runs one invocation of a node at a time.
 
 ## Scenarios
 
@@ -90,6 +105,7 @@ isn't atomic: use one `flaky` node per test and no parallel branches.
 | `pas_dir` | creates `.pas/x` (holding `x`) and `visible.txt` in its cwd, then success | 0 |
 | `flaky` | hangs while its start count is at most `fails` (default 1), then success | 0 |
 | `bad_result` | init, then `{"type":"result","subtype":"success","is_error":false,"num_turns":"many"}`, a result line that doesn't deserialize (`num_turns` is a string) | `exit` (default 0) |
+| `session_not_found` | needs `--resume <id>` (else exit 2): no init line, the result line `{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["No conversation found with session ID: <id>"]}`, and `No conversation found with session ID: <id>` on stderr, as `claude -p --resume` does for a session it doesn't have | 1 |
 | `stdin` | reads stdin to the end, writes the byte count to `stdin.bytes`, then success | 0 |
 | `stderr_live` | init, `fake-claude: working` on stderr, waits for the file `go` (polled every 0.05 s, at most 10 s, else exit 2), then `fake-claude: done` on stderr and success | 0 |
 | `hang_term` | traps TERM (writes `term`, exits 143), init, then `sleep 30 & wait` | 143 on TERM |
@@ -117,10 +133,13 @@ and `hang_ignore_term`'s loop just starts another `sleep`.
 ## fake-codex and fake-gemini
 
 Twins of `codex exec --json` and the Gemini CLI, for the `codex-exec` and
-`gemini` handlers. They find their scenario like `fake-claude` (the node
-files, else `scenario=<name>` in the node's prompt), log the environment to
-`env.log` and argv to `invocations.log` (the positional prompt as
-`<prompt>`), and the prompt to `prompts.log`. The CLI harness selects them
+`gemini` handlers. They count starts and find their scenario like
+`fake-claude` (`starts.<node>`; the node files `<node>@<k>`,
+`<node>.<attempt>`, `<node>`, else `scenario=<name>` in the node's prompt),
+log the environment to `env.log` and argv to `invocations.log` (the
+positional prompt as `<prompt>`), and the prompt to `prompts.log`,
+`prompt.<node>.<attempt>` and `prompt.<node>@<k>`. `fake-gemini`'s `--help`
+probe is not a start. The CLI harness selects them
 with `agent="fake-codex"` / `agent="fake-gemini"` (its `pas.toml` profiles
 inherit the built-in `codex`/`gemini` profiles with the fake as `command`),
 or shims them on `PATH` as `codex`/`gemini` for the `llm_provider` aliases.
@@ -134,6 +153,15 @@ or shims them on `PATH` as `codex`/`gemini` for the `llm_provider` aliases.
 | `silent` | nothing, exit 0 | (none) |
 | `hang` | starts, then sleeps `FAKE_HANG_SECS` | sleeps `FAKE_HANG_SECS` |
 | `label` | message ending with `label=<L>` on its own line | (none) |
+| `thread_not_found` | needs `exec resume <id>` (else exit 2): no stdout, `fake-codex: Error: thread/resume failed: no rollout found for thread id <id>` on stderr, exit 1 | (none) |
+
+`fake-codex` takes `exec [--json --yolo --skip-git-repo-check --ephemeral]
+[--model M] [--cd DIR] <prompt>` (the built-in `codex` profile's new
+session) and `exec resume <thread id> --json --skip-git-repo-check
+--dangerously-bypass-approvals-and-sandbox [--model M] <prompt>` (its
+`resume_command`; `--cd` there exits 2, as `exec resume` takes none). Its
+`thread.started` event carries the resumed thread id, else a fresh id made
+from its pid.
 
 `fake-gemini --help` answers the format probe: it appends one line (`$0`,
 its arguments, its pid, and `via=$FAKE_VIA`) to `probes.log` and writes

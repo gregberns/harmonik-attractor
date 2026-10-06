@@ -24,6 +24,8 @@ log="$FAKE_AGENT_SCENARIOS/invocations.log"
 printf '%s\n' '--- start' >>"$log"
 prompt=
 have_prompt=
+session_arg=
+resume_arg=
 while [ $# -gt 0 ]; do
     printf '%s\n' "$1" >>"$log"
     case $1 in
@@ -31,6 +33,15 @@ while [ $# -gt 0 ]; do
             [ $# -ge 2 ] || die "-p needs a value"
             prompt=$2
             have_prompt=1
+            shift 2
+            ;;
+        --session-id | --resume)
+            [ $# -ge 2 ] || die "$1 needs a value"
+            printf '%s\n' "$2" >>"$log"
+            case $1 in
+                --session-id) session_arg=$2 ;;
+                *) resume_arg=$2 ;;
+            esac
             shift 2
             ;;
         --output-format | --setting-sources | --mcp-config | --settings | \
@@ -50,19 +61,33 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ -n "$have_prompt" ] || die "-p is required"
+[ -z "$session_arg" ] || [ -z "$resume_arg" ] || die "--session-id and --resume together"
 printf '%s\n' '--- start' "$prompt" >>"$FAKE_AGENT_SCENARIOS/prompts.log"
+# Count this node's starts: the k-th start of node N is N@k, whatever its
+# attempt number (a loop-back revisit starts again at attempt 1).
+node_start=
+if [ -n "${PAS_NODE_ID:-}" ]; then
+    starts="$FAKE_AGENT_SCENARIOS/starts.$PAS_NODE_ID"
+    node_start=$(cat "$starts" 2>/dev/null || echo 0)
+    node_start=$((node_start + 1))
+    printf '%s\n' "$node_start" >"$starts"
+    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID@$node_start"
+fi
 # Each attempt's prompt on its own, named by PAS_NODE_ID and PAS_ATTEMPT.
 if [ -n "${PAS_NODE_ID:-}" ] && [ -n "${PAS_ATTEMPT:-}" ]; then
     printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID.$PAS_ATTEMPT"
 fi
 
 # The scenario text, first match wins: the first line of the file
-# <node>.<attempt>, then of the file <node>, in $FAKE_AGENT_SCENARIOS (named by
-# PAS_NODE_ID and PAS_ATTEMPT); else the node's own prompt, the text after the
-# last "Task (". The text before it holds the goal and earlier nodes' results.
+# <node>@<start>, then <node>.<attempt>, then <node>, in $FAKE_AGENT_SCENARIOS
+# (named by PAS_NODE_ID, the start count and PAS_ATTEMPT); else the node's own
+# prompt, the text after the last "Task (". The text before it holds the goal
+# and earlier nodes' results.
 node_file=
 if [ -n "${PAS_NODE_ID:-}" ]; then
-    if [ -n "${PAS_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT" ]; then
+    if [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID@$node_start" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID@$node_start"
+    elif [ -n "${PAS_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT" ]; then
         node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT"
     elif [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID" ]; then
         node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID"
@@ -96,7 +121,10 @@ attempt=$(cat "$counter" 2>/dev/null || echo 0)
 attempt=$((attempt + 1))
 printf '%s\n' "$attempt" >"$counter"
 
+# The session: the one given with --session-id or --resume, else made up.
 session="00000000-0000-4000-8000-$(printf '%012d' "$$")"
+[ -z "$session_arg" ] || session=$session_arg
+[ -z "$resume_arg" ] || session=$resume_arg
 
 init() {
     json='{"type":"system","subtype":"init","session_id":"'"$session"'","tools":["Bash","Edit","Read","Write"],"model":"fake-model","claude_code_version":"fake"}'
@@ -244,6 +272,16 @@ case $scenario in
         json='{"type":"result","subtype":"success","is_error":false,"num_turns":"many"}'
         printf '%s\n' "$json"
         exit "$code"
+        ;;
+    session_not_found)
+        # What `claude -p --resume <id>` does when it has no such session:
+        # no init line, a minimal error result, the reason on stderr.
+        [ -n "$resume_arg" ] || die "scenario session_not_found needs --resume <id>"
+        reason="No conversation found with session ID: $resume_arg"
+        json='{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["'"$reason"'"]}'
+        printf '%s\n' "$json"
+        printf '%s\n' "$reason" >&2
+        exit 1
         ;;
     stdin)
         bytes=$(cat | wc -c | tr -d ' ')

@@ -81,10 +81,28 @@ case $format in
     *) die "--output-format json or stream-json is required, got '$format'" ;;
 esac
 printf '%s\n' '--- start' "$prompt" >>"$FAKE_AGENT_SCENARIOS/prompts.log"
+# Count this node's starts (the --help probe above is not one) and keep each
+# start's and attempt's prompt, as fake-claude does.
+node_start=
+if [ -n "${PAS_NODE_ID:-}" ]; then
+    starts="$FAKE_AGENT_SCENARIOS/starts.$PAS_NODE_ID"
+    node_start=$(cat "$starts" 2>/dev/null || echo 0)
+    node_start=$((node_start + 1))
+    printf '%s\n' "$node_start" >"$starts"
+    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID@$node_start"
+fi
+if [ -n "${PAS_NODE_ID:-}" ] && [ -n "${PAS_ATTEMPT:-}" ]; then
+    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID.$PAS_ATTEMPT"
+fi
 
+# The scenario text, as fake-claude finds it: the file <node>@<start>, then
+# <node>.<attempt>, then <node>, else the node's own prompt after the last
+# "Task (".
 node_file=
 if [ -n "${PAS_NODE_ID:-}" ]; then
-    if [ -n "${PAS_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT" ]; then
+    if [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID@$node_start" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID@$node_start"
+    elif [ -n "${PAS_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT" ]; then
         node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT"
     elif [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID" ]; then
         node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID"

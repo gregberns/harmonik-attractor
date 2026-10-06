@@ -23,13 +23,32 @@ log="$FAKE_AGENT_SCENARIOS/invocations.log"
 printf '%s\n' '--- start' >>"$log"
 prompt=
 have_prompt=
+resume_id=
+previous=
 while [ $# -gt 0 ]; do
+    arg=$1
     case $1 in
-        exec | --json | --yolo | --skip-git-repo-check | --ephemeral)
+        resume)
+            # `exec resume <thread id>`: continue that thread.
+            [ "$previous" = exec ] || die "resume must follow exec"
+            [ $# -ge 2 ] || die "resume needs a thread id"
+            printf '%s\n' "$1" "$2" >>"$log"
+            resume_id=$2
+            shift 2
+            ;;
+        exec | --json | --yolo | --skip-git-repo-check | --ephemeral | \
+            --dangerously-bypass-approvals-and-sandbox)
             printf '%s\n' "$1" >>"$log"
             shift
             ;;
-        --model | --cd)
+        --cd)
+            # `exec resume` has no --cd: its cwd is already the workdir.
+            [ -z "$resume_id" ] || die "exec resume takes no --cd"
+            [ $# -ge 2 ] || die "$1 needs a value"
+            printf '%s\n' "$1" "$2" >>"$log"
+            shift 2
+            ;;
+        --model)
             [ $# -ge 2 ] || die "$1 needs a value"
             printf '%s\n' "$1" "$2" >>"$log"
             shift 2
@@ -45,15 +64,32 @@ while [ $# -gt 0 ]; do
             shift
             ;;
     esac
+    previous=$arg
 done
 [ -n "$have_prompt" ] || die "a positional prompt is required"
 printf '%s\n' '--- start' "$prompt" >>"$FAKE_AGENT_SCENARIOS/prompts.log"
+# Count this node's starts and keep each start's and attempt's prompt, as
+# fake-claude does.
+node_start=
+if [ -n "${PAS_NODE_ID:-}" ]; then
+    starts="$FAKE_AGENT_SCENARIOS/starts.$PAS_NODE_ID"
+    node_start=$(cat "$starts" 2>/dev/null || echo 0)
+    node_start=$((node_start + 1))
+    printf '%s\n' "$node_start" >"$starts"
+    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID@$node_start"
+fi
+if [ -n "${PAS_NODE_ID:-}" ] && [ -n "${PAS_ATTEMPT:-}" ]; then
+    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID.$PAS_ATTEMPT"
+fi
 
-# The scenario text, as fake-claude finds it: the file <node>.<attempt>, then
-# <node>, else the node's own prompt after the last "Task (".
+# The scenario text, as fake-claude finds it: the file <node>@<start>, then
+# <node>.<attempt>, then <node>, else the node's own prompt after the last
+# "Task (".
 node_file=
 if [ -n "${PAS_NODE_ID:-}" ]; then
-    if [ -n "${PAS_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT" ]; then
+    if [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID@$node_start" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID@$node_start"
+    elif [ -n "${PAS_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT" ]; then
         node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT"
     elif [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID" ]; then
         node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID"
@@ -83,8 +119,12 @@ message() {
     printf '%s\n' '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"'"$1"'"}}'
 }
 
+# The thread: the resumed one, else a fresh id made from this process's pid.
+thread="00000000-0000-4000-8000-$(printf '%012d' "$$")"
+[ -z "$resume_id" ] || thread=$resume_id
+
 started() {
-    printf '%s\n' '{"type":"thread.started","thread_id":"00000000-0000-4000-8000-000000000001"}' \
+    printf '%s\n' '{"type":"thread.started","thread_id":"'"$thread"'"}' \
         '{"type":"turn.started"}'
 }
 
@@ -113,6 +153,13 @@ case $scenario in
     crash)
         printf '%s\n' 'fake-codex: crashed' >&2
         exit 3
+        ;;
+    thread_not_found)
+        # What `codex exec resume <id>` does when it has no such thread: no
+        # JSON, the reason on stderr, exit 1.
+        [ -n "$resume_id" ] || die "scenario thread_not_found needs exec resume <id>"
+        printf '%s\n' "fake-codex: Error: thread/resume failed: no rollout found for thread id $resume_id" >&2
+        exit 1
         ;;
     garbage)
         printf '%s\n' 'fake-codex: this is not json' '{"type":' 'garbage'
