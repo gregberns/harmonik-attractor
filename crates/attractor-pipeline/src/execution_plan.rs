@@ -1856,6 +1856,35 @@ mod tests {
     }
 
     #[test]
+    fn one_thread_id_across_different_profiles_fails_the_profile_check() {
+        let plan = ExecutionPlan::compile(graph(
+            r#"digraph G {
+                start [shape="Mdiamond"]
+                a [shape="box", prompt="p", llm_provider="claude", thread_id="t"]
+                b [shape="box", prompt="p", llm_provider="codex", thread_id="t"]
+                c [shape="box", prompt="p", llm_provider="claude", thread_id="u"]
+                d [shape="box", prompt="p", llm_provider="claude", thread_id="u"]
+                done [shape="Msquare"]
+                start -> a -> b -> c -> d -> done
+            }"#,
+        ))
+        .unwrap();
+        let agents = crate::handlers::tests::stub_agents(std::path::Path::new("never-run"));
+        let diagnostics = crate::validation::check_agents(&plan, &agents);
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        let message = &diagnostics[0].message;
+        assert!(message.contains("thread 't'"), "{message}");
+        assert!(
+            message.contains("'a'") && message.contains("'b'"),
+            "{message}"
+        );
+        assert!(
+            message.contains("claude") && message.contains("codex"),
+            "{message}"
+        );
+    }
+
+    #[test]
     fn claude_execution_controls_require_string_values() {
         for (attribute, declaration) in [
             ("allowed_tools", "allowed_tools=true"),

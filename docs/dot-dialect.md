@@ -219,7 +219,7 @@ These failures use the node-scoped `unsupported_execution_topology` rule and occ
 | `fallback_retry_target` | string | -- | Second-level non-terminal retry target |
 | `max_retries` | integer | 0 | Additional retryable handler attempts per visit; `N` allows `N + 1` attempts |
 | `fidelity` | string | `full` if the agent profile can resume, else `fresh` | Agent nodes only. `full`: a retry or a revisit continues the agent's session for the node's thread; `fresh`: a new session every time. `fidelity="full"` on a profile that can't resume (e.g. `gemini`) fails validation |
-| `thread_id` | string | the node id | Agent nodes only. Nodes with the same `thread_id` share one agent session |
+| `thread_id` | string | the node id | Agent nodes only. Nodes with the same `thread_id` share one agent session; they must use the same agent profile |
 | `timeout` | duration | -- | Deadline around each handler attempt: `120s`, `600s`, `15m`, `1h` |
 | `tool_command` | string | -- | Shell command for `parallelogram` nodes |
 | `class` | string | -- | Space-separated class list for stylesheet matching |

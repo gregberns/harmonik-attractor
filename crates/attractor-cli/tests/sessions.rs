@@ -428,3 +428,37 @@ fn wait_exit(child: &mut Child) -> std::process::ExitStatus {
 fn uuid_like(id: &str) -> bool {
     id.len() == 36 && id.chars().filter(|c| *c == '-').count() == 4
 }
+
+#[test]
+fn pas_validate_refuses_one_thread_id_across_different_profiles() {
+    let fake = FakeAgent::new();
+    let pipeline = fake.repo().join("shared.dot");
+    fs::write(
+        &pipeline,
+        r#"digraph G {
+            start [shape="Mdiamond"]
+            a [shape="box", agent="fake-claude", prompt="a", thread_id="t"]
+            b [shape="box", agent="fake-codex", prompt="b", thread_id="t"]
+            done [shape="Msquare"]
+            start -> a -> b -> done
+        }"#,
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_pas"))
+        .args(["validate", "--allow-test-agents"])
+        .arg(&pipeline)
+        .current_dir(fake.repo())
+        .env("HOME", fake.home())
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    assert!(
+        text.contains("thread 't' is shared by nodes 'a', 'b' with different agent profiles"),
+        "{text}"
+    );
+}

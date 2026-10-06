@@ -283,7 +283,9 @@ A node that runs again (a retry, or a loop back to it) continues its agent's
 session by default (design §1):
 
 - **Thread:** a node's session is recorded under its thread key, its
-  `thread_id` or else its node id; nodes with one `thread_id` share it. The
+  `thread_id` or else its node id; nodes with one `thread_id` share it, and
+  must use the same profile (`pas validate` refuses a thread shared across
+  profiles, since one agent can't resume another's session). The
   map lives in `checkpoint.json` (`agent_sessions`), so it survives a stop
   and a resume.
 - **Fidelity:** `fidelity="full"` (the default when the profile can resume)
@@ -309,8 +311,9 @@ session by default (design §1):
   Claude's "No conversation found with session ID" is a reported failure
   (routable as a fail); Codex's missing thread exits 1 and stops the Run as
   a crash. The map keeps the dead id, so a fail edge looping back to the
-  node fails the same way: set `fidelity="fresh"` on it, or start over with
-  `pas run --fresh`.
+  node fails the same way, until the Run's step limit: route a not-found
+  failure to a node with `fidelity="fresh"` or a different `thread_id`, or
+  start over with `pas run --fresh`.
 
 A project replaces a profile by name, or adds one, in `pas.toml`:
 

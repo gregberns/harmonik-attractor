@@ -263,6 +263,38 @@ pub fn check_agents(
             });
         }
     }
+    // A thread's session belongs to one agent: nodes with different profiles
+    // can't share a thread key, or one would resume the other's session.
+    let mut threads: std::collections::BTreeMap<&str, Vec<&AgentSession>> =
+        std::collections::BTreeMap::new();
+    let sessions = agent_sessions(plan, agents);
+    for session in &sessions {
+        threads
+            .entry(session.thread_key.as_str())
+            .or_default()
+            .push(session);
+    }
+    for (thread, members) in threads {
+        let mut profiles: Vec<&str> = members.iter().map(|s| s.profile.as_str()).collect();
+        profiles.sort_unstable();
+        profiles.dedup();
+        if profiles.len() < 2 {
+            continue;
+        }
+        let nodes: Vec<String> = members.iter().map(|s| format!("'{}'", s.node_id)).collect();
+        diagnostics.push(Diagnostic {
+            rule: "agent_session".into(),
+            severity: Severity::Error,
+            message: format!(
+                "thread '{thread}' is shared by nodes {} with different agent profiles ({})",
+                nodes.join(", "),
+                profiles.join(", ")
+            ),
+            node_id: members.first().map(|s| s.node_id.clone()),
+            edge: None,
+            fix: Some("Use one profile per thread_id, or separate thread_ids".into()),
+        });
+    }
     // `allowed_tools` and `max_budget_usd` reach the agent as `claude-p`
     // flags, so only a `claude-p` profile takes them.
     for (node_id, selection) in &nodes {
