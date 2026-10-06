@@ -324,3 +324,24 @@ fn stop_grace_is_the_longest_kill_grace_plus_the_margin() {
     assert_eq!(agents.max_kill_grace(), Duration::from_secs(3));
     assert_eq!(agents.stop_grace(), Duration::from_secs(4));
 }
+
+#[test]
+fn stop_grace_saturates_instead_of_overflowing() {
+    let mut huge = profile("huge", "fake");
+    huge.kill_grace = Duration::MAX;
+    let agents = Agents::new(vec![Recorder::new("fake")], vec![huge], BTreeMap::new()).unwrap();
+    assert_eq!(agents.stop_grace(), Duration::MAX);
+}
+
+#[tokio::test]
+async fn a_huge_timeout_does_not_overflow_the_hard_deadline() {
+    let agents = Agents::new(
+        vec![Recorder::new("fake")],
+        vec![profile("p", "fake")],
+        BTreeMap::new(),
+    )
+    .unwrap();
+    let mut req = request("p", None);
+    req.timeout = Duration::MAX;
+    assert_eq!(agents.run(req).await.status, AgentStatus::Completed);
+}

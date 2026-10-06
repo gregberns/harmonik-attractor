@@ -350,7 +350,7 @@ Success: `{"v":1,"ok":true,"run_id":"…","stop_path":"…","already_requested":
 ### `kill` — End an active Run now
 
 ```
-pas kill <run-id> [--grace 10s] [--json]
+pas kill <run-id> [--grace 20s] [--json]
 ```
 
 Ends a `running` Run immediately. `pas kill` takes the PID of the Run's last Heartbeat (else its `AttemptStarted`) and signals it only if that PID provably is the Run: the Pipeline lock (`run.lock`) must be held right now, and the lock file must name that PID and this Run. Otherwise it sends no signal and fails with `pid_not_lock_holder`. A Run that is not `running` fails with `not_active`, also without a signal.
@@ -363,7 +363,7 @@ It sends SIGTERM to the Run's process group (only when the Run leads its group; 
 
 | Flag | Meaning |
 |------|---------|
-| `--grace <duration>` | Time between SIGTERM and SIGKILL, e.g. `500ms`, `10s`, `1m` (default `10s`) |
+| `--grace <duration>` | Time between SIGTERM and SIGKILL, e.g. `500ms`, `10s`, `1m` (default `20s`: longer than a stopped Run waits for its agent, 10 s grace plus 5 s, so the Run still journals `AttemptEnded`) |
 | `--json` | Print one JSON object |
 
 #### Output

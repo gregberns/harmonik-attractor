@@ -165,8 +165,10 @@ enum Commands {
         /// Run ID (a UUID from `pas runs`)
         run_id: String,
 
-        /// How long to wait after SIGTERM before SIGKILL (e.g. 500ms, 10s, 1m)
-        #[arg(long, default_value = "10s")]
+        /// How long to wait after SIGTERM before SIGKILL (e.g. 500ms, 10s, 1m).
+        /// The default is longer than a stopped Run waits for its agent (10 s
+        /// grace + 5 s), so the Run can still journal its own end.
+        #[arg(long, default_value = "20s")]
         grace: String,
 
         /// Print one JSON object `{"v":1,"ok":...,"run_id":...}`

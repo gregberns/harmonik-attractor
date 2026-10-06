@@ -141,7 +141,8 @@ impl Agents {
     /// How long a stopped Run should wait for its agents before giving up:
     /// the longest `kill_grace` plus the hard-deadline margin.
     pub fn stop_grace(&self) -> Duration {
-        self.max_kill_grace() + self.hard_deadline_margin
+        self.max_kill_grace()
+            .saturating_add(self.hard_deadline_margin)
     }
 
     /// No handlers and no profiles: every `run` fails as `Launch`.
@@ -185,7 +186,10 @@ impl Agents {
                     cancel: req.cancel.clone(),
                     spawned: &spawned,
                 };
-                let deadline = req.timeout + profile.kill_grace + self.hard_deadline_margin;
+                let deadline = req
+                    .timeout
+                    .saturating_add(profile.kill_grace)
+                    .saturating_add(self.hard_deadline_margin);
                 match tokio::time::timeout(deadline, handler.run(inv)).await {
                     Ok(result) => result,
                     Err(_elapsed) => AgentResult::failed(

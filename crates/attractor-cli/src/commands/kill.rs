@@ -1,4 +1,4 @@
-//! `pas kill <run-id> [--grace 10s] [--json]`: end an active Run now (spec
+//! `pas kill <run-id> [--grace 20s] [--json]`: end an active Run now (spec
 //! File Change 12, C1, C3, C5, C6).
 //!
 //! The PID comes from the Run's last Heartbeat. It is signalled only when it

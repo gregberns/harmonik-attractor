@@ -13,8 +13,10 @@ use tokio_util::sync::CancellationToken;
 use crate::process_group::{self, ProcessGroupGuard};
 use crate::provider_stream::{run_streaming, StderrLog, StreamedOutput, Transcript};
 
-/// How long to wait for a SIGKILLed child to be reaped.
-const REAP_BOUND: Duration = Duration::from_secs(5);
+/// How long to wait for a SIGKILLed child to be reaped. Kept well under the
+/// `Agents` hard-deadline margin (5 s), so a slow reap still ends as the
+/// handler's own timeout.
+const REAP_BOUND: Duration = Duration::from_secs(2);
 
 /// How a local process run ended.
 #[derive(Debug)]
@@ -154,8 +156,10 @@ where
     match tokio::time::timeout(kill_grace, streaming.as_mut()).await {
         // The process ended and was waited on: nothing left to kill.
         Ok(Ok(_)) => {}
-        // Not reaped yet, so its pid (and the group id) can't have been
-        // reused: KILL is safe.
+        // Streaming has not finished. Usually the leader is not reaped yet,
+        // so the group id can't have been reused; if the leader was reaped
+        // while another member still holds the pipe, the group lives on
+        // through that member. Either way KILL reaches only this group.
         Ok(Err(_)) | Err(_) => signal_group(pgid, Signal::Kill),
     }
 }
