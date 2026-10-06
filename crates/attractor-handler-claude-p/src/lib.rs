@@ -23,9 +23,14 @@ impl ClaudeP {
     pub const MECHANISM: &'static str = "claude-p";
 }
 
-impl ClaudeP {
+#[async_trait]
+impl AgentHandler for ClaudeP {
+    fn mechanism(&self) -> &'static str {
+        Self::MECHANISM
+    }
+
     /// The invocation's argv followed by the flags the parser depends on.
-    pub fn argv(inv: &Invocation<'_>) -> Vec<String> {
+    fn argv(&self, inv: &Invocation<'_>) -> Vec<String> {
         let mut argv = inv.argv.clone();
         argv.extend([
             "-p".to_string(),
@@ -35,13 +40,6 @@ impl ClaudeP {
             "--verbose".to_string(),
         ]);
         argv
-    }
-}
-
-#[async_trait]
-impl AgentHandler for ClaudeP {
-    fn mechanism(&self) -> &'static str {
-        Self::MECHANISM
     }
 
     async fn run(&self, inv: Invocation<'_>) -> AgentResult {
@@ -54,7 +52,7 @@ impl AgentHandler for ClaudeP {
             })
         };
         let local = run_local(
-            &Self::argv(&inv),
+            &self.argv(&inv),
             &inv.env,
             inv.workdir,
             inv.transcript,

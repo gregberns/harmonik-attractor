@@ -161,22 +161,26 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
         },
         transcript: None,
         stderr: None,
+        prompt_file: None,
         observer: None,
         cancel: CancellationToken::new(),
     };
-    attractor_handler_claude_p::ClaudeP::argv(&Invocation {
-        invocation_id: "i",
-        argv: argv(&builtin_profiles()[0], &request),
-        env: Default::default(),
-        prompt: "test prompt",
-        workdir: Path::new("."),
-        timeout: DEFAULT_TIMEOUT,
-        kill_grace: attractor_agent_handler::DEFAULT_KILL_GRACE,
-        transcript: None,
-        stderr: None,
-        cancel: CancellationToken::new(),
-        spawned: &|_| {},
-    })
+    attractor_agent_handler::AgentHandler::argv(
+        &attractor_handler_claude_p::ClaudeP,
+        &Invocation {
+            invocation_id: "i",
+            argv: argv(&builtin_profiles()[0], &request),
+            env: Default::default(),
+            prompt: "test prompt",
+            workdir: Path::new("."),
+            timeout: DEFAULT_TIMEOUT,
+            kill_grace: attractor_agent_handler::DEFAULT_KILL_GRACE,
+            transcript: None,
+            stderr: None,
+            cancel: CancellationToken::new(),
+            spawned: &|_| {},
+        },
+    )
 }
 
 #[test]
@@ -672,8 +676,14 @@ mod transcripts {
             "{error}"
         );
         assert_eq!(transcripts(&run_dir), Vec::<PathBuf>::new());
-        // No stderr log either: nothing at all under transcripts/.
-        assert!(!run_dir.join("transcripts").exists());
+        // No stderr log either: only the prompt file, which is written
+        // before the agent starts (ticket 12).
+        let names: Vec<String> = std::fs::read_dir(run_dir.join("transcripts"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names.len(), 1, "{names:?}");
+        assert!(names[0].ends_with(".prompt.txt"), "{names:?}");
     }
 
     // AC2: the Transcript grows while the provider is still running.

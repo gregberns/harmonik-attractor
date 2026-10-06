@@ -572,6 +572,7 @@ impl CodergenHandler {
             .map(attractor_journal::RunDir::from_path);
         let transcript = run_dir.as_ref().map(|dir| dir.transcript(&invocation_id));
         let stderr = run_dir.as_ref().map(|dir| dir.stderr(&invocation_id));
+        let prompt_file = run_dir.as_ref().map(|dir| dir.prompt(&invocation_id));
         // `LlmStarted` needs a Run folder: its paths are relative to it.
         let journal_starts = match (controls.events, &controls.run_dir) {
             (Some(events), Some(_)) => Some(StartedJournal { events }),
@@ -616,6 +617,7 @@ impl CodergenHandler {
                 },
                 transcript,
                 stderr,
+                prompt_file,
                 observer: journal_starts
                     .as_ref()
                     .map(|observer| observer as &dyn AgentObserver),

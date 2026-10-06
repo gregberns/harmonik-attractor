@@ -10,6 +10,7 @@ description = "The agent handler interface and the Agents registry the PAS engin
 async-trait = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

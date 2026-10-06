@@ -132,6 +132,7 @@ fn request<'a>(profile: &str, observer: Option<&'a dyn AgentObserver>) -> AgentR
         },
         transcript: Some(PathBuf::from("/run/transcripts/inv-1.jsonl")),
         stderr: Some(PathBuf::from("/run/transcripts/inv-1.stderr.log")),
+        prompt_file: None,
         observer,
         cancel: CancellationToken::new(),
     }

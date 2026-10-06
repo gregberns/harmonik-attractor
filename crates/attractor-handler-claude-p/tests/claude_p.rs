@@ -148,6 +148,7 @@ impl Fixture {
             },
             transcript: Some(self.transcript()),
             stderr: Some(self.stderr()),
+            prompt_file: None,
             observer: None,
             cancel: CancellationToken::new(),
         }
@@ -589,4 +590,69 @@ async fn a_cancel_sends_term_and_returns_cancelled() {
 
     assert_eq!(result.status, AgentStatus::Cancelled);
     assert_eq!(fx.read("term").trim(), "term");
+}
+
+/// Records whether the prompt file existed when the agent started.
+struct PromptFileSeen {
+    path: PathBuf,
+    seen: Mutex<Option<bool>>,
+}
+
+impl AgentObserver for PromptFileSeen {
+    fn started(&self, _started: &Started) {
+        *self.seen.lock().unwrap() = Some(self.path.is_file());
+    }
+
+    fn finished(&self, _result: &AgentResult) {}
+}
+
+#[tokio::test]
+async fn the_prompt_file_is_written_before_the_agent_starts_without_env_values() {
+    let fx = Fixture::new();
+    fx.scenario("scenario=success");
+    let path = fx.dir.path().join("transcripts/inv-42.prompt.txt");
+    let observer = PromptFileSeen {
+        path: path.clone(),
+        seen: Mutex::new(None),
+    };
+    let mut req = fx.request(Duration::from_secs(20));
+    req.prompt_file = Some(path.clone());
+    req.observer = Some(&observer);
+
+    let result = fx
+        .agents(fake_claude(), &[("PAS_TEST_SECRET", "s3cr3t-value")])
+        .run(req)
+        .await;
+
+    assert_eq!(result.status, AgentStatus::Completed, "{}", result.detail);
+    assert_eq!(*observer.seen.lock().unwrap(), Some(true));
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(
+        text.starts_with("pas prompt file v1\ninvocation: inv-42\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("\n-p\n<prompt>\n--output-format\nstream-json\n--verbose\n"),
+        "{text}"
+    );
+    assert!(text.contains("\nPAS_TEST_SECRET\n"), "{text}");
+    assert!(text.contains("\nPAS_NODE_ID\n"), "{text}");
+    assert!(text.ends_with("prompt:\ndo the work"), "{text}");
+    assert!(!text.contains("s3cr3t-value"), "{text}");
+}
+
+#[tokio::test]
+async fn a_launch_failure_still_leaves_the_prompt_file() {
+    let fx = Fixture::new();
+    let path = fx.dir.path().join("transcripts/inv-42.prompt.txt");
+    let mut req = fx.request(Duration::from_secs(5));
+    req.prompt_file = Some(path.clone());
+
+    let result = fx
+        .agents(fx.dir.path().join("no-such-claude"), &[])
+        .run(req)
+        .await;
+
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::Launch));
+    assert!(path.is_file());
 }

@@ -51,6 +51,12 @@ pub fn stderr_rel_path(invocation_id: &str) -> String {
     format!("{TRANSCRIPTS_DIR}/{invocation_id}.stderr.log")
 }
 
+/// `transcripts/<invocation-id>.prompt.txt`: what an agent was started with
+/// (prompt, argv, environment variable names), relative to its Run folder.
+pub fn prompt_rel_path(invocation_id: &str) -> String {
+    format!("{TRANSCRIPTS_DIR}/{invocation_id}.prompt.txt")
+}
+
 /// Validate a Run ID and normalize it to lowercase hyphenated form.
 ///
 /// Returns `None` for anything that is not a UUID, so a Run ID taken from the
@@ -148,6 +154,11 @@ impl RunDir {
     /// `transcripts/<invocation-id>.stderr.log`: a provider's stderr log.
     pub fn stderr(&self, invocation_id: &str) -> PathBuf {
         self.0.join(stderr_rel_path(invocation_id))
+    }
+
+    /// `transcripts/<invocation-id>.prompt.txt`: an agent's prompt file.
+    pub fn prompt(&self, invocation_id: &str) -> PathBuf {
+        self.0.join(prompt_rel_path(invocation_id))
     }
 
     pub fn answers_dir(&self) -> PathBuf {
@@ -285,6 +296,16 @@ mod tests {
         let r = RunDir::from_path("/r/runs/x");
         assert_eq!(r.stderr(id), r.path().join(&rel));
         assert_eq!(r.stderr(id).parent().unwrap(), r.transcripts_dir());
+    }
+
+    #[test]
+    fn prompt_rel_path_is_relative_and_matches_run_dir_prompt() {
+        let id = "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b";
+        let rel = prompt_rel_path(id);
+        assert_eq!(rel, format!("transcripts/{id}.prompt.txt"));
+        assert!(Path::new(&rel).is_relative());
+        let r = RunDir::from_path("/r/runs/x");
+        assert_eq!(r.prompt(id), r.path().join(&rel));
     }
 
     #[test]

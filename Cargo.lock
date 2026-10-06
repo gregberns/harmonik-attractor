@@ -131,6 +131,7 @@ dependencies = [
  "async-trait",
  "tokio",
  "tokio-util",
+ "tracing",
 ]
 
 [[package]]

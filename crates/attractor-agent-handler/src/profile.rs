@@ -92,6 +92,7 @@ mod tests {
             },
             transcript: None,
             stderr: None,
+            prompt_file: None,
             observer: None,
             cancel: tokio_util::sync::CancellationToken::new(),
         }

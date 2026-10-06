@@ -47,6 +47,8 @@ pub struct AgentRequest<'a> {
     pub transcript: Option<PathBuf>,
     /// Where the handler writes the agent's stderr as it arrives, if anywhere.
     pub stderr: Option<PathBuf>,
+    /// Where `Agents::run` writes the prompt file before the handler starts.
+    pub prompt_file: Option<PathBuf>,
     /// Told when each process starts and once when the invocation ends.
     pub observer: Option<&'a dyn AgentObserver>,
     /// Cancelled when the Run is stopped: the handler stops the agent

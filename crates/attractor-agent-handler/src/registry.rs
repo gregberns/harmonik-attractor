@@ -10,6 +10,7 @@ use async_trait::async_trait;
 
 use crate::env::child_env;
 use crate::profile::{argv, Profile};
+use crate::prompt_file::{prompt_file_text, write_prompt_file};
 use crate::types::{AgentRequest, AgentResult, FailureClass, Invocation, Spawned, Started, Usage};
 
 /// How long past `timeout + kill_grace` `Agents` waits for a handler that
@@ -21,6 +22,12 @@ pub const HARD_DEADLINE_MARGIN: Duration = Duration::from_secs(5);
 pub trait AgentHandler: Send + Sync {
     /// The `mechanism` name profiles use.
     fn mechanism(&self) -> &'static str;
+    /// The complete argv the handler starts the agent with: `inv.argv` plus
+    /// the handler's own flags. The prompt file records it, so a handler
+    /// must spawn with exactly this.
+    fn argv(&self, inv: &Invocation<'_>) -> Vec<String> {
+        inv.argv.clone()
+    }
     /// Run one invocation to its end. Never returns an error.
     async fn run(&self, inv: Invocation<'_>) -> AgentResult;
     /// Usage read from a transcript (the agent's stdout so far). Never
@@ -186,6 +193,24 @@ impl Agents {
                     cancel: req.cancel.clone(),
                     spawned: &spawned,
                 };
+                if let Some(path) = &req.prompt_file {
+                    let text = prompt_file_text(
+                        &req.record.invocation_id,
+                        &req.record.node_id,
+                        req.record.attempt,
+                        &handler.argv(&inv),
+                        &inv.env,
+                        &req.prompt,
+                    );
+                    // Observability: a failed write never stops the agent.
+                    if let Err(error) = write_prompt_file(path, &text) {
+                        tracing::warn!(
+                            path = %path.display(),
+                            %error,
+                            "cannot write the prompt file"
+                        );
+                    }
+                }
                 let deadline = req
                     .timeout
                     .saturating_add(profile.kill_grace)
