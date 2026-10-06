@@ -183,7 +183,7 @@ case $scenario in
         ;;
     bad_result)
         init
-        json='{"type":"result","subtype":"success","is_error":false}'
+        json='{"type":"result","subtype":"success","is_error":false,"num_turns":"many"}'
         printf '%s\n' "$json"
         exit "$code"
         ;;

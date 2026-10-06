@@ -72,7 +72,7 @@ isn't atomic: use one `flaky` node per test and no parallel branches.
 | `slow` | init, three assistant lines 0.2 s apart, then success | 0 |
 | `edit_commit` | writes `fake-edit.txt` in its cwd, commits it as `fake-claude edit`, then success | 0 |
 | `flaky` | hangs while its start count is at most `fails` (default 1), then success | 0 |
-| `bad_result` | init, then `{"type":"result","subtype":"success","is_error":false}` (no `total_cost_usd`, `num_turns`, `result` or `session_id`) | `exit` (default 0) |
+| `bad_result` | init, then `{"type":"result","subtype":"success","is_error":false,"num_turns":"many"}`, a result line that doesn't deserialize (`num_turns` is a string) | `exit` (default 0) |
 | `stdin` | reads stdin to the end, writes the byte count to `stdin.bytes`, then success | 0 |
 
 `flaky` fails by hanging because a timeout is the only error PAS retries
