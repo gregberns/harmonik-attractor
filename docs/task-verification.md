@@ -14,7 +14,8 @@ bound handler, it expects a well-formed `Outcome` response.
 - **Handler Execution:** After successful plan binding, a handler execution failure is a `HandlerError`; handler identity is not re-derived from node attributes during dispatch.
 - **Typed Provider Handlers:** A provider-consuming custom handler exposes a `ProviderNodeHandler` through `NodeHandler::provider_handler`. Provider capability is derived from that typed executor, whose required method receives the normalized `ResolvedNode`; it cannot opt in to provider use while inheriting raw-node dispatch.
 - **Timeout / Budget Guards:** The engine enforces a compiled timeout around every handler attempt. Each attempt consumes `max_steps`, and `max_budget_usd` is checked throughout execution.
-- **Failure on No Response:** If a handler returns `StageStatus::Fail` and there is no outgoing edge to handle the failure, the pipeline terminates with a `HandlerError`.
+- **Failure on No Response:** If a handler returns `StageStatus::Fail` and the node has no outgoing edge, the pipeline terminates with a `HandlerError`. If the node has outgoing edges but none applies (see [Edge selection](#edge-selection-algorithm)), the pipeline stops with "node '<id>' outcome <status> matched no outgoing edge (conditions: ...)", whatever the status.
+- **Retry on the Last Attempt:** A handler that still returns `StageStatus::Retry` on its last attempt (`max_retries` used up) stops the pipeline with "node '<id>' still retrying after <n> attempts"; it is not routed as a completed stage.
 
 **Relevant code:** `crates/attractor-pipeline/src/execution_plan.rs` —
 `ensure_registry_compatible()`; `crates/attractor-pipeline/src/engine.rs` — plan
@@ -105,11 +106,37 @@ Conditions can reference:
 
 ### Edge selection algorithm
 
-1. Check edges with matching conditions first
-2. Fall back to `preferred_label` match
-3. Fall back to `suggested_next_ids` from the handler
-4. Fall back to `default=true` edge
-5. Fall back to the single unconditional edge (if only one exists)
+1. An edge whose `condition` holds (if several, highest `weight`, then
+   lexical target order). A conditional edge is taken **only** this way.
+2. Else, an **unconditional** edge whose `label` matches the outcome's
+   `preferred_label`.
+3. Else, an **unconditional** edge to one of the outcome's
+   `suggested_next_ids`.
+4. Else, the unconditional edge with the highest `weight`, then lexical
+   target order.
+
+A preferred label or suggested next id never selects a conditional edge whose
+condition is false. To route on a label, put it in the condition:
+`condition="preferred_label=PASS"`.
+
+**When no edge applies** (every outgoing edge is conditional and none holds),
+the run stops with an error naming the node, its outcome and the conditions:
+
+```
+node 'check' outcome fail matched no outgoing edge (conditions: outcome=success)
+```
+
+There is no fallback to the first edge. The node's `StageCompleted` (with its
+real status) is journalled first; then the error goes to `PipelineFailed` and
+`pas run`'s stderr. For a non-`fail` outcome this deliberately diverges from the
+upstream Attractor spec (lines 390-392), which ends the run normally: edges
+that match nothing are a graph mistake to report, not a success. A node with
+no outgoing edges at all ends the run as before (or errors, for `fail`).
+
+After this error, or "still retrying" above, the checkpoint still names the
+stopped node with its attempts used, so running the same `pas run` command
+again reports "Max retries exhausted for node '<id>'". Use `--fresh` to start
+over.
 
 This enables verification patterns like "if tests pass, deploy; if tests partially pass, run extended tests; if tests fail, loop back to fix."
 

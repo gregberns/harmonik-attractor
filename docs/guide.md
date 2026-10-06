@@ -456,13 +456,15 @@ Errors prevent execution. Warnings are reported but don't block.
 
 When a node completes, the engine selects the next edge using a 5-step priority cascade:
 
-1. **Condition match** — Edges with a `condition` that evaluates to true. If multiple match, highest weight wins, then lexical order.
-2. **Preferred label** — Edge whose `label` matches the outcome's `preferred_label` (case-insensitive, strips `&` accelerators).
-3. **Suggested next ID** — Edge whose target matches one of the outcome's `suggested_next_ids`.
-4. **Highest weight** — Edge with the highest `weight` value.
-5. **Lexical tiebreak** — First edge by alphabetical target node ID.
+1. **Condition match** — Edges with a `condition` that evaluates to true. If multiple match, highest weight wins, then lexical order. A conditional edge is only ever taken this way.
+2. **Preferred label** — An *unconditional* edge whose `label` matches the outcome's `preferred_label` (case-insensitive, strips `&` accelerators).
+3. **Suggested next ID** — An *unconditional* edge whose target matches one of the outcome's `suggested_next_ids`.
+4. **Highest weight** — The unconditional edge with the highest `weight` value.
+5. **Lexical tiebreak** — Among those, the first by alphabetical target node ID.
 
-If no edge matches and the node's status is `Fail`, the pipeline errors. Otherwise it terminates normally.
+To route on an LLM-extracted label, write the label into the condition: `condition="preferred_label=PASS"` (as in the examples below). A label on a conditional edge whose condition is false is never followed, so an agent that failed but ended its text with `PASS` does not take `[label="PASS", condition="outcome=success"]`.
+
+If the node has outgoing edges and none applies, the run stops with `node '<id>' outcome <status> matched no outgoing edge (conditions: ...)`, whatever the status; there is no fallback to the first edge (this differs on purpose from the upstream spec, which ends the run normally for a non-fail outcome). If the node has no outgoing edges, a `Fail` errors and any other status ends the run normally. A resume after the error reports "Max retries exhausted" for the node; use `--fresh` to start over.
 
 ---
 
@@ -1014,8 +1016,10 @@ The provider's CLI binary isn't in your PATH, or it returned a non-zero exit cod
 ### Node always takes the same branch
 
 The prompted conditional handler scans the selected provider's response for edge
-labels. If the provider doesn't output the label clearly, the first edge wins.
-Fix this by being explicit in the prompt:
+labels. If the provider doesn't output a label clearly and the node's edges are
+all conditional, the run stops with "matched no outgoing edge"; an unconditional
+edge, if there is one, is taken instead. Fix this by being explicit in the
+prompt:
 
 ```
 You MUST end your response with exactly one of: PASS, FAIL
