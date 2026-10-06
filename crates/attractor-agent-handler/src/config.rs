@@ -2,7 +2,7 @@
 //! project's `pas.toml` `[agents.<name>]`, layered and resolved into
 //! [`Profile`]s. Pure: parsing and merging, no I/O.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -68,6 +68,9 @@ pub struct AgentsConfig {
     pub defaults: ProfileConfig,
     #[serde(default)]
     pub profiles: BTreeMap<String, ProfileConfig>,
+    /// Built-in profiles an override replaced, so a missing field can say so.
+    #[serde(skip)]
+    replaced: BTreeSet<String>,
 }
 
 impl AgentsConfig {
@@ -85,7 +88,13 @@ impl AgentsConfig {
     /// `overrides` replaces the one of the same name whole.
     pub fn with_overrides(mut self, overrides: &BTreeMap<String, ProfileConfig>) -> Self {
         for (name, profile) in overrides {
-            self.profiles.insert(name.clone(), profile.clone());
+            if self
+                .profiles
+                .insert(name.clone(), profile.clone())
+                .is_some()
+            {
+                self.replaced.insert(name.clone());
+            }
         }
         self
     }
@@ -95,7 +104,20 @@ impl AgentsConfig {
     pub fn resolve(&self) -> Result<Vec<Profile>, ConfigError> {
         self.profiles
             .keys()
-            .map(|name| resolve_one(name, &self.profiles, &self.defaults))
+            .map(|name| {
+                resolve_one(name, &self.profiles, &self.defaults).map_err(|error| match error {
+                    ConfigError::MissingField { profile, field, .. }
+                        if self.replaced.contains(&profile) =>
+                    {
+                        ConfigError::MissingField {
+                            profile,
+                            field,
+                            replaced_builtin: true,
+                        }
+                    }
+                    other => other,
+                })
+            })
             .collect()
     }
 }
@@ -169,6 +191,7 @@ fn into_profile(name: &str, config: ProfileConfig) -> Result<Profile, ConfigErro
     let missing = |field: &'static str| ConfigError::MissingField {
         profile: name.to_string(),
         field,
+        replaced_builtin: false,
     };
     let duration = |field: &'static str, value: Option<String>| {
         let value = value.ok_or_else(|| missing(field))?;
@@ -409,7 +432,8 @@ mod tests {
             err,
             ConfigError::MissingField {
                 profile: "x".into(),
-                field: "command"
+                field: "command",
+                replaced_builtin: false
             }
         );
         let err = config(BASE)
@@ -420,9 +444,35 @@ mod tests {
             err,
             ConfigError::MissingField {
                 profile: "x".into(),
-                field: "mechanism"
+                field: "mechanism",
+                replaced_builtin: false
             }
         );
+    }
+
+    #[test]
+    fn a_replaced_builtin_missing_a_field_says_it_was_replaced_whole() {
+        let err = AgentsConfig::builtin()
+            .unwrap()
+            .with_overrides(&overrides("[claude]\nmodel = \"opus\"\n"))
+            .resolve()
+            .unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("agent profile claude has no "),
+            "{message}"
+        );
+        assert!(
+            message.contains("replaces the built-in claude profile whole"),
+            "{message}"
+        );
+        assert!(message.contains("inherit_from = \"claude\""), "{message}");
+        // A new profile missing a field gets no such hint.
+        let err = config(BASE)
+            .with_overrides(&overrides("[x]\nmechanism = \"m\"\n"))
+            .resolve()
+            .unwrap_err();
+        assert!(!err.to_string().contains("built-in"), "{err}");
     }
 
     #[test]

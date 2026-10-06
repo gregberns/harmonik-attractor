@@ -66,6 +66,8 @@ pub enum ConfigError {
     MissingField {
         profile: String,
         field: &'static str,
+        /// A `pas.toml` profile replaced the built-in one of this name.
+        replaced_builtin: bool,
     },
     BadDuration {
         profile: String,
@@ -100,8 +102,21 @@ impl fmt::Display for ConfigError {
             Self::InheritCycle { profile } => {
                 write!(f, "agent profile {profile} inherits from itself")
             }
-            Self::MissingField { profile, field } => {
-                write!(f, "agent profile {profile} has no {field}")
+            Self::MissingField {
+                profile,
+                field,
+                replaced_builtin,
+            } => {
+                write!(f, "agent profile {profile} has no {field}")?;
+                if *replaced_builtin {
+                    write!(
+                        f,
+                        " (a pas.toml profile replaces the built-in {profile} profile whole: \
+                         copy its fields, or define a new profile with \
+                         inherit_from = \"{profile}\")"
+                    )?;
+                }
+                Ok(())
             }
             Self::BadDuration {
                 profile,
