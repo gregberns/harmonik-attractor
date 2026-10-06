@@ -623,8 +623,14 @@ impl PipelineExecutor {
 
             let has_more_attempts = attempt + 1 < max_attempts;
             match result {
-                // Stopped: no StageFailed, no retry, no routing.
-                Err(error @ AttractorError::Cancelled { .. }) => return Err(error),
+                // Stopped: no StageFailed, no retry, no routing. The attempt
+                // did not finish, so it does not count: a resume runs it again
+                // (as for an interrupted waiting attempt above).
+                Err(error @ AttractorError::Cancelled { .. }) => {
+                    progress.active_node_attempts = attempt;
+                    checkpoint.save(&node.id, progress).await?;
+                    return Err(error);
+                }
                 Ok(outcome) if outcome.status == StageStatus::Retry && has_more_attempts => {
                     if let Some(cost) = outcome
                         .context_updates

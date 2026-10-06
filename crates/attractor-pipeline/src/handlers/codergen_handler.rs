@@ -563,7 +563,7 @@ impl CodergenHandler {
         let run_dir = controls
             .run_dir
             .as_ref()
-            .map(|run_dir| attractor_journal::RunDir::from_path(run_dir));
+            .map(attractor_journal::RunDir::from_path);
         let transcript = run_dir.as_ref().map(|dir| dir.transcript(&invocation_id));
         let stderr = run_dir.as_ref().map(|dir| dir.stderr(&invocation_id));
         // `LlmStarted` needs a Run folder: its paths are relative to it.
