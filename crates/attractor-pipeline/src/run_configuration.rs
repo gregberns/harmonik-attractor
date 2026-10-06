@@ -185,9 +185,24 @@ pub struct ResolvedConfig {
     quality_max_fix_iterations: HashMap<String, ResolvedValue<u32>>,
     claude: ResolvedClaudeConfig,
     manifest: Option<ResolvedManifest>,
+    run_worktree: Option<RunWorktreeInfo>,
+}
+
+/// The Run's own git worktree, where the engine commits each attempt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunWorktreeInfo {
+    /// The worktree's top folder (the workdir may be a folder inside it).
+    pub root: PathBuf,
+    pub run_id: String,
 }
 
 impl ResolvedConfig {
+    /// The Run's worktree; `None` when the Run works in place (a non-git
+    /// source or a dry run), and then no attempt is committed.
+    pub fn run_worktree(&self) -> Option<&RunWorktreeInfo> {
+        self.run_worktree.as_ref()
+    }
+
     pub fn dry_run(&self) -> &ResolvedValue<bool> {
         &self.dry_run
     }
@@ -253,6 +268,7 @@ impl fmt::Debug for ResolvedConfig {
             )
             .field("claude", &self.claude)
             .field("manifest", &self.manifest.as_ref().map(|m| &m.path))
+            .field("run_worktree", &self.run_worktree)
             .finish()
     }
 }
@@ -377,6 +393,7 @@ impl RunConfiguration {
             quality_max_fix_iterations: resolve_quality_limits(&plan, &options, manifest.as_ref())?,
             claude: resolve_claude(&options.claude, manifest_claude, manifest.as_ref())?,
             manifest,
+            run_worktree: None,
         };
 
         if *controls.max_steps.value() == 0 {
@@ -413,6 +430,18 @@ impl RunConfiguration {
         Self {
             controls: ResolvedConfig {
                 workdir: ResolvedValue::new(workdir, source),
+                ..self.controls
+            },
+            ..self
+        }
+    }
+
+    /// The same configuration with the Run's git worktree, where each
+    /// attempt is committed.
+    pub fn with_run_worktree(self, run_worktree: RunWorktreeInfo) -> Self {
+        Self {
+            controls: ResolvedConfig {
+                run_worktree: Some(run_worktree),
                 ..self.controls
             },
             ..self

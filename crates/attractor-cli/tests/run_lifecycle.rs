@@ -613,7 +613,20 @@ fn json_first_line_names_existing_run_dir() {
 
     let mut rest = String::new();
     std::io::Read::read_to_string(&mut stdout, &mut rest).unwrap();
-    assert_eq!(rest, "", "--json keeps stdout for the JSON line only");
+    // The only other stdout line is the last: the Run's final.json (ticket 07).
+    let rest_lines: Vec<&str> = rest.lines().collect();
+    assert_eq!(
+        rest_lines.len(),
+        1,
+        "--json keeps stdout for JSON lines only: {rest}"
+    );
+    assert!(rest.ends_with('\n'), "{rest:?}");
+    let last: Value = serde_json::from_str(rest_lines[0]).unwrap();
+    let report: Value =
+        serde_json::from_str(&fs::read_to_string(run_dir.join("final.json")).unwrap()).unwrap();
+    assert_eq!(last, report);
+    assert_eq!(last["run_id"], run_id);
+    assert_eq!(last["status"], "success");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Pipeline completed"), "{stderr}");
 }

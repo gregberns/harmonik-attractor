@@ -66,6 +66,13 @@ struct ExecutionProgress {
     total_handler_attempts: u64,
     active_node_id: Option<String>,
     active_node_attempts: usize,
+    /// The number of the active node's last attempt begun (D8).
+    active_attempt_number: Option<u32>,
+    /// The worktree's HEAD when that attempt started.
+    active_attempt_head: Option<String>,
+    /// Set when resuming a checkpoint with an attempt in progress; consumed
+    /// the first time that node is entered in this process.
+    resuming_attempt: bool,
 }
 
 struct CheckpointData<'a> {
@@ -102,6 +109,8 @@ impl CheckpointData<'_> {
         checkpoint.total_handler_attempts = progress.total_handler_attempts;
         checkpoint.active_node_id = progress.active_node_id.clone();
         checkpoint.active_node_attempts = progress.active_node_attempts;
+        checkpoint.active_attempt_number = progress.active_attempt_number;
+        checkpoint.active_attempt_head = progress.active_attempt_head.clone();
         save_checkpoint(&checkpoint, logs_root).await?;
         self.observers.emit(PipelineEvent::CheckpointSaved {
             node_id: current_node_id.to_string(),
@@ -527,7 +536,18 @@ impl PipelineExecutor {
         if progress.active_node_id.as_deref() != Some(&node.id) {
             progress.active_node_id = Some(node.id.clone());
             progress.active_node_attempts = 0;
+            progress.active_attempt_number = None;
+            progress.active_attempt_head = None;
+            progress.resuming_attempt = false;
         }
+        // An attempt `pas` never finished: record what it left, whether or
+        // not attempts are left, before anything else (work is never lost).
+        let resume_note = if std::mem::take(&mut progress.resuming_attempt) {
+            self.record_interrupted(configured, &node.id, progress)
+                .await?
+        } else {
+            None
+        };
         if progress.active_node_attempts >= max_attempts {
             return Err(AttractorError::RetriesExhausted {
                 node: node.id.clone(),
@@ -535,7 +555,9 @@ impl PipelineExecutor {
             });
         }
 
-        for attempt in progress.active_node_attempts..max_attempts {
+        let first_attempt = progress.active_node_attempts;
+        let first_number = next_attempt_number(progress.active_attempt_number, first_attempt);
+        for attempt in first_attempt..max_attempts {
             // A stopped Run starts nothing new and leaves the checkpoint as it
             // is, so a resume runs this node.
             if self.cancel.is_cancelled() {
@@ -552,6 +574,12 @@ impl PipelineExecutor {
             }
             progress.step_count += 1;
             progress.total_handler_attempts += 1;
+            let attempt_number = first_number
+                .saturating_add(u32::try_from(attempt - first_attempt).unwrap_or(u32::MAX));
+            let workdir = configured.controls().workdir().value();
+            let head_before = run_commits::head(workdir).await;
+            progress.active_attempt_number = Some(attempt_number);
+            progress.active_attempt_head = head_before.clone();
             // A waiting attempt the process does not live through is asked
             // again on resume rather than counted as used.
             progress.active_node_attempts = if handler.resumes_interrupted_attempt() {
@@ -562,8 +590,6 @@ impl PipelineExecutor {
             checkpoint.save(&node.id, progress).await?;
             progress.active_node_attempts = attempt + 1;
 
-            let workdir = configured.controls().workdir().value();
-            let head_before = run_commits::head(workdir).await;
             let task_before = claimed_task(checkpoint.context).await;
             self.emit(PipelineEvent::StageStarted {
                 node_id: node.id.clone(),
@@ -580,8 +606,10 @@ impl PipelineExecutor {
                     self.run_dir.as_deref(),
                     Some(&self.observers),
                     self.run_id.as_deref(),
-                    u32::try_from(attempt + 1).unwrap_or(u32::MAX),
+                    attempt_number,
                     &self.cancel,
+                    // Only the first attempt after an interrupted one.
+                    resume_note.as_deref().filter(|_| attempt == first_attempt),
                 ),
                 configured.plan().graph(),
             );
@@ -620,6 +648,10 @@ impl PipelineExecutor {
             .or(task_before);
             self.emit_run_commits(&node.id, workdir, head_before, task_id)
                 .await;
+            // Record the attempt, whatever its result, as one commit in the
+            // Run's worktree (after the agent's own commits).
+            self.commit_attempt(configured, resolved, &node.id, attempt_number, &result)
+                .await?;
 
             let has_more_attempts = attempt + 1 < max_attempts;
             match result {
@@ -717,6 +749,99 @@ impl PipelineExecutor {
             node: node.id.clone(),
             attempts: max_attempts,
         })
+    }
+
+    /// On resume, commit what an interrupted attempt left in the worktree
+    /// (`Pas-Status: interrupted`) and return the note for the next
+    /// attempt's prompt; `None` when it left nothing or there is no worktree.
+    async fn record_interrupted(
+        &self,
+        configured: &RunConfiguration,
+        node_id: &str,
+        progress: &ExecutionProgress,
+    ) -> Result<Option<String>> {
+        let Some(worktree) = configured.controls().run_worktree() else {
+            return Ok(None);
+        };
+        // Without a recorded number (an older checkpoint), the attempts used.
+        let attempt = progress.active_attempt_number.unwrap_or_else(|| {
+            u32::try_from(progress.active_node_attempts.max(1)).unwrap_or(u32::MAX)
+        });
+        let commit_failed = |message: String| AttractorError::AttemptCommitFailed {
+            node: node_id.to_string(),
+            attempt,
+            message,
+        };
+        let dirty = run_commits::is_dirty(&worktree.root)
+            .await
+            .map_err(commit_failed)?;
+        let head = run_commits::head(&worktree.root).await;
+        let start = progress.active_attempt_head.as_deref();
+        if !left_work(dirty, head.as_deref(), start) {
+            return Ok(None);
+        }
+        let commit = run_commits::AttemptCommit {
+            run_id: &worktree.run_id,
+            node: node_id,
+            attempt,
+            record: run_commits::AttemptRecord {
+                status: run_commits::AttemptStatus::Interrupted,
+                class: None,
+            },
+        };
+        let interrupted = run_commits::commit_attempt(&worktree.root, &commit)
+            .await
+            .map_err(commit_failed)?;
+        // The diff base: the attempt's start, so the note covers the agent's
+        // own commits too; without it, HEAD before the interrupted commit.
+        let base = start.map(str::to_string).or(head).unwrap_or_default();
+        Ok(Some(resume_note(&base, &interrupted)))
+    }
+
+    /// Commit the attempt in the Run's worktree, if it has one. Start and exit
+    /// nodes do no work and get no commit; a cancelled attempt is committed
+    /// as `interrupted` on resume instead. A failed commit stops the Run.
+    async fn commit_attempt(
+        &self,
+        configured: &RunConfiguration,
+        resolved: &crate::execution_plan::ResolvedNode,
+        node_id: &str,
+        attempt: u32,
+        result: &Result<Outcome>,
+    ) -> Result<()> {
+        let Some(worktree) = configured.controls().run_worktree() else {
+            return Ok(());
+        };
+        if matches!(
+            resolved.handler,
+            HandlerIdentity::Start | HandlerIdentity::Exit
+        ) {
+            return Ok(());
+        }
+        let Some(record) = run_commits::attempt_record(result) else {
+            return Ok(());
+        };
+        let commit = run_commits::AttemptCommit {
+            run_id: &worktree.run_id,
+            node: node_id,
+            attempt,
+            record,
+        };
+        match run_commits::commit_attempt(&worktree.root, &commit).await {
+            Ok(_sha) => Ok(()),
+            Err(message) => {
+                let error = AttractorError::AttemptCommitFailed {
+                    node: node_id.to_string(),
+                    attempt,
+                    message,
+                };
+                self.emit(PipelineEvent::StageFailed {
+                    node_id: node_id.to_string(),
+                    error: error.to_string(),
+                });
+                Err(error)
+            }
+        }
     }
 
     /// Emit one `CommitsCreated` when HEAD moved from `before` during a stage
@@ -897,8 +1022,11 @@ impl PipelineExecutor {
                 progress.step_count = cp.step_count;
                 progress.total_cost = cp.total_cost;
                 progress.total_handler_attempts = cp.total_handler_attempts;
+                progress.resuming_attempt = cp.active_node_id.is_some();
                 progress.active_node_id = cp.active_node_id;
                 progress.active_node_attempts = cp.active_node_attempts;
+                progress.active_attempt_number = cp.active_attempt_number;
+                progress.active_attempt_head = cp.active_attempt_head;
                 quality_loop_counters = cp.quality_loop_counters;
                 quality_last_footprint = cp.quality_last_footprint;
                 prev_node_id = cp.previous_node_id;
@@ -1285,6 +1413,33 @@ impl PipelineExecutor {
             }
         }
     }
+}
+
+/// The number of a node's next attempt in this visit: one past the last
+/// number begun (whether or not that attempt counted), else, with none
+/// recorded, the attempts used plus one, as before.
+fn next_attempt_number(last: Option<u32>, attempts_used: usize) -> u32 {
+    match last {
+        Some(last) => last.saturating_add(1),
+        None => u32::try_from(attempts_used)
+            .unwrap_or(u32::MAX)
+            .saturating_add(1),
+    }
+}
+
+/// Whether an interrupted attempt left work: uncommitted changes, or a HEAD
+/// that moved since it started (the agent committed). With no recorded start,
+/// only uncommitted changes count.
+fn left_work(dirty: bool, head: Option<&str>, start_head: Option<&str>) -> bool {
+    dirty || start_head.is_some_and(|start| head != Some(start))
+}
+
+/// The line added to the prompt of the attempt after an interrupted one.
+fn resume_note(base: &str, interrupted: &str) -> String {
+    format!(
+        "Your previous attempt was interrupted; its changes since {base} are recorded in \
+         commit {interrupted}. Review git diff {base} before continuing."
+    )
 }
 
 /// The error a stopped Run returns for `node`.

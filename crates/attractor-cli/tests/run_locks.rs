@@ -482,18 +482,31 @@ fn allow_shared_workdir_starts_and_records_it() {
         lock_contents(&run_worktree_lock(&s.repo(), &holder.run_id))["pid"],
         holder.pid()
     );
+    // B succeeded but did not remove the worktree the holder works in
+    // (ticket 07).
+    assert!(holder.worktree().is_dir());
+    let report: Value =
+        serde_json::from_str(&fs::read_to_string(b.join("final.json")).unwrap()).unwrap();
+    assert_eq!(report["status"], "success");
+    assert_eq!(report["worktree"], holder.worktree().to_str().unwrap());
+    assert!(report["warnings"][0]
+        .as_str()
+        .unwrap()
+        .contains("another process"));
 }
 
 // AC3 boundary: the flag alone, with no other Run, records false.
 #[test]
 fn allow_shared_workdir_without_contention_records_false() {
     let s = Scratch::git();
-    s.pipeline("b", QUICK);
-    assert_success(&s.run("b", &s.repo(), &["--allow-shared-workdir"]));
-    let b = only_run_dir(&s.logs("b"));
-    assert_eq!(run_started(&b)["data"]["shared_workdir"], false);
-    let run_id = run_started(&b)["run_id"].as_str().unwrap().to_string();
-    assert!(run_worktree_lock(&s.repo(), &run_id).is_file());
+    s.pipeline("b", WAITS);
+    // Held in its stage: a successful Run removes its worktree, and the
+    // lock with it (ticket 07).
+    let mut b = s.hold("b", &s.repo(), &["--allow-shared-workdir"]);
+    assert_eq!(run_started(&b.run_dir)["data"]["shared_workdir"], false);
+    assert!(run_worktree_lock(&s.repo(), &b.run_id).is_file());
+    b.go();
+    assert!(b.wait(Duration::from_secs(20)).success());
 }
 
 // AC4: two worktrees of one repository each have their own Worktree lock.
@@ -506,12 +519,13 @@ fn pipelines_in_two_worktrees_run_concurrently() {
         &["worktree", "add", "-q", "--detach", wt2.to_str().unwrap()],
     );
     s.pipeline("a", WAITS);
-    s.pipeline("b", QUICK);
+    s.pipeline("b", WAITS);
     let holder = s.hold("a", &s.repo(), &[]);
 
-    let output = s.run("b", &wt2, &[]);
-    assert_success(&output);
-    let b = only_run_dir(&s.logs("b"));
+    // Both held at once: a successful Run removes its worktree, and the
+    // lock with it (ticket 07).
+    let mut b_holder = s.hold("b", &wt2, &[]);
+    let b = b_holder.run_dir.clone();
     assert_eq!(run_started(&b)["data"]["shared_workdir"], false);
 
     // Each Run has its own worktree, made from the checkout it was given.
@@ -528,6 +542,8 @@ fn pipelines_in_two_worktrees_run_concurrently() {
         .as_str()
         .unwrap()
         .starts_with(fs::canonicalize(&wt2).unwrap().to_str().unwrap()));
+    b_holder.go();
+    assert!(b_holder.wait(Duration::from_secs(20)).success());
 }
 
 // AC5: after `kill -9` both locks are free with no cleanup: another

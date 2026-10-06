@@ -69,6 +69,15 @@ pub struct PipelineCheckpoint {
     /// Attempts already begun during the active node visit.
     #[serde(default)]
     pub active_node_attempts: usize,
+    /// The number of the active node's attempt in flight (`Pas-Attempt`,
+    /// `PAS_ATTEMPT`). Numbers never repeat within a visit, even when a
+    /// stopped attempt does not count toward `max_retries`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_attempt_number: Option<u32>,
+    /// The worktree's HEAD when that attempt started: what a resume compares
+    /// against to tell whether the interrupted attempt left work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_attempt_head: Option<String>,
     /// Fingerprint of the compiled execution plan this checkpoint belongs to.
     ///
     /// On resume the engine recomputes the fingerprint of the current plan
@@ -108,6 +117,8 @@ impl PipelineCheckpoint {
             total_handler_attempts: 0,
             active_node_id: None,
             active_node_attempts: 0,
+            active_attempt_number: None,
+            active_attempt_head: None,
             execution_fingerprint: None,
         }
     }
@@ -144,6 +155,8 @@ impl PipelineCheckpoint {
             total_handler_attempts: 0,
             active_node_id: None,
             active_node_attempts: 0,
+            active_attempt_number: None,
+            active_attempt_head: None,
             execution_fingerprint,
         }
     }

@@ -5,7 +5,7 @@
 //!   checkpoint.json
 //!   run.lock
 //!   runs/<run-id>/
-//!     run.json  events.jsonl  console.log
+//!     run.json  events.jsonl  console.log  final.json
 //!     transcripts/<invocation-id>.jsonl  transcripts/<invocation-id>.stderr.log
 //!     answers/<question-id>.json
 //!     control/stop
@@ -20,6 +20,7 @@ pub const RUNS_DIR: &str = "runs";
 pub const RUN_JSON: &str = "run.json";
 pub const EVENTS_FILE: &str = "events.jsonl";
 pub const CONSOLE_LOG: &str = "console.log";
+pub const FINAL_JSON: &str = "final.json";
 pub const TRANSCRIPTS_DIR: &str = "transcripts";
 pub const ANSWERS_DIR: &str = "answers";
 pub const CONTROL_DIR: &str = "control";
@@ -131,6 +132,11 @@ impl RunDir {
         self.0.join(CONSOLE_LOG)
     }
 
+    /// `final.json`: the Run's end report, written when a `pas run` ends.
+    pub fn final_json(&self) -> PathBuf {
+        self.0.join(FINAL_JSON)
+    }
+
     pub fn transcripts_dir(&self) -> PathBuf {
         self.0.join(TRANSCRIPTS_DIR)
     }
@@ -237,6 +243,7 @@ mod tests {
         assert_eq!(r.run_json(), Path::new(&format!("{root}/run.json")));
         assert_eq!(r.events(), Path::new(&format!("{root}/events.jsonl")));
         assert_eq!(r.console_log(), Path::new(&format!("{root}/console.log")));
+        assert_eq!(r.final_json(), Path::new(&format!("{root}/final.json")));
         assert_eq!(
             r.transcript("inv1"),
             Path::new(&format!("{root}/transcripts/inv1.jsonl"))

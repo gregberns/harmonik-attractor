@@ -70,6 +70,27 @@ pub enum AttractorError {
     #[error("Pipeline validation failed: {0}")]
     ValidationError(String),
 
+    /// An agent crashed, gave no result, or could not start (other than a
+    /// missing command). Displays exactly as `HandlerError` from `codergen`
+    /// did, so the messages don't change; `kind` is the attempt's failure
+    /// class for its commit.
+    #[error("Handler 'codergen' failed on node '{node}': {message}")]
+    AgentFailed {
+        node: String,
+        kind: FailureKind,
+        message: String,
+    },
+
+    /// The engine could not record an attempt as a commit; the Run stops
+    /// rather than lose the record. A resume commits the leftover changes as
+    /// `interrupted`.
+    #[error("node '{node}' attempt {attempt}: could not commit the attempt: {message}")]
+    AttemptCommitFailed {
+        node: String,
+        attempt: u32,
+        message: String,
+    },
+
     #[error("Handler '{handler}' failed on node '{node}': {message}")]
     HandlerError {
         handler: String,
@@ -157,7 +178,43 @@ pub enum AttractorError {
     Other(String),
 }
 
+/// Why an attempt failed, as its commit's `Pas-Failure-Class` trailer
+/// records it (design §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailureKind {
+    /// The agent finished and reported an error (a Fail outcome).
+    Reported,
+    Timeout,
+    Crash,
+    NoResult,
+    Launch,
+}
+
+impl FailureKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Reported => "reported",
+            Self::Timeout => "timeout",
+            Self::Crash => "crash",
+            Self::NoResult => "no_result",
+            Self::Launch => "launch",
+        }
+    }
+}
+
 impl AttractorError {
+    /// The failure class of an error that ended an attempt, when it has one:
+    /// timeouts, a missing CLI and an agent's crash, no result or launch
+    /// failure. Other errors (a tool's spawn error, a handler error) have none.
+    pub fn failure_kind(&self) -> Option<FailureKind> {
+        match self {
+            Self::AgentTimeout { .. } | Self::CommandTimeout { .. } => Some(FailureKind::Timeout),
+            Self::CliNotFound { .. } => Some(FailureKind::Launch),
+            Self::AgentFailed { kind, .. } => Some(*kind),
+            _ => None,
+        }
+    }
+
     /// Returns `true` if the error is transient and the operation may succeed on retry.
     pub fn is_retryable(&self) -> bool {
         matches!(
@@ -377,6 +434,46 @@ mod tests {
             "node 'work' still retrying after 3 attempts"
         );
         assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn agent_failed_displays_exactly_as_the_codergen_handler_error() {
+        let message = "attempt 1: Claude Code exited with exit status: 3; last stderr lines:\nboom";
+        let old = AttractorError::HandlerError {
+            handler: "codergen".into(),
+            node: "work".into(),
+            message: message.into(),
+        };
+        let new = AttractorError::AgentFailed {
+            node: "work".into(),
+            kind: FailureKind::Crash,
+            message: message.into(),
+        };
+        assert_eq!(new.to_string(), old.to_string());
+        assert!(!new.is_retryable());
+    }
+
+    #[test]
+    fn failure_kinds_of_attempt_errors() {
+        let kind = |e: AttractorError| e.failure_kind();
+        assert_eq!(
+            kind(AttractorError::CommandTimeout { timeout_ms: 1 }),
+            Some(FailureKind::Timeout)
+        );
+        assert_eq!(
+            kind(AttractorError::CliNotFound { binary: "x".into() }),
+            Some(FailureKind::Launch)
+        );
+        assert_eq!(
+            kind(AttractorError::AgentFailed {
+                node: "n".into(),
+                kind: FailureKind::NoResult,
+                message: "m".into()
+            }),
+            Some(FailureKind::NoResult)
+        );
+        assert_eq!(kind(AttractorError::Other("x".into())), None);
+        assert_eq!(FailureKind::NoResult.as_str(), "no_result");
     }
 
     #[test]

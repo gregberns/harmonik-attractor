@@ -574,6 +574,7 @@ mod transcripts {
                     run_id: None,
                     attempt: 1,
                     cancel: CancellationToken::new(),
+                    resume_note: None,
                 },
             )
             .await
@@ -1015,6 +1016,7 @@ mod transcripts {
                     run_id: None,
                     attempt: 1,
                     cancel: CancellationToken::new(),
+                    resume_note: None,
                 },
             )
             .await
@@ -1751,6 +1753,7 @@ mod stream_formats {
                     run_id: None,
                     attempt: 1,
                     cancel: CancellationToken::new(),
+                    resume_note: None,
                 },
             )
             .await

@@ -611,6 +611,7 @@ async fn run_both(
                 run_id: None,
                 attempt: 1,
                 cancel: CancellationToken::new(),
+                resume_note: None,
             },
         )
         .await;

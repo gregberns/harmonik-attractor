@@ -10,6 +10,7 @@ pub mod monitor;
 pub mod plan;
 mod plan_input;
 pub mod run;
+mod run_end;
 mod run_lock;
 mod run_worktree;
 pub mod runs;

@@ -44,6 +44,24 @@ fn canonical(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap()
 }
 
+/// The one Run's branch, from its `run.json`.
+fn run_branch(fake: &FakeAgent) -> String {
+    fake.run_meta()["branch"].as_str().unwrap().to_string()
+}
+
+/// `path` as committed on the Run's branch. A successful Run removes its
+/// worktree and keeps the branch (ticket 07), so tests read results here.
+fn on_branch(fake: &FakeAgent, path: &str) -> String {
+    fake.git(&["show", &format!("{}:{path}", run_branch(fake))])
+}
+
+/// Whether `path` is committed on the Run's branch.
+fn is_on_branch(fake: &FakeAgent, path: &str) -> bool {
+    fake.git(&["ls-tree", "-r", "--name-only", &run_branch(fake)])
+        .lines()
+        .any(|line| line == path)
+}
+
 fn assert_success(output: &std::process::Output) {
     assert!(
         output.status.success(),
@@ -76,16 +94,16 @@ fn run_creates_worktree_on_run_branch_at_base() {
     // run.json keeps the caller's directory as the workdir.
     assert_eq!(meta["workdir"], canonical(&fake.repo()).to_str().unwrap());
 
+    // The agent worked on the Run's branch: its commit is there, then the
+    // engine's attempt commit (ticket 07). The successful Run's worktree is
+    // removed; the branch stays.
+    assert!(!wt.exists(), "{}", wt.display());
     assert_eq!(
-        fake.git_in(&wt, &["rev-parse", "--abbrev-ref", "HEAD"]),
-        branch
-    );
-    assert_eq!(
-        fake.git_in(&wt, &["log", "-1", "--format=%s"]),
+        fake.git(&["log", "-1", "--format=%s", &format!("{branch}~1")]),
         "fake-claude edit"
     );
-    assert_eq!(fake.git_in(&wt, &["rev-parse", "HEAD~1"]), base);
-    assert!(wt.join("fake-edit.txt").is_file());
+    assert_eq!(fake.git(&["rev-parse", &format!("{branch}~2")]), base);
+    assert!(is_on_branch(&fake, "fake-edit.txt"));
 
     // The main checkout is untouched.
     assert!(!fake.repo().join("fake-edit.txt").exists());
@@ -111,7 +129,7 @@ fn subdirectory_workdir_maps_into_the_worktree() {
     assert_success(&output);
 
     let sub = fake.worktree().join("sub");
-    let recorded = fs::read_to_string(sub.join("where")).unwrap();
+    let recorded = on_branch(&fake, "sub/where");
     assert_eq!(recorded.trim(), sub.to_str().unwrap());
     assert!(!fake.repo().join("sub/where").exists());
 }
@@ -295,12 +313,9 @@ fn dirty_checkout_warns_and_stays_out_of_the_worktree() {
         stderr(&output)
     );
 
-    let wt = fake.worktree();
-    assert_eq!(
-        fs::read_to_string(wt.join("tracked")).unwrap(),
-        "committed\n"
-    );
-    assert!(!wt.join("untracked").exists());
+    // `git show` output is trimmed.
+    assert_eq!(on_branch(&fake, "tracked"), "committed");
+    assert!(!is_on_branch(&fake, "untracked"));
     assert_eq!(
         fs::read_to_string(fake.repo().join("tracked")).unwrap(),
         "changed\n"
@@ -350,7 +365,11 @@ fn base_flag_starts_the_branch_at_that_commit() {
     let meta = fake.run_meta();
     assert_eq!(meta["base"], older.as_str());
     assert_eq!(meta["base_sha"], older.as_str());
-    assert_eq!(fake.git_in(&fake.worktree(), &["rev-parse", "HEAD"]), older);
+    // The tool node's attempt commit sits directly on the base (ticket 07).
+    assert_eq!(
+        fake.git(&["rev-parse", &format!("{}~1", run_branch(&fake))]),
+        older
+    );
 }
 
 #[test]
@@ -359,13 +378,15 @@ fn worktree_root_flag_puts_the_worktree_there() {
     let root = fake.root().join("elsewhere");
 
     assert_success(&fake.run_with(
-        &tool_node("true"),
+        &tool_node("pwd -P > where"),
         &["--worktree-root", root.to_str().unwrap()],
     ));
 
     let run_id = fake.run_meta()["run_id"].as_str().unwrap().to_string();
     assert_eq!(fake.worktree(), canonical(&root).join(&run_id));
-    assert!(fake.worktree().is_dir());
+    // The node ran there; the successful Run then removed it (ticket 07).
+    assert_eq!(on_branch(&fake, "where"), fake.worktree().to_str().unwrap());
+    assert!(!fake.worktree().exists());
     assert!(!fake.repo().join(".pas/worktrees").exists());
 }
 
@@ -573,16 +594,19 @@ fn resume_continues_in_the_same_worktree() {
         stderr(&output)
     );
     assert_eq!(fake.worktree(), wt);
-    assert_eq!(fs::read_to_string(wt.join("seen")).unwrap(), "ok\n");
+    // Read on the branch: the successful Run removed its worktree (ticket 07).
+    assert_eq!(on_branch(&fake, "seen"), "ok");
+    assert!(!wt.exists());
     assert_eq!(
         fs::read_dir(fake.repo().join(".pas/worktrees"))
             .unwrap()
             .count(),
-        1
+        0,
+        "no second worktree was made; the Run's one was removed on success (ticket 07)"
     );
     assert_eq!(fake.attempts("edit_commit"), 1);
     assert_eq!(
-        fake.git_in(&wt, &["log", "--format=%s"])
+        fake.git(&["log", "--format=%s", &run_branch(&fake)])
             .matches("fake-claude edit")
             .count(),
         1
@@ -601,7 +625,9 @@ fn resume_ignores_a_changed_worktree_root() {
     assert_success(&output);
 
     assert_eq!(fake.worktree(), wt);
-    assert_eq!(fs::read_to_string(wt.join("seen")).unwrap(), "ok\n");
+    // Read on the branch: the successful Run removed its worktree (ticket 07).
+    assert_eq!(on_branch(&fake, "seen"), "ok");
+    assert!(!wt.exists());
     let err = stderr(&output);
     assert!(
         err.contains("worktree") && err.contains(wt.to_str().unwrap()),
@@ -612,7 +638,8 @@ fn resume_ignores_a_changed_worktree_root() {
         fake.git(&["worktree", "list", "--porcelain"])
             .matches("worktree ")
             .count(),
-        2
+        1,
+        "only the main checkout is left: the Run's worktree was reused, then removed on success (ticket 07)"
     );
 }
 
@@ -627,6 +654,8 @@ fn resume_recreates_a_deleted_worktree_from_its_branch() {
 
     assert_eq!(fake.worktree(), wt);
     // `check` sees the edit committed on the Run's branch.
-    assert_eq!(fs::read_to_string(wt.join("seen")).unwrap(), "ok\n");
+    // Read on the branch: the successful Run removed its worktree (ticket 07).
+    assert_eq!(on_branch(&fake, "seen"), "ok");
+    assert!(!wt.exists());
     assert_eq!(fake.attempts("edit_commit"), 1);
 }

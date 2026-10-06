@@ -29,9 +29,11 @@ pub struct HandlerExecutionContext<'a> {
     run_id: Option<&'a str>,
     attempt: u32,
     cancel: &'a CancellationToken,
+    resume_note: Option<&'a str>,
 }
 
 impl<'a> HandlerExecutionContext<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         workflow: &'a Context,
         config: &'a ResolvedConfig,
@@ -40,6 +42,7 @@ impl<'a> HandlerExecutionContext<'a> {
         run_id: Option<&'a str>,
         attempt: u32,
         cancel: &'a CancellationToken,
+        resume_note: Option<&'a str>,
     ) -> Self {
         Self {
             workflow,
@@ -49,7 +52,14 @@ impl<'a> HandlerExecutionContext<'a> {
             run_id,
             attempt,
             cancel,
+            resume_note,
         }
+    }
+
+    /// For the attempt after an interrupted one: a note for the agent naming
+    /// the interrupted commit and what to diff against.
+    pub fn resume_note(self) -> Option<&'a str> {
+        self.resume_note
     }
 
     /// Cancelled when the Run is stopped.
@@ -261,6 +271,7 @@ impl DynHandler {
             execution.run_id(),
             execution.attempt(),
             execution.cancel(),
+            execution.resume_note(),
         );
         let mut outcome = match self.0.provider_handler() {
             Some(handler) => {

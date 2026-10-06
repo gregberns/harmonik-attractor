@@ -61,7 +61,7 @@ pub use preflight::{
 pub use provider_defaults::fill_missing_llm_providers;
 pub use run_configuration::{
     ClaudeExecutionOptions, ConfigurationError, ConfigurationSource, ExecutionOptions,
-    ResolvedClaudeConfig, ResolvedConfig, ResolvedValue, RunConfiguration,
+    ResolvedClaudeConfig, ResolvedConfig, ResolvedValue, RunConfiguration, RunWorktreeInfo,
 };
 pub use stylesheet::{apply_stylesheet, parse_stylesheet, Declaration, Rule, Selector, Stylesheet};
 pub use transforms::{apply_transforms, expand_variables};

@@ -6,11 +6,13 @@ use std::time::Duration;
 use anyhow;
 use attractor_journal::{AttemptEndReason, EventData, IndexEntry, PipelineDir, RunMeta};
 
+use super::run_end::{self, RunEnding};
 use super::run_lock::{LockError, RunLock, WORKTREE_LOCK};
 use super::run_worktree::{self, RunWorktree};
 
 /// Print a human-facing line: to stdout normally, to stderr in `--json` mode,
-/// where stdout carries only the machine-readable first line (C6).
+/// where stdout carries only the machine-readable first and last lines (C6,
+/// D7).
 macro_rules! say {
     ($json:expr, $($arg:tt)*) => {
         if $json {
@@ -28,7 +30,8 @@ pub struct RunInvocation {
     pub argv: Vec<String>,
     /// `--run-id`, unvalidated.
     pub run_id: Option<String>,
-    /// `--json`: first stdout line is `{"v":1,"ok":true,"run_id","run_dir"}`.
+    /// `--json`: first stdout line is `{"v":1,"ok":true,"run_id","run_dir"}`,
+    /// the last is the Run's `final.json`.
     pub json: bool,
     /// Run Index file; `None` uses the machine-wide Index (C4).
     pub index_path: Option<PathBuf>,
@@ -525,6 +528,58 @@ fn attempt_end_reason(outcome: &AttemptOutcome) -> (AttemptEndReason, Option<Str
     }
 }
 
+/// How the Run ended, for `final.json`: the error text is the run's error.
+fn run_ending(outcome: &AttemptOutcome) -> RunEnding {
+    match outcome {
+        AttemptOutcome::Finished(Ok(r)) if r.stopped_before.is_some() => RunEnding::Stopped,
+        AttemptOutcome::Finished(Ok(_)) => RunEnding::Success,
+        AttemptOutcome::Finished(Err(error)) => RunEnding::Failed(error.to_string()),
+        AttemptOutcome::Terminated => RunEnding::Stopped,
+    }
+}
+
+/// End the Run: remove a successful Run's clean worktree (D6), write
+/// `final.json` atomically and, with `--json`, print it as the last stdout
+/// line (D7). Nothing here fails the Run: problems become warnings.
+fn end_run(
+    run_id: &str,
+    run_dir: &attractor_journal::RunDir,
+    source: &std::path::Path,
+    worktree: Option<&RunWorktree>,
+    shared_workdir: bool,
+    ending: &RunEnding,
+    json: bool,
+) {
+    let (git, warnings) = match worktree {
+        Some(worktree) => {
+            let (end, warnings) =
+                run_end::finish_worktree(source, worktree, ending.status(), shared_workdir);
+            (Some(end), warnings)
+        }
+        None => (None, Vec::new()),
+    };
+    for warning in &warnings {
+        eprintln!("warning: {warning}");
+    }
+    let report = run_end::final_report(run_id, ending, git.as_ref(), warnings);
+    let path = run_dir.final_json();
+    if let Err(error) = run_end::write_final_report(&path, &report) {
+        eprintln!("warning: cannot write {}: {error}", path.display());
+    }
+    if json {
+        match serde_json::to_string(&report) {
+            Ok(line) => {
+                println!("{line}");
+                use std::io::Write;
+                if let Err(error) = std::io::stdout().flush() {
+                    tracing::warn!(%error, "cannot flush the --json end line");
+                }
+            }
+            Err(error) => eprintln!("warning: cannot print the --json end line: {error}"),
+        }
+    }
+}
+
 /// The highest `attempt` recorded in a journal, or 0 if there is none.
 /// Unreadable lines are skipped: they must not make a Run unresumable.
 fn last_attempt(events: &std::path::Path) -> u32 {
@@ -616,6 +671,13 @@ struct PreparedRun {
     journal: Arc<attractor_journal::JournalWriter>,
     attempt: u32,
     locks: RunLocks,
+    /// The caller's workdir, canonical: a folder in the source repository
+    /// when the Run has a worktree.
+    source: PathBuf,
+    /// The Run's worktree; `None` outside git or in a dry run.
+    worktree: Option<RunWorktree>,
+    /// Another process works in the same worktree (`--allow-shared-workdir`).
+    shared_workdir: bool,
 }
 
 /// How a `pas run` that did not fail ended.
@@ -656,6 +718,9 @@ pub async fn cmd_run(
         journal,
         attempt,
         locks,
+        source,
+        worktree,
+        shared_workdir,
     } = prepare_run(
         path,
         workdir,
@@ -777,6 +842,16 @@ pub async fn cmd_run(
             "cannot write AttemptEnded to the Run Journal"
         );
     }
+    // The last thing the Run writes, after `AttemptEnded`.
+    end_run(
+        &run_id,
+        &run_dir,
+        &source,
+        worktree.as_ref(),
+        shared_workdir,
+        &run_ending(&outcome),
+        json,
+    );
     // Held until the Attempt has ended, so this process stays the only
     // journal writer (C3). On SIGTERM the OS releases them at exit.
     drop(locks);
@@ -953,6 +1028,15 @@ async fn prepare_run(
         acquire_worktree_lock(&mut locks, &place.workdir, invocation.allow_shared_workdir)?;
     locks.record(Some(&run_id));
     let configured = configured.with_workdir(place.workdir.clone());
+    // Attempts are committed only in the Run's own worktree, never in the
+    // caller's checkout.
+    let configured = match &place.worktree {
+        Some(worktree) => configured.with_run_worktree(attractor_pipeline::RunWorktreeInfo {
+            root: worktree.path.clone(),
+            run_id: run_id.clone(),
+        }),
+        None => configured,
+    };
 
     // --fresh: clear any existing checkpoint before starting
     if fresh {
@@ -1067,6 +1151,9 @@ async fn prepare_run(
         journal,
         attempt,
         locks,
+        source: workdir_abs,
+        worktree: place.worktree,
+        shared_workdir,
     })
 }
 
@@ -1445,6 +1532,39 @@ mod tests {
                 attempt_end_reason(&outcome),
                 (reason, message.map(str::to_string))
             );
+        }
+    }
+
+    #[test]
+    fn run_ending_maps_outcomes() {
+        use attractor_types::AttractorError;
+        let result = |stopped_before: Option<&str>| attractor_pipeline::PipelineResult {
+            completed_nodes: vec![],
+            node_outcomes: std::collections::HashMap::new(),
+            final_context: std::collections::HashMap::new(),
+            total_cost: 0.0,
+            stopped_before: stopped_before.map(str::to_string),
+        };
+        let cases = [
+            (
+                AttemptOutcome::Finished(Ok(result(None))),
+                RunEnding::Success,
+            ),
+            (
+                AttemptOutcome::Finished(Ok(result(Some("next")))),
+                RunEnding::Stopped,
+            ),
+            (
+                AttemptOutcome::Finished(Err(AttractorError::MaxStepsExceeded { max_steps: 3 })),
+                RunEnding::Failed(
+                    "Pipeline exceeded maximum step count (3). Use --max-steps to increase."
+                        .to_string(),
+                ),
+            ),
+            (AttemptOutcome::Terminated, RunEnding::Stopped),
+        ];
+        for (outcome, ending) in cases {
+            assert_eq!(run_ending(&outcome), ending);
         }
     }
 

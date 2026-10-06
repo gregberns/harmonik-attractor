@@ -8,7 +8,7 @@ use attractor_agent_handler::{AgentResult, AgentStatus, FailureClass, Usage};
 use attractor_dot::AttributeValue;
 use attractor_journal::RunDir;
 use attractor_quality::ClaudeSettingsMode;
-use attractor_types::{AgentFiles, AttractorError, Outcome, Result};
+use attractor_types::{AgentFiles, AttractorError, FailureKind, Outcome, Result};
 
 use super::provider::InvocationUsage;
 use super::{provider_outcome, ProviderResult};
@@ -155,9 +155,11 @@ pub(super) fn claude_outcome(
     attempt: &AgentAttempt<'_>,
 ) -> Result<Outcome> {
     let claude = LlmProvider::Claude;
-    let handler_error = |message: String| AttractorError::HandlerError {
-        handler: "codergen".into(),
+    // Displays as codergen's `HandlerError` always did; `kind` is the
+    // attempt's failure class for its commit.
+    let agent_failed = |kind: FailureKind, message: String| AttractorError::AgentFailed {
         node: node.id.clone(),
+        kind,
         message,
     };
     let files = || agent_failure_files(attempt.run_dir, attempt.invocation_id);
@@ -178,16 +180,19 @@ pub(super) fn claude_outcome(
             })
         }
         AgentStatus::Failed(FailureClass::Crash) => {
-            return Err(handler_error(crash_message(
-                claude.display_name(),
-                attempt.attempt,
-                &result.detail,
-                &result.stderr_tail,
-                files().as_ref(),
-            )))
+            return Err(agent_failed(
+                FailureKind::Crash,
+                crash_message(
+                    claude.display_name(),
+                    attempt.attempt,
+                    &result.detail,
+                    &result.stderr_tail,
+                    files().as_ref(),
+                ),
+            ))
         }
         AgentStatus::Failed(FailureClass::NoResult) => {
-            return Err(handler_error(result.detail.clone()))
+            return Err(agent_failed(FailureKind::NoResult, result.detail.clone()))
         }
         AgentStatus::Failed(FailureClass::Launch) => {
             return Err(
@@ -196,11 +201,14 @@ pub(super) fn claude_outcome(
                         binary: claude.binary_name().to_string(),
                     }
                 } else {
-                    handler_error(format!(
-                        "Failed to spawn {}: {}",
-                        claude.display_name(),
-                        result.detail
-                    ))
+                    agent_failed(
+                        FailureKind::Launch,
+                        format!(
+                            "Failed to spawn {}: {}",
+                            claude.display_name(),
+                            result.detail
+                        ),
+                    )
                 },
             )
         }

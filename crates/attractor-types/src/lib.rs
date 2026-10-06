@@ -11,5 +11,5 @@ pub mod error;
 pub mod types;
 
 pub use context::Context;
-pub use error::{AgentFiles, AttractorError, Result};
+pub use error::{AgentFiles, AttractorError, FailureKind, Result};
 pub use types::{Checkpoint, Outcome, StageStatus};

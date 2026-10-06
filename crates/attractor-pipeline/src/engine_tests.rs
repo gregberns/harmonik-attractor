@@ -4010,3 +4010,35 @@ async fn a_retry_on_the_last_attempt_stops_the_run() {
     );
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
+
+// --- Ticket 07: attempt numbers and interrupted attempts ---
+
+#[test]
+fn next_attempt_number_continues_after_the_last_one_begun() {
+    // SIGKILL during attempt 1: it counted, the next is 2.
+    assert_eq!(next_attempt_number(Some(1), 1), 2);
+    // Stopped attempt 1: it didn't count, but its number is used.
+    assert_eq!(next_attempt_number(Some(1), 0), 2);
+    // A fresh visit, or an older checkpoint without a number.
+    assert_eq!(next_attempt_number(None, 0), 1);
+    assert_eq!(next_attempt_number(None, 2), 3);
+}
+
+#[test]
+fn left_work_is_changes_or_a_moved_head() {
+    assert!(left_work(true, Some("a"), Some("a")));
+    assert!(left_work(false, Some("b"), Some("a")));
+    assert!(!left_work(false, Some("a"), Some("a")));
+    // No recorded start (an older checkpoint): only changes count.
+    assert!(!left_work(false, Some("b"), None));
+    assert!(left_work(true, Some("b"), None));
+}
+
+#[test]
+fn resume_note_names_the_base_and_the_interrupted_commit() {
+    assert_eq!(
+        resume_note("abc", "def"),
+        "Your previous attempt was interrupted; its changes since abc are recorded in \
+         commit def. Review git diff abc before continuing."
+    );
+}

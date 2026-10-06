@@ -389,6 +389,31 @@ pub(crate) fn is_dirty(top: &Path) -> Result<bool, WorktreeError> {
     git(top, &["status", "--porcelain", "--", ".", &exclude]).map(|out| !out.is_empty())
 }
 
+/// The commit `branch` points at, asked from the repository at `dir`.
+pub(crate) fn branch_tip(dir: &Path, branch: &str) -> Result<String, WorktreeError> {
+    git(
+        dir,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}^{{commit}}"),
+        ],
+    )
+}
+
+/// `git worktree remove --force <worktree>`, run from the repository at
+/// `dir`. The caller has checked that nothing outside `.pas/` is
+/// uncommitted; `--force` is only for an ignored or excluded `.pas/` inside
+/// it, which would otherwise block the removal. The branch stays.
+pub(crate) fn remove_worktree(dir: &Path, worktree: &Path) -> Result<(), WorktreeError> {
+    git(
+        dir,
+        &["worktree", "remove", "--force", &worktree.to_string_lossy()],
+    )
+    .map(|_| ())
+}
+
 /// Write `<pas_dir>/.gitignore` containing `*` unless the file exists, so
 /// git ignores everything pas keeps there (also used for a worktree root).
 pub(crate) fn ensure_pas_gitignore(pas_dir: &Path) -> std::io::Result<()> {

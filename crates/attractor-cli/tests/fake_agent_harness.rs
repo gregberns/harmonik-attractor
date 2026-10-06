@@ -162,18 +162,26 @@ fn edit_and_commit_leaves_the_file_and_commit_in_the_workdir() {
     let output = fake.run(&one_node(r#"timeout="30s", prompt="scenario=edit_commit""#));
 
     assert!(output.status.success(), "{}", stderr(&output));
-    // The Run works in its own worktree (ticket 06).
-    let wt = fake.worktree();
-    assert!(wt.join("fake-edit.txt").is_file());
+    // The Run works on its own branch (ticket 06). The fake's commit is kept,
+    // with the engine's attempt commit on top (ticket 07).
+    let branch = fake.run_meta()["branch"].as_str().unwrap().to_string();
+    assert!(!fake
+        .git(&["show", &format!("{branch}:fake-edit.txt")])
+        .is_empty());
+    assert!(fake
+        .git(&["log", "-1", "--format=%s", &branch])
+        .ends_with(": work attempt 1 (success)"));
     assert_eq!(
-        fake.git_in(&wt, &["log", "-1", "--format=%s"]),
+        fake.git(&["log", "-1", "--format=%s", &format!("{branch}~1")]),
         "fake-claude edit"
     );
-    let head = fake.git_in(&wt, &["rev-parse", "HEAD"]);
+    let fake_commit = fake.git(&["rev-parse", &format!("{branch}~1")]);
+    // CommitsCreated names only the agent's commit.
     let created = fake.events_of("CommitsCreated");
     assert_eq!(created.len(), 1, "{created:?}");
     assert_eq!(created[0]["node_id"], "work");
-    assert_eq!(created[0]["commits"][0]["sha"], head.as_str());
+    assert_eq!(created[0]["commits"].as_array().unwrap().len(), 1);
+    assert_eq!(created[0]["commits"][0]["sha"], fake_commit.as_str());
     assert_eq!(created[0]["commits"][0]["subject"], "fake-claude edit");
 }
 

@@ -96,6 +96,8 @@ struct CodergenExecutionControls<'a> {
     attempt: u32,
     /// Cancelled when the Run is stopped; stops a Claude agent gracefully.
     cancel: CancellationToken,
+    /// Set for the attempt after an interrupted one; added to the prompt.
+    resume_note: Option<String>,
 }
 
 /// `LlmInvoked.status` values (spec C3).
@@ -323,6 +325,10 @@ impl CodergenHandler {
         }
 
         full_prompt.push_str(&format!("Task ({}): {}", label, prompt));
+        // The previous attempt was interrupted: tell the agent where its work is.
+        if let Some(note) = &controls.resume_note {
+            full_prompt.push_str(&format!("\n\n{note}"));
+        }
 
         // If this is a conditional node, instruct the LLM to output a label
         if matches!(
@@ -767,6 +773,7 @@ impl ProviderNodeHandler for CodergenHandler {
                 run_id: None,
                 attempt: 1,
                 cancel: CancellationToken::new(),
+                resume_note: None,
             },
         )
         .await
@@ -832,6 +839,7 @@ impl CodergenHandler {
                 run_id: execution.run_id(),
                 attempt: execution.attempt(),
                 cancel: execution.cancel().clone(),
+                resume_note: execution.resume_note().map(str::to_owned),
             },
         )
         .await
