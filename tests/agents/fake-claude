@@ -145,6 +145,17 @@ result() {
     printf '%s\n' "$json"
 }
 
+# rate_limited_out: what Claude prints when the API rate-limits it: the
+# init line (unless no_init=1: rejected before a session existed), a
+# rate_limit_event with status "rejected" and resetsAt = now (Unix
+# seconds), and an error result; exit 1.
+rate_limited_out() {
+    [ "$(token no_init)" = 1 ] || init
+    printf '%s\n' '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":'"$(date +%s)"',"rateLimitType":"five_hour"},"session_id":"'"$session"'"}'
+    result error_during_execution true 'API Error: Rate limit reached'
+    exit 1
+}
+
 succeed() {
     init
     assistant "$1"
@@ -169,6 +180,19 @@ wait_for_go() {
 case $scenario in
     success)
         succeed 'fake-claude: success'
+        ;;
+    rate_limited)
+        # Rate limited on the node's first times=<N> (default 2) starts.
+        times=$(token times)
+        times=${times:-2}
+        case $times in
+            *[!0-9]*) die "times=<N> needs a number, got $times" ;;
+        esac
+        [ "${node_start:-1}" -gt "$times" ] || rate_limited_out
+        succeed 'fake-claude: success'
+        ;;
+    always_rate_limited)
+        rate_limited_out
         ;;
     fail)
         # With label=<L>, the failure text ends with the label on its own

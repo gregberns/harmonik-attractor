@@ -107,6 +107,8 @@ PAS runs one invocation of a node at a time.
 | `bad_result` | init, then `{"type":"result","subtype":"success","is_error":false,"num_turns":"many"}`, a result line that doesn't deserialize (`num_turns` is a string) | `exit` (default 0) |
 | `session_not_found` | needs `--resume <id>` (else exit 2): no init line, the result line `{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["No conversation found with session ID: <id>"]}`, and `No conversation found with session ID: <id>` on stderr, as `claude -p --resume` does for a session it doesn't have | 1 |
 | `stdin` | reads stdin to the end, writes the byte count to `stdin.bytes`, then success | 0 |
+| `rate_limited` | on the node's first `times=<N>` starts (default 2): the init line, `{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":<now, Unix s>,...}}` and an error result `API Error: Rate limit reached`; after that, success. With `no_init=1`, no init line (rejected before a session existed) | 1 while limited, then 0 |
+| `always_rate_limited` | the rate-limited output above on every start (`no_init=1` works too) | 1 |
 | `stderr_live` | init, `fake-claude: working` on stderr, waits for the file `go` (polled every 0.05 s, at most 10 s, else exit 2), then `fake-claude: done` on stderr and success | 0 |
 | `hang_term` | traps TERM (writes `term`, exits 143), init, then `sleep 30 & wait` | 143 on TERM |
 | `hang_ignore_term` | traps TERM (appends to `term`, carries on), init, then loops `sleep 1 & wait` forever (killed only by KILL) | - |
