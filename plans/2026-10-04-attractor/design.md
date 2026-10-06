@@ -305,9 +305,11 @@ question of how public the inside is:
     `--session-id` with `--resume` is untested, so they aren't combined.
   - `codex`: `codex exec resume <id> <prompt>` is a subcommand, so the
     profile has a whole `resume_command`. `exec resume --help` (0.156.1)
-    lists `--json`, `-m`, `--skip-git-repo-check` and
+    lists `--json`, `-m, --model`, `--skip-git-repo-check` and
     `--dangerously-bypass-approvals-and-sandbox`, not `--yolo`, and no `-C`,
-    so cwd comes from the process.
+    so cwd comes from the process. Verified 2026-10-06 on codex-cli 0.156.1
+    with `--help` only: `exec resume` accepts the long `--model`, so the
+    profile's `model_args` work on resume.
   - `gemini`: resume support unchecked; no resume form is configured.
   - `pi`: `--session-dir` plus `--session-id` handles both cases (above).
   - **A profile with no resume form** (gemini today) can't continue. So that
