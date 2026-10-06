@@ -156,7 +156,7 @@ Every `tripleoctagon`, `type="fan_in"`, or `type="parallel.fan_in"` node fails w
 | `goal_gate` | boolean | false | If true, this node must succeed for the pipeline to complete |
 | `retry_target` | string | — | Node ID to loop back to if this goal gate fails |
 | `fallback_retry_target` | string | — | Second-level retry target |
-| `max_retries` | integer | 0 | Additional retryable handler attempts per node visit; `N` allows at most `N + 1` total attempts |
+| `max_retries` | integer | 0 | Additional retryable handler attempts per node visit; `N` allows at most `N + 1` total attempts. An agent attempt after a failed one is told in its prompt how the previous attempt failed (also after a loop back through a fail edge or a resume; see [the previous failure in the prompt](cli-reference.md#run--execute-a-pipeline)) |
 | `timeout` | duration | — | Deadline enforced around every handler attempt (e.g. `"5m"`, `"1h30m"`) |
 | `class` | string | — | Space-separated class list for stylesheet matching (`classes` is a compatibility alias) |
 | `tool_command` | string | — | Shell command for `parallelogram` (tool) nodes |
