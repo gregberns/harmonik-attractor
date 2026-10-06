@@ -1,0 +1,13 @@
+[package]
+name = "attractor-agent-handler"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+description = "The agent handler interface and the Agents registry the PAS engine calls"
+
+# Must never depend on another attractor-* crate (design §1).
+[dependencies]
+async-trait = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
