@@ -8,7 +8,11 @@
 //! `bin/` first on `PATH` holds a fail-loud stub for every agent CLI
 //! ([`BLOCKED_AGENTS`]), so a test can never reach a real agent from the
 //! user's `PATH`; [`FakeAgent::shim_claude_on_path`] replaces the `claude`
-//! stub with the fake (the `llm_provider="claude"` alias).
+//! stub with the fake (the `llm_provider="claude"` alias), and
+//! `shim_codex_on_path`/`shim_gemini_on_path` do the same for `codex` and
+//! `gemini`. The `pas.toml` also has `fake-codex` and `fake-gemini`
+//! profiles (the built-in `codex`/`gemini` profiles with the fakes as
+//! command, `test_only`).
 //! Git ignores the developer's global and system config (hooks, templates).
 
 use std::collections::BTreeMap;
@@ -18,9 +22,14 @@ use std::process::{Command, Output};
 
 use serde_json::Value;
 
+/// The fake script `name` in the repo's `tests/agents/`.
+fn fake_script(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/agents/{name}"))
+}
+
 /// The fake script in the repo's `tests/agents/`.
 fn fake_claude() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/agents/fake-claude")
+    fake_script("fake-claude")
 }
 
 /// Agent CLIs a test must never reach on the user's `PATH`: each gets a
@@ -54,10 +63,15 @@ impl FakeAgent {
     /// when it starts with plain keys). Does not commit.
     pub fn write_pas_toml(&self, agents: &str) {
         let fake = fake_claude().canonicalize().unwrap();
+        let codex = fake_script("fake-codex").canonicalize().unwrap();
+        let gemini = fake_script("fake-gemini").canonicalize().unwrap();
         fs::write(
             self.repo().join("pas.toml"),
             format!(
-                "[project]\nname = \"fake-test\"\n\n[agents.fake]\nmechanism = \"claude-p\"\ncommand = {fake:?}\ntest_only = true\n{agents}\n"
+                "[project]\nname = \"fake-test\"\n\n\
+                 [agents.fake-codex]\ninherit_from = \"codex\"\ncommand = {codex:?}\ntest_only = true\n\n\
+                 [agents.fake-gemini]\ninherit_from = \"gemini\"\ncommand = {gemini:?}\ntest_only = true\n\n\
+                 [agents.fake]\nmechanism = \"claude-p\"\ncommand = {fake:?}\ntest_only = true\n{agents}\n"
             ),
         )
         .unwrap();
@@ -75,9 +89,26 @@ impl FakeAgent {
     /// `llm_provider="claude"`.
     #[allow(dead_code)]
     pub fn shim_claude_on_path(&self) {
-        let claude = self.bin().join("claude");
-        fs::remove_file(&claude).unwrap();
-        std::os::unix::fs::symlink(fake_claude(), claude).unwrap();
+        self.shim_on_path("claude", "fake-claude");
+    }
+
+    /// Puts `fake-codex` on `PATH` as `codex`, for `llm_provider="codex"`.
+    #[allow(dead_code)]
+    pub fn shim_codex_on_path(&self) {
+        self.shim_on_path("codex", "fake-codex");
+    }
+
+    /// Puts `fake-gemini` on `PATH` as `gemini`, for `llm_provider="gemini"`.
+    #[allow(dead_code)]
+    pub fn shim_gemini_on_path(&self) {
+        self.shim_on_path("gemini", "fake-gemini");
+    }
+
+    /// Replaces `bin/<agent>`'s stub with the fake script `fake`.
+    fn shim_on_path(&self, agent: &str, fake: &str) {
+        let path = self.bin().join(agent);
+        fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(fake_script(fake), path).unwrap();
     }
 
     /// Writes `bin/<agent>`: a stub that refuses to run, ahead of any real
