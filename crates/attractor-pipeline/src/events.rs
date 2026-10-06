@@ -70,6 +70,24 @@ pub enum PipelineEvent {
         task_id: Option<String>,
         commits: Vec<CommitRef>,
     },
+    /// A provider process (Model Invocation) was spawned; `spawn` counts the
+    /// spawns of the node's Attempt from 1. `transcript` and `stderr` are
+    /// relative to the Run folder.
+    LlmStarted {
+        invocation_id: String,
+        spawn: u32,
+        node_id: String,
+        attempt: u32,
+        profile: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        host: Option<String>,
+        pid: u32,
+        pgid: u32,
+        transcript: String,
+        stderr: String,
+    },
     /// One provider process (Model Invocation) exited, failed, or timed out
     /// (spec C3). `transcript` is relative to the Run folder.
     LlmInvoked {
@@ -209,6 +227,31 @@ impl PipelineEvent {
                 node_id,
                 task_id,
                 commits,
+            },
+            Self::LlmStarted {
+                invocation_id,
+                spawn,
+                node_id,
+                attempt,
+                profile,
+                model,
+                host,
+                pid,
+                pgid,
+                transcript,
+                stderr,
+            } => EventData::LlmStarted {
+                invocation_id,
+                spawn,
+                node_id,
+                attempt,
+                profile,
+                model,
+                host,
+                pid,
+                pgid,
+                transcript,
+                stderr,
             },
             Self::LlmInvoked {
                 invocation_id,
@@ -498,6 +541,32 @@ mod tests {
                     author: "Ann".into(),
                     ts: "2026-09-25T10:00:00+00:00".into(),
                 }],
+            },
+            PipelineEvent::LlmStarted {
+                invocation_id: "inv".into(),
+                spawn: 1,
+                node_id: "n".into(),
+                attempt: 2,
+                profile: "claude".into(),
+                model: Some("sonnet".into()),
+                host: Some("local".into()),
+                pid: 4321,
+                pgid: 4321,
+                transcript: "transcripts/inv.jsonl".into(),
+                stderr: "transcripts/inv.stderr.log".into(),
+            },
+            PipelineEvent::LlmStarted {
+                invocation_id: "inv2".into(),
+                spawn: 2,
+                node_id: "n".into(),
+                attempt: 1,
+                profile: "codex".into(),
+                model: None,
+                host: None,
+                pid: 4400,
+                pgid: 4400,
+                transcript: "transcripts/inv2.jsonl".into(),
+                stderr: "transcripts/inv2.stderr.log".into(),
             },
             PipelineEvent::LlmInvoked {
                 invocation_id: "inv".into(),

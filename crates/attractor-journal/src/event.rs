@@ -217,6 +217,26 @@ pub enum EventData {
     },
 
     // --- Model Invocations and Run Commits ---
+    /// A provider process (Model Invocation) was spawned. Written before it
+    /// exits, so a live Run shows what is running and where its logs are.
+    LlmStarted {
+        invocation_id: String,
+        /// Which spawn of the node's Attempt this is, from 1.
+        spawn: u32,
+        node_id: String,
+        attempt: u32,
+        profile: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        host: Option<String>,
+        pid: u32,
+        pgid: u32,
+        /// Transcript path relative to the Run folder.
+        transcript: String,
+        /// Stderr log path relative to the Run folder.
+        stderr: String,
+    },
     LlmInvoked {
         invocation_id: String,
         node_id: String,
@@ -292,6 +312,7 @@ impl EventData {
         "TaskClaimed",
         "TaskSelectionBlocked",
         "TaskClosed",
+        "LlmStarted",
         "LlmInvoked",
         "CommitsCreated",
         "HumanInputRequested",
@@ -321,6 +342,7 @@ impl EventData {
             Self::TaskClaimed { .. } => "TaskClaimed",
             Self::TaskSelectionBlocked { .. } => "TaskSelectionBlocked",
             Self::TaskClosed { .. } => "TaskClosed",
+            Self::LlmStarted { .. } => "LlmStarted",
             Self::LlmInvoked { .. } => "LlmInvoked",
             Self::CommitsCreated { .. } => "CommitsCreated",
             Self::HumanInputRequested { .. } => "HumanInputRequested",
@@ -543,6 +565,19 @@ mod tests {
                 reason: s("done"),
                 upstream_verified: true,
                 commits: vec![s("abc")],
+            },
+            EventData::LlmStarted {
+                invocation_id: s("i"),
+                spawn: 1,
+                node_id: s("a"),
+                attempt: 1,
+                profile: s("claude"),
+                model: Some(s("opus")),
+                host: Some(s("local")),
+                pid: 42,
+                pgid: 42,
+                transcript: s("transcripts/i.jsonl"),
+                stderr: s("transcripts/i.stderr.log"),
             },
             EventData::LlmInvoked {
                 invocation_id: s("i"),

@@ -6,7 +6,7 @@
 //!   run.lock
 //!   runs/<run-id>/
 //!     run.json  events.jsonl  console.log
-//!     transcripts/<invocation-id>.jsonl
+//!     transcripts/<invocation-id>.jsonl  transcripts/<invocation-id>.stderr.log
 //!     answers/<question-id>.json
 //!     control/stop
 //! ```
@@ -42,6 +42,12 @@ pub fn new_invocation_id() -> String {
 /// Run folder, as recorded in `LlmInvoked.transcript` (spec C1, C3).
 pub fn transcript_rel_path(invocation_id: &str) -> String {
     format!("{TRANSCRIPTS_DIR}/{invocation_id}.jsonl")
+}
+
+/// `transcripts/<invocation-id>.stderr.log`: a provider's stderr log path
+/// relative to its Run folder, as recorded in `LlmStarted.stderr`.
+pub fn stderr_rel_path(invocation_id: &str) -> String {
+    format!("{TRANSCRIPTS_DIR}/{invocation_id}.stderr.log")
 }
 
 /// Validate a Run ID and normalize it to lowercase hyphenated form.
@@ -131,6 +137,11 @@ impl RunDir {
 
     pub fn transcript(&self, invocation_id: &str) -> PathBuf {
         self.0.join(transcript_rel_path(invocation_id))
+    }
+
+    /// `transcripts/<invocation-id>.stderr.log`: a provider's stderr log.
+    pub fn stderr(&self, invocation_id: &str) -> PathBuf {
+        self.0.join(stderr_rel_path(invocation_id))
     }
 
     pub fn answers_dir(&self) -> PathBuf {
@@ -231,6 +242,10 @@ mod tests {
             Path::new(&format!("{root}/transcripts/inv1.jsonl"))
         );
         assert_eq!(
+            r.stderr("inv1"),
+            Path::new(&format!("{root}/transcripts/inv1.stderr.log"))
+        );
+        assert_eq!(
             r.answer("q1"),
             Path::new(&format!("{root}/answers/q1.json"))
         );
@@ -251,6 +266,18 @@ mod tests {
         let r = RunDir::from_path("/r/runs/x");
         assert_eq!(r.transcript(id), r.path().join(&rel));
         assert_eq!(r.transcript(id).parent().unwrap(), r.transcripts_dir());
+    }
+
+    // `LlmStarted.stderr` names the same file as `RunDir::stderr`.
+    #[test]
+    fn stderr_rel_path_is_relative_and_matches_run_dir_stderr() {
+        let id = "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b";
+        let rel = stderr_rel_path(id);
+        assert_eq!(rel, format!("transcripts/{id}.stderr.log"));
+        assert!(Path::new(&rel).is_relative());
+        let r = RunDir::from_path("/r/runs/x");
+        assert_eq!(r.stderr(id), r.path().join(&rel));
+        assert_eq!(r.stderr(id).parent().unwrap(), r.transcripts_dir());
     }
 
     #[test]

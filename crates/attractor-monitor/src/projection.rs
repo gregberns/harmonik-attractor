@@ -549,6 +549,7 @@ impl RunView {
             | EventData::GoalGateChecked { .. }
             | EventData::CheckpointSaved { .. }
             | EventData::ContextUpdated { .. }
+            | EventData::LlmStarted { .. }
             | EventData::Unknown { .. } => {}
         }
         self.recompute_status();
