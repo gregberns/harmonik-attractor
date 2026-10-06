@@ -1,6 +1,6 @@
 //! Cancellation-safe process-group cleanup for subprocess-backed handlers.
 
-pub(super) fn configure(command: &mut tokio::process::Command) {
+pub fn configure(command: &mut tokio::process::Command) {
     #[cfg(unix)]
     command.process_group(0);
 
@@ -8,13 +8,13 @@ pub(super) fn configure(command: &mut tokio::process::Command) {
     let _ = command;
 }
 
-pub(super) struct ProcessGroupGuard {
+pub struct ProcessGroupGuard {
     #[cfg(unix)]
     process_group: Option<libc::pid_t>,
 }
 
 impl ProcessGroupGuard {
-    pub(super) fn new(pid: Option<u32>) -> Self {
+    pub fn new(pid: Option<u32>) -> Self {
         #[cfg(unix)]
         {
             Self {
@@ -29,7 +29,7 @@ impl ProcessGroupGuard {
         }
     }
 
-    pub(super) fn disarm(&mut self) {
+    pub fn disarm(&mut self) {
         #[cfg(unix)]
         {
             self.process_group = None;

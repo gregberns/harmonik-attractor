@@ -16,7 +16,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Child;
 
 /// An open Transcript file (`transcripts/<invocation-id>.jsonl`).
-pub(super) struct Transcript {
+pub struct Transcript {
     path: PathBuf,
     file: Option<tokio::fs::File>,
 }
@@ -24,7 +24,7 @@ pub(super) struct Transcript {
 impl Transcript {
     /// Create an empty Transcript at `path`, making its folder if needed.
     /// Returns `None` (after a warning) when the file cannot be created.
-    pub(super) async fn create(path: PathBuf) -> Option<Self> {
+    pub async fn create(path: PathBuf) -> Option<Self> {
         let result = async {
             if let Some(dir) = path.parent() {
                 tokio::fs::create_dir_all(dir).await?;
@@ -48,12 +48,12 @@ impl Transcript {
         }
     }
 
-    pub(super) fn path(&self) -> &Path {
+    pub fn path(&self) -> &Path {
         &self.path
     }
 
     /// Remove the Transcript; used when the provider never started.
-    pub(super) async fn discard(mut self) {
+    pub async fn discard(mut self) {
         self.file = None;
         if let Err(error) = tokio::fs::remove_file(&self.path).await {
             tracing::warn!(path = %self.path.display(), %error, "Cannot remove Transcript");
@@ -81,10 +81,11 @@ impl Transcript {
 }
 
 /// What the provider process produced.
-pub(super) struct StreamedOutput {
-    pub(super) status: ExitStatus,
-    pub(super) stdout: Vec<u8>,
-    pub(super) stderr: Vec<u8>,
+#[derive(Debug)]
+pub struct StreamedOutput {
+    pub status: ExitStatus,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
 }
 
 /// Wait for `child`, copying each stdout line to `transcript` as it arrives.
@@ -92,7 +93,7 @@ pub(super) struct StreamedOutput {
 /// stdout and stderr are drained concurrently so a provider that writes a lot
 /// to stderr cannot block on a full pipe. Dropping the returned future (e.g.
 /// on timeout) leaves everything already flushed in the Transcript.
-pub(super) async fn run_streaming(
+pub async fn run_streaming(
     mut child: Child,
     mut transcript: Option<Transcript>,
 ) -> std::io::Result<StreamedOutput> {

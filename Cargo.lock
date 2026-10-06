@@ -133,6 +133,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "attractor-agent-process"
+version = "0.11.0"
+dependencies = [
+ "libc",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "attractor-cli"
 version = "0.11.0"
 dependencies = [
@@ -225,6 +235,7 @@ name = "attractor-pipeline"
 version = "0.11.0"
 dependencies = [
  "async-trait",
+ "attractor-agent-process",
  "attractor-dot",
  "attractor-journal",
  "attractor-llm",
