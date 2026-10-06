@@ -158,7 +158,7 @@ impl Fixture {
         self.read("env.log")
             .lines()
             .filter_map(|l| l.strip_prefix("FAKE_PID="))
-            .last()
+            .next_back()
             .unwrap()
             .parse()
             .unwrap()

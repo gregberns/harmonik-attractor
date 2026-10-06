@@ -658,6 +658,8 @@ mod transcripts {
             "{error}"
         );
         assert_eq!(transcripts(&run_dir), Vec::<PathBuf>::new());
+        // No stderr log either: nothing at all under transcripts/.
+        assert!(!run_dir.join("transcripts").exists());
     }
 
     // AC2: the Transcript grows while the provider is still running.
@@ -1160,6 +1162,7 @@ mod transcripts {
             "{error}"
         );
         assert!(missing.llm_invoked().is_empty());
+        assert!(missing.of("LlmStarted").is_empty());
 
         let no_run_dir = EventLog::default();
         let outcome = run_observed(provider, program, None, &node, &graph, false, &no_run_dir)
