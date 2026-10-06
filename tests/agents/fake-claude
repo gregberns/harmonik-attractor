@@ -35,7 +35,7 @@ while [ $# -gt 0 ]; do
             ;;
         --output-format | --setting-sources | --mcp-config | --settings | \
             --tools | --agents | --plugin-dir | --model | --allowedTools | \
-            --max-budget-usd)
+            --max-budget-usd | --effort)
             [ $# -ge 2 ] || die "$1 needs a value"
             printf '%s\n' "$2" >>"$log"
             shift 2

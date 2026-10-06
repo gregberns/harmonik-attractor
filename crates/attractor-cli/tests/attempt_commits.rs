@@ -56,7 +56,7 @@ fn one_node(attrs: &str) -> String {
     format!(
         r#"digraph G {{
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="claude", {attrs}]
+            work [shape="box", agent="fake", {attrs}]
             done [shape="Msquare"]
             start -> work -> done
         }}"#
@@ -75,9 +75,9 @@ fn three_agent_nodes_leave_three_commits_with_trailers() {
         &fake,
         r#"digraph G {
             start [shape="Mdiamond"]
-            a [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
-            b [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
-            c [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
+            a [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
+            b [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
+            c [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
             done [shape="Msquare"]
             start -> a -> b -> c -> done
         }"#,
@@ -124,8 +124,8 @@ fn a_reported_failure_and_a_crash_record_their_class() {
     let output = fake.run(
         r#"digraph G {
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=fail"]
-            fixup [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=crash"]
+            work [shape="box", agent="fake", timeout="30s", prompt="scenario=fail"]
+            fixup [shape="box", agent="fake", timeout="30s", prompt="scenario=crash"]
             done [shape="Msquare"]
             start -> work
             work -> fixup [condition="outcome=fail"]
@@ -235,6 +235,8 @@ fn a_non_git_workdir_gets_no_commits() {
     let fake = FakeAgent::new();
     let plain = fake.root().join("plain");
     fs::create_dir(&plain).unwrap();
+    // The fake profile comes from pas.toml, which the plain folder needs too.
+    fs::copy(fake.repo().join("pas.toml"), plain.join("pas.toml")).unwrap();
     let output = fake
         .command_in(
             &one_node(r#"timeout="30s", prompt="scenario=success""#),

@@ -53,6 +53,7 @@ pas run <PIPELINE> [OPTIONS]
 | `--codergen-claude-mcp-config <JSON_OR_FILE>` | — | none | Explicit MCP config for `codergen` nodes. `--strict-mcp-config` remains enabled. |
 | `--run-id <UUID>` | — | generated (UUID v7) | Use this Run ID instead of generating one. Must be a UUID; anything else is rejected. The Monitor passes it so it knows the ID before the Run starts. |
 | `--json` | — | false | Print `{"v":1,"ok":true,"run_id","run_dir"}` as the first stdout line once the Run folder exists, and the Run's [`final.json`](#end-of-run-finaljson) object as the last stdout line when the Run ends (success, failure, stop or SIGTERM); all other output goes to stderr. A setup failure before the first line prints only `{"v":1,"ok":false,"error":…}`. |
+| `--allow-test-agents` | — | false | Allow agent profiles marked `test_only` (the test fakes). Without it, a pipeline using one fails before it starts, naming the node. |
 | `--allow-shared-workdir` | — | false | Start even if another process is working in this Run's worktree. Each Run has its own worktree, so this only matters when the same Run is resumed twice at once (e.g. with another `--logs`). The Run records `shared_workdir: true` in its `RunStarted` event when it actually shares the worktree. |
 
 PAS resolves each run-control field independently using `caller > manifest > permitted graph defaults > built-ins`.
@@ -231,6 +232,70 @@ mcp_config_json = "{}"
 CLI flags override the corresponding `pas.toml` field for the current run;
 unset CLI fields continue to inherit their individual manifest values.
 
+These settings are added to the end of the `claude` profile's `args` (below),
+before `inherit_from` is resolved, so a profile that inherits from `claude`
+gets them too. The argv is the same as before profiles existed.
+
+#### Agent profiles (`[agents.<name>]` in `pas.toml`)
+
+A codergen node runs through a named **agent profile**: `agent="<profile>"`
+on the node, or `llm_provider="claude"` (and its alias `anthropic`), which is
+the profile `claude`. Codex and Gemini nodes do not use profiles yet. PAS
+ships the profiles in its built-in `agents.toml`; today that is only
+`claude`. A project replaces a profile by name, or adds one, in `pas.toml`:
+
+```toml
+[agents.claude-opus]
+inherit_from = "claude"
+model = "opus"
+kill_grace = "20s"
+
+[agents.fake]
+mechanism = "claude-p"
+command = "/abs/path/to/tests/agents/fake-claude"
+test_only = true
+```
+
+| Field | Meaning |
+|-------|---------|
+| `mechanism` | The handler that drives the agent; today only `claude-p` (`claude -p`, stream-json). Required. |
+| `command` | The program, as a string or a list (`["claude", "--sub"]`). Required. |
+| `args` | Arguments after `command`. |
+| `model` | The model when the node sets no `llm_model`. |
+| `model_args` | Added when a model is selected; `{model}` is replaced, e.g. `["--model", "{model}"]`. |
+| `reasoning` | The reasoning level when the node sets no `reasoning_effort`. |
+| `reasoning_args` | Added when a reasoning level is selected; `{reasoning}` is replaced, e.g. `["--effort", "{reasoning}"]`. Without it, a reasoning level is an error. |
+| `timeout` | How long an invocation may run when the node sets no `timeout` (built-in `10m`). |
+| `kill_grace` | How long to wait after TERM before KILL, on timeout or stop (built-in `10s`). |
+| `env.remove` | Variables removed from the agent's environment. |
+| `env.set` | Variables set in the agent's environment, after `env.remove`; the `PAS_*` ids are set last. |
+| `test_only` | Refused unless `pas run` / `pas validate` get `--allow-test-agents`. |
+| `inherit_from` | Another profile to take every field this one leaves unset from. |
+
+Resolution: a `pas.toml` profile replaces the built-in profile of the same
+name whole. Then `inherit_from` is followed field by field: a field the
+profile sets replaces the parent's whole value (lists are not merged).
+Last, the built-in defaults fill any field still unset: `timeout = "10m"`,
+`kill_grace = "10s"` and the `env.remove` list below. An unknown field, an
+unknown or cyclic `inherit_from`, a missing `mechanism` or `command`, or a
+bad duration fails `pas run` and `pas validate`, naming the profile.
+
+> **Warning.** A profile that sets its own `env.remove` replaces the default
+> list, so `ANTHROPIC_API_KEY` then reaches the agent unless the profile
+> lists it too. The default list is:
+>
+> ```toml
+> env.remove = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+>               "OPENAI_API_KEY", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]
+> ```
+
+On a node, `llm_model` beats the profile's `model`, which beats the graph's
+`model`; `reasoning_effort` beats the profile's `reasoning`; `timeout` beats
+the profile's `timeout`. `pas run` and `pas validate` check every profile a
+pipeline uses before anything starts, and name the node: an unknown profile,
+a reasoning level on a profile without `reasoning_args`, or a `test_only`
+profile without `--allow-test-agents`.
+
 ---
 
 ### `runs` — List Runs
@@ -387,12 +452,12 @@ Success: `{"v":1,"ok":true,"run_id":"…","stop_path":"…","already_requested":
 ### `kill` — End an active Run now
 
 ```
-pas kill <run-id> [--grace 20s] [--json]
+pas kill <run-id> [--grace <duration>] [--json]
 ```
 
 Ends a `running` Run immediately. `pas kill` takes the PID of the Run's last Heartbeat (else its `AttemptStarted`) and signals it only if that PID provably is the Run: the Pipeline lock (`run.lock`) must be held right now, and the lock file must name that PID and this Run. Otherwise it sends no signal and fails with `pid_not_lock_holder`. A Run that is not `running` fails with `not_active`, also without a signal.
 
-It sends SIGTERM to the Run's process group (only when the Run leads its group; otherwise to the PID alone). A `pas run` handles SIGTERM by stopping its current stage (a Claude agent gets TERM, a 10 s grace, then KILL; other stage children are killed), journaling `AttemptEnded` with reason `stopped`, and exiting. If the process is still alive after `--grace`, `pas kill` sends SIGKILL to the Run and to the process groups of its child processes (provider CLIs and tool commands run in their own groups). A SIGKILLed Run writes no `AttemptEnded`, so its status becomes `crashed` once its Heartbeat is stale. The checkpoint of the last completed stage is kept: run the same `pas run` command again to resume, which repeats the stage that was in progress.
+It sends SIGTERM to the Run's process group (only when the Run leads its group; otherwise to the PID alone). A `pas run` handles SIGTERM by stopping its current stage (an agent gets TERM, its profile's `kill_grace`, then KILL; other stage children are killed), journaling `AttemptEnded` with reason `stopped`, and exiting. If the process is still alive after `--grace`, `pas kill` sends SIGKILL to the Run and to the process groups of its child processes (provider CLIs and tool commands run in their own groups). A SIGKILLed Run writes no `AttemptEnded`, so its status becomes `crashed` once its Heartbeat is stale. The checkpoint of the last completed stage is kept: run the same `pas run` command again to resume, which repeats the stage that was in progress.
 
 `pas kill` never writes the journal and takes no lock beyond a momentary probe. Use `pas stop` to end a Run cleanly after its current stage.
 
@@ -400,7 +465,7 @@ It sends SIGTERM to the Run's process group (only when the Run leads its group; 
 
 | Flag | Meaning |
 |------|---------|
-| `--grace <duration>` | Time between SIGTERM and SIGKILL, e.g. `500ms`, `10s`, `1m` (default `20s`: longer than a stopped Run waits for its agent, 10 s grace plus 5 s, so the Run still journals `AttemptEnded`) |
+| `--grace <duration>` | Time between SIGTERM and SIGKILL, e.g. `500ms`, `10s`, `1m`. Default: 5 s longer than a stopped Run waits for its agents, so the Run still journals `AttemptEnded`. That wait is recorded in the Attempt's `AttemptStarted` as `stop_wait_ms`: the longest `kill_grace` of the profiles the pipeline uses, plus 5 s (15 s with the built-in profile, so the default is 20 s). A Run that recorded none gets 20 s. The Monitor's kill uses this default. |
 | `--json` | Print one JSON object |
 
 #### Output
@@ -483,14 +548,20 @@ without it, each such node gets a `beads_available` error. A `beads.select` node
 without `epic` gets an `attribute_required` error.
 
 ```
-pas validate <PIPELINE> [--json]
+pas validate <PIPELINE> [--allow-test-agents] [--json]
 ```
+
+It also checks every agent profile the pipeline uses against the current
+directory's project (`pas.toml` and the built-in profiles); see
+[Agent profiles](#agent-profiles-agentsname-in-pastoml). A `test_only`
+profile is an error unless `--allow-test-agents` is given.
 
 #### Arguments
 
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `PIPELINE` | Yes | Path to the `.dot` pipeline file |
+| `--allow-test-agents` | No | Allow agent profiles marked `test_only` |
 | `--json` | No | Print one JSON object on stdout instead of the human report |
 
 #### JSON output (`--json`)
@@ -1240,7 +1311,7 @@ transcript /…/transcripts/<id>.jsonl; stderr /…/transcripts/<id>.stderr.log
 
 **Stopping it.** On the node's timeout, or when the Run is stopped (SIGTERM to
 `pas run`, as `pas kill` sends), PAS sends TERM to the agent's process group,
-waits a grace period (10 s), then sends KILL. A stopped Run starts no new stage,
+waits the profile's `kill_grace` (built-in 10 s), then sends KILL. A stopped Run starts no new stage,
 waits for the agent to exit, journals `AttemptEnded` with reason `stopped` and
 exits 143; the stopped stage records no `StageFailed`, and resuming the Run runs
 it again.

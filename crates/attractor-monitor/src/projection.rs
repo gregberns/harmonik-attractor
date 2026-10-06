@@ -604,6 +604,7 @@ mod tests {
             argv: vec!["pas".into()],
             git_head: None,
             resumed_from_node: None,
+            stop_wait_ms: None,
         }
     }
 

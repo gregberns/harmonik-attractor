@@ -108,7 +108,7 @@ fn work_node(attrs: &str) -> String {
     format!(
         r#"digraph G {{
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="claude", prompt="do it", {attrs}]
+            work [shape="box", agent="fake", prompt="do it", {attrs}]
             done [shape="Msquare"]
             start -> work -> done
         }}"#

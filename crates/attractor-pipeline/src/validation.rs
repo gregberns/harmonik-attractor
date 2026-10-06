@@ -201,6 +201,49 @@ pub fn validate_plan(plan: &ExecutionPlan) -> Vec<Diagnostic> {
     diagnostics
 }
 
+/// One `agent_profile` error per agent node whose selection `agents` cannot
+/// run: an unknown profile, a reasoning level on a profile without
+/// `reasoning_args`, or a `test_only` profile when test agents are not
+/// allowed. Pure; `pas run` and `pas validate` call it after compiling.
+pub fn check_agents(
+    plan: &ExecutionPlan,
+    agents: &attractor_agent_handler::Agents,
+) -> Vec<Diagnostic> {
+    use attractor_agent_handler::ConfigError;
+    let mut nodes = plan
+        .all_nodes()
+        .filter_map(|node| Some((node.node_id.as_str(), node.agent.as_ref()?)))
+        .collect::<Vec<_>>();
+    nodes.sort_unstable_by_key(|(id, _)| *id);
+    nodes
+        .into_iter()
+        .filter_map(|(node_id, selection)| {
+            let error = agents.check(selection).err()?;
+            let fix = match &error {
+                ConfigError::UnknownProfile(_) => format!(
+                    "Use a defined profile, or define [agents.{}] in pas.toml",
+                    selection.profile
+                ),
+                ConfigError::NoReasoningArgs { .. } => {
+                    "Remove reasoning_effort, or give the profile reasoning_args".into()
+                }
+                ConfigError::TestOnly { .. } => {
+                    "Pass --allow-test-agents (test profiles only)".into()
+                }
+                _ => "Fix the agent profile in pas.toml".into(),
+            };
+            Some(Diagnostic {
+                rule: "agent_profile".into(),
+                severity: Severity::Error,
+                message: format!("Node '{node_id}': {error}"),
+                node_id: Some(node_id.to_string()),
+                edge: None,
+                fix: Some(fix),
+            })
+        })
+        .collect()
+}
+
 /// One `beads_available` error per `beads.select` / `beads.close` node when
 /// `bd` is not on `PATH`, so a Run fails before it starts rather than at the
 /// first Beads stage. Pipelines without Beads nodes never look at `PATH`.

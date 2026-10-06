@@ -28,7 +28,10 @@ struct DiagnosticJson {
     fix: Option<String>,
 }
 
-fn check(path: &std::path::Path) -> Result<Vec<Diagnostic>, ValidateError> {
+fn check(
+    path: &std::path::Path,
+    allow_test_agents: bool,
+) -> Result<Vec<Diagnostic>, ValidateError> {
     let source = std::fs::read_to_string(path).map_err(|e| ValidateError {
         code: "io",
         message: e.to_string(),
@@ -40,7 +43,32 @@ fn check(path: &std::path::Path) -> Result<Vec<Diagnostic>, ValidateError> {
             code: "invalid_dot",
             message: e.to_string(),
         })?;
-    Ok(attractor_pipeline::validate(&graph))
+    let mut diagnostics = attractor_pipeline::validate(&graph);
+    if diagnostics.iter().all(|d| d.severity != Severity::Error) {
+        diagnostics.extend(check_agents(graph, allow_test_agents)?);
+    }
+    Ok(diagnostics)
+}
+
+/// Every agent profile the pipeline uses, checked against the profiles of
+/// the current directory's project (built-in, `pas.toml`).
+fn check_agents(
+    graph: attractor_pipeline::PipelineGraph,
+    allow_test_agents: bool,
+) -> Result<Vec<Diagnostic>, ValidateError> {
+    let invalid_config = |message: String| ValidateError {
+        code: "invalid_config",
+        message,
+    };
+    let plan = attractor_pipeline::ExecutionPlan::compile(graph)
+        .map_err(|e| invalid_config(e.to_string()))?;
+    let configured = attractor_pipeline::RunConfiguration::prepare(plan, Default::default())
+        .map_err(|e| invalid_config(e.to_string()))?;
+    let profiles = attractor_pipeline::agent_profiles(configured.controls())
+        .map_err(|e| invalid_config(e.to_string()))?;
+    let agents = crate::agents::agents(profiles, allow_test_agents)
+        .map_err(|e| invalid_config(e.to_string()))?;
+    Ok(attractor_pipeline::check_agents(configured.plan(), &agents))
 }
 
 fn print_human(result: Result<Vec<Diagnostic>, ValidateError>) -> anyhow::Result<()> {
@@ -100,8 +128,12 @@ fn print_json(result: Result<Vec<Diagnostic>, ValidateError>) -> anyhow::Result<
     }
 }
 
-pub fn cmd_validate(path: &std::path::Path, json: bool) -> anyhow::Result<()> {
-    let result = check(path);
+pub fn cmd_validate(
+    path: &std::path::Path,
+    allow_test_agents: bool,
+    json: bool,
+) -> anyhow::Result<()> {
+    let result = check(path, allow_test_agents);
     if json {
         print_json(result)
     } else {
@@ -133,7 +165,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = cmd_validate(&path, false);
+        let result = cmd_validate(&path, false, false);
         let err = result.expect_err("validation must fail for a missing llm_provider");
         assert!(err.to_string().contains("Validation failed"));
 
@@ -167,7 +199,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = cmd_validate(&path, false);
+        let result = cmd_validate(&path, false, false);
         assert!(result.is_ok());
     }
 }

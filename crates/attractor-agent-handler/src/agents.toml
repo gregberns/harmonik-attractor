@@ -1,0 +1,32 @@
+# The agent profiles PAS ships with. A project replaces a profile by name,
+# or adds one, in `pas.toml` `[agents.<name>]`; `[defaults]` fills any field
+# no profile in an `inherit_from` chain sets.
+
+[defaults]
+timeout = "10m"
+kill_grace = "10s"
+
+[defaults.env]
+# Removed from every agent's environment, so an agent bills the operator's
+# subscription, never an API key it inherited. A profile that sets its own
+# `env.remove` replaces this list.
+remove = [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "OPENAI_API_KEY",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+]
+
+[profiles.claude]
+mechanism = "claude-p"
+command = ["claude"]
+args = [
+    "--no-session-persistence",
+    "--dangerously-skip-permissions",
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+]
+model_args = ["--model", "{model}"]
+reasoning_args = ["--effort", "{reasoning}"]

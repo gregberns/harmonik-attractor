@@ -561,6 +561,10 @@ fn stage(provider: LlmProvider, labels: Option<[&str; 2]>) -> Stage {
         kind,
         handler: crate::HandlerIdentity::Codergen,
         provider: Some(provider),
+        agent: crate::handlers::codergen_handler::test_agent(
+            Some(provider),
+            node.llm_model.clone(),
+        ),
         invocation: Default::default(),
     };
     let graph = PipelineGraph::from_dot(attractor_dot::parse(&dot).unwrap()).unwrap();
@@ -604,7 +608,7 @@ async fn run_both(
             CodergenExecutionControls {
                 dry_run: false,
                 workdir: None,
-                claude: ClaudeCliConfig::default(),
+                claude: Some(ClaudeCliConfig::default()),
                 run_dir: with_run_dir.then(|| run_dir.clone()),
                 program: Some(program),
                 events: None,

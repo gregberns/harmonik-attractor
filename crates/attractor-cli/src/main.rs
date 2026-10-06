@@ -120,6 +120,10 @@ enum Commands {
         /// Ignored on resume
         #[arg(long)]
         worktree_root: Option<PathBuf>,
+
+        /// Allow agent profiles marked `test_only` (the test fakes)
+        #[arg(long)]
+        allow_test_agents: bool,
     },
 
     /// Answer a waiting Human Gate by creating its answer file. Exits 7 when
@@ -166,10 +170,12 @@ enum Commands {
         run_id: String,
 
         /// How long to wait after SIGTERM before SIGKILL (e.g. 500ms, 10s, 1m).
-        /// The default is longer than a stopped Run waits for its agent (10 s
-        /// grace + 5 s), so the Run can still journal its own end.
-        #[arg(long, default_value = "20s")]
-        grace: String,
+        /// Default: 5 s longer than the Run waits for its agents once stopped
+        /// (its profiles' longest kill_grace + 5 s, recorded when the Attempt
+        /// started), so the Run can still journal its own end; 20 s for a Run
+        /// that recorded none
+        #[arg(long)]
+        grace: Option<String>,
 
         /// Print one JSON object `{"v":1,"ok":...,"run_id":...}`
         #[arg(long)]
@@ -207,6 +213,10 @@ enum Commands {
         /// Print one JSON object `{"v":1,"ok":true,"valid":...,"diagnostics":[...]}`
         #[arg(long)]
         json: bool,
+
+        /// Allow agent profiles marked `test_only` (the test fakes)
+        #[arg(long)]
+        allow_test_agents: bool,
     },
 
     /// Show information about a pipeline
@@ -503,6 +513,7 @@ async fn run_cli() -> anyhow::Result<()> {
             allow_shared_workdir,
             base,
             worktree_root,
+            allow_test_agents,
         } => {
             let codergen_claude = CodergenClaudeCliOpts {
                 settings_mode: codergen_claude_settings_mode,
@@ -522,6 +533,7 @@ async fn run_cli() -> anyhow::Result<()> {
                 allow_shared_workdir,
                 base,
                 worktree_root: worktree_root.map(|root| std::path::absolute(&root).unwrap_or(root)),
+                allow_test_agents,
             };
             if pipeline.is_dir() {
                 cmd_run_dir(
@@ -582,11 +594,15 @@ async fn run_cli() -> anyhow::Result<()> {
             run_id,
             grace,
             json,
-        } => cmd_kill(&run_id, &grace, json)?,
+        } => cmd_kill(&run_id, grace.as_deref(), json)?,
         #[cfg(feature = "monitor")]
         Commands::Monitor { port, open } => commands::monitor::cmd_monitor(port, open).await?,
-        Commands::Validate { pipeline, json } => {
-            cmd_validate(&pipeline, json)?;
+        Commands::Validate {
+            pipeline,
+            json,
+            allow_test_agents,
+        } => {
+            cmd_validate(&pipeline, allow_test_agents, json)?;
         }
         Commands::Info { pipeline } => {
             cmd_info(&pipeline)?;

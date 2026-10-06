@@ -191,6 +191,7 @@ impl Scratch {
                 argv: vec![],
                 git_head: None,
                 resumed_from_node: None,
+                stop_wait_ms: None,
             },
             EventData::Heartbeat { pid },
         ];

@@ -9,12 +9,17 @@ use tokio_util::sync::CancellationToken;
 
 use crate::registry::AgentObserver;
 
-/// Which agent profile runs a node, and with which model.
+/// Which agent profile runs a node, with which model and reasoning level.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
     pub profile: String,
-    /// Fills the profile's `{model}` template; `None` leaves `model_args` out.
+    /// Fills the profile's `{model}` template; `None` uses the profile's
+    /// `model`, and leaves `model_args` out when that is unset too.
     pub model: Option<String>,
+    /// Fills the profile's `{reasoning}` template; `None` uses the
+    /// profile's `reasoning`, and leaves `reasoning_args` out when that is
+    /// unset too.
+    pub reasoning: Option<String>,
 }
 
 /// The ids that name one invocation; they become the `PAS_*` variables.
@@ -41,7 +46,8 @@ pub struct AgentRequest<'a> {
     ///    design §1/§2 has no other place for.
     pub extra_args: Vec<String>,
     pub workdir: PathBuf,
-    pub timeout: Duration,
+    /// The node's timeout; `None` uses the profile's.
+    pub timeout: Option<Duration>,
     pub record: Record,
     /// Where the handler writes the agent's stdout as it arrives, if anywhere.
     pub transcript: Option<PathBuf>,
@@ -59,13 +65,15 @@ pub struct AgentRequest<'a> {
 /// What [`crate::Agents::run`] hands a handler: the request, resolved.
 pub struct Invocation<'a> {
     pub invocation_id: &'a str,
-    /// Profile command, profile args, extra args and filled model args.
+    /// Profile command, profile args, extra args, filled model args and
+    /// filled reasoning args.
     /// The handler appends its own flags and must not drop any of these.
     pub argv: Vec<String>,
     /// The complete child environment; the handler uses exactly this map.
     pub env: BTreeMap<String, String>,
     pub prompt: &'a str,
     pub workdir: &'a Path,
+    /// The request's timeout, else the profile's.
     pub timeout: Duration,
     /// How long to wait after TERM before KILL, on timeout or cancel.
     pub kill_grace: Duration,

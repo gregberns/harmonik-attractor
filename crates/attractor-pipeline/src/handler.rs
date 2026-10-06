@@ -641,8 +641,9 @@ mod tests {
         // shim-only PATH the parent test set.
         let agents = attractor_agent_handler::Agents::new(
             vec![std::sync::Arc::new(attractor_handler_claude_p::ClaudeP)],
-            attractor_agent_handler::builtin_profiles(),
+            attractor_agent_handler::builtin_profiles().unwrap(),
             std::env::vars().collect(),
+            false,
         )
         .unwrap();
         let registry = default_registry_with_agents(std::sync::Arc::new(agents));

@@ -5,6 +5,7 @@ use std::fmt;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
+use attractor_agent_handler::Selection;
 use attractor_dot::AttributeValue;
 
 use crate::graph::{PipelineEdge, PipelineGraph, PipelineNode};
@@ -124,15 +125,20 @@ pub struct ResolvedNode {
     pub kind: ResolvedNodeKind,
     pub handler: HandlerIdentity,
     pub provider: Option<LlmProvider>,
+    /// The agent profile the node runs with, and the node's own model and
+    /// reasoning level: from `agent=`, or profile `claude` for
+    /// `llm_provider="claude"`. `None` for every other node, including
+    /// Codex and Gemini nodes, which keep today's path.
+    pub agent: Option<Selection>,
     pub invocation: NodeInvocationPolicy,
 }
 
 impl ResolvedNode {
     /// Whether the node runs an agent through `Agents`, which bounds it with
     /// its own TERM-grace-KILL and hard deadline and honours the cancel token
-    /// itself. Today: codergen nodes with the Claude provider.
+    /// itself: codergen nodes with an agent profile.
     pub fn runs_through_agents(&self) -> bool {
-        self.handler == HandlerIdentity::Codergen && self.provider == Some(LlmProvider::Claude)
+        self.handler == HandlerIdentity::Codergen && self.agent.is_some()
     }
 }
 
@@ -468,7 +474,13 @@ impl ExecutionPlan {
         }
         for node_id in node_ids {
             let node = self.nodes.get(node_id).expect("collected node exists");
-            let provider = node.provider.map(|p| p.as_str()).unwrap_or("-");
+            // An `agent=` node has no provider: name its profile, so a
+            // changed profile changes the plan. Other nodes are unchanged.
+            let provider = match (node.provider, &node.agent) {
+                (Some(provider), _) => provider.as_str().to_string(),
+                (None, Some(agent)) => format!("agent={}", agent.profile),
+                (None, None) => "-".to_string(),
+            };
             canonical.push_str(&format!(
                 "node:{id}|kind:{kind:?}|handler:{handler}|provider:{provider}|attempts:{attempts}|timeout:{timeout};",
                 id = node.node_id,
@@ -627,8 +639,22 @@ fn validate_supported_execution_capabilities(
             ));
         }
 
-        let supports_claude_controls = resolved.handler == HandlerIdentity::Codergen
-            && resolved.provider == Some(LlmProvider::Claude);
+        // An agent profile takes a reasoning level; Codex and Gemini nodes
+        // stay on today's path until they get profiles, so it is rejected
+        // there rather than ignored.
+        if resolved.agent.is_none() {
+            for attribute in ["agent", "reasoning_effort"] {
+                if source.raw_attrs.contains_key(attribute) {
+                    diagnostics.push(unsupported_node_capability(
+                        node_id,
+                        attribute,
+                        &format!("Remove '{attribute}' or use it on a codergen node with an agent profile (agent= or llm_provider=\"claude\")"),
+                    ));
+                }
+            }
+        }
+
+        let supports_claude_controls = resolved.runs_through_agents();
         if !supports_claude_controls {
             for attribute in ["allowed_tools", "max_budget_usd"] {
                 if source.raw_attrs.contains_key(attribute) {
@@ -688,13 +714,7 @@ fn validate_unsupported_attributes(
     let mut nodes = graph.all_nodes().collect::<Vec<_>>();
     nodes.sort_by(|left, right| left.id.cmp(&right.id));
     for node in nodes {
-        for attribute in [
-            "fidelity",
-            "reasoning_effort",
-            "auto_status",
-            "allow_partial",
-            "thread_id",
-        ] {
+        for attribute in ["fidelity", "auto_status", "allow_partial", "thread_id"] {
             if node.raw_attrs.contains_key(attribute) {
                 diagnostics.push(unsupported_node_capability(
                     &node.id,
@@ -762,6 +782,8 @@ const NODE_STRING_SEMANTIC_ATTRS: &[&str] = &[
     "handler",
     "prompt",
     "llm_provider",
+    "agent",
+    "reasoning_effort",
     "class",
     "classes",
 ];
@@ -1030,7 +1052,11 @@ fn resolve_node(
         }]);
     };
 
-    let (provider, defaulted) = if consumes_provider {
+    let profile = string_attr(&node.raw_attrs, "agent");
+    let (provider, defaulted) = if !consumes_provider || profile.is_some() {
+        // `agent=` names the profile and satisfies the provider rule.
+        (None, false)
+    } else {
         match node.llm_provider.as_deref().and_then(LlmProvider::parse) {
             Some(provider) => (Some(provider), false),
             None => match policy {
@@ -1039,18 +1065,25 @@ fn resolve_node(
                         kind: SemanticDiagnosticKind::MissingProvider,
                         node_id: Some(node.id.clone()),
                         message: format!(
-                            "Node '{}' resolves to handler '{}' but has no llm_provider",
+                            "Node '{}' resolves to handler '{}' but has no agent or llm_provider",
                             node.id, handler
                         ),
-                        fix: "Add llm_provider=\"claude\", \"codex\", or \"gemini\"".into(),
+                        fix: "Add agent=\"<profile>\" or llm_provider=\"claude\", \"codex\", or \"gemini\""
+                            .into(),
                     }]);
                 }
                 MissingProviderPolicy::Insert(provider) => (Some(provider), true),
             },
         }
-    } else {
-        (None, false)
     };
+    let agent = consumes_provider
+        .then(|| agent_profile(profile, provider))
+        .flatten()
+        .map(|profile| Selection {
+            profile,
+            model: node.llm_model.clone(),
+            reasoning: string_attr(&node.raw_attrs, "reasoning_effort"),
+        });
 
     Ok((
         ResolvedNode {
@@ -1058,10 +1091,22 @@ fn resolve_node(
             kind,
             handler,
             provider,
+            agent,
             invocation,
         },
         defaulted,
     ))
+}
+
+/// The profile a provider-consuming node runs with: `agent=` wins over
+/// `llm_provider` (no error); `llm_provider="claude"` is profile `claude`;
+/// Codex and Gemini have no profile yet (ticket 04).
+fn agent_profile(agent: Option<String>, provider: Option<LlmProvider>) -> Option<String> {
+    match (agent, provider) {
+        (Some(profile), _) => Some(profile),
+        (None, Some(LlmProvider::Claude)) => Some(crate::handlers::CLAUDE_PROFILE.to_string()),
+        (None, Some(LlmProvider::Codex | LlmProvider::Gemini) | None) => None,
+    }
 }
 
 fn resolve_invocation_policy(
@@ -1491,8 +1536,12 @@ mod tests {
                 "fidelity",
             ),
             (
-                r#"work [shape="box", prompt="work", llm_provider="claude", reasoning_effort="high"]"#,
+                r#"work [shape="box", prompt="work", llm_provider="codex", reasoning_effort="high"]"#,
                 "reasoning_effort",
+            ),
+            (
+                r#"work [shape="parallelogram", tool_command="true", agent="claude"]"#,
+                "agent",
             ),
             (
                 r#"work [shape="box", prompt="work", llm_provider="claude", auto_status=true]"#,
@@ -1552,12 +1601,58 @@ mod tests {
     }
 
     #[test]
-    fn stylesheet_reasoning_effort_is_rejected_instead_of_ignored() {
+    fn reasoning_effort_and_agent_resolve_to_an_agent_selection() {
+        let plan = ExecutionPlan::compile(graph(
+            r##"digraph G {
+                model_stylesheet="#styled { reasoning_effort: low; llm_model: m2; }"
+                start [shape="Mdiamond"]
+                named [shape="box", prompt="p", agent="fake", llm_model="m1", reasoning_effort="high"]
+                both [shape="box", prompt="p", agent="fake", llm_provider="codex"]
+                alias [shape="box", prompt="p", llm_provider="anthropic", reasoning_effort="high"]
+                styled [shape="box", prompt="p", llm_provider="claude"]
+                codex [shape="box", prompt="p", llm_provider="codex"]
+                done [shape="Msquare"]
+                start -> named -> both -> alias -> styled -> codex -> done
+            }"##,
+        ))
+        .unwrap();
+        let agent = |id: &str| plan.node(id).unwrap().agent.clone();
+        let selection = |profile: &str, model: Option<&str>, reasoning: Option<&str>| {
+            Some(Selection {
+                profile: profile.into(),
+                model: model.map(String::from),
+                reasoning: reasoning.map(String::from),
+            })
+        };
+        assert_eq!(agent("named"), selection("fake", Some("m1"), Some("high")));
+        assert_eq!(plan.node("named").unwrap().provider, None);
+        assert_eq!(agent("both"), selection("fake", None, None), "agent wins");
+        assert_eq!(agent("alias"), selection("claude", None, Some("high")));
+        assert_eq!(
+            agent("styled"),
+            selection("claude", Some("m2"), Some("low"))
+        );
+        assert_eq!(agent("codex"), None);
+        assert!(plan.node("named").unwrap().runs_through_agents());
+        assert!(!plan.node("codex").unwrap().runs_through_agents());
+    }
+
+    #[test]
+    fn agent_satisfies_the_missing_provider_rule() {
+        // `compile` rejects a codergen node with no provider.
+        let plan = ExecutionPlan::compile(graph(
+            r#"digraph G { start [shape="Mdiamond"] work [shape="box", prompt="p", agent="fake"] done [shape="Msquare"] start -> work -> done }"#,
+        ));
+        assert!(plan.is_ok(), "{plan:?}");
+    }
+
+    #[test]
+    fn stylesheet_reasoning_effort_is_rejected_on_a_node_without_a_profile() {
         let error = ExecutionPlan::compile(graph(
             r##"digraph G {
                 model_stylesheet="#work { reasoning_effort: high; }"
                 start [shape="Mdiamond"]
-                work [shape="box", prompt="work", llm_provider="claude"]
+                work [shape="box", prompt="work", llm_provider="codex"]
                 done [shape="Msquare"]
                 start -> work -> done
             }"##,

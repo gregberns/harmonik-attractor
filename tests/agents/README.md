@@ -4,19 +4,26 @@
 prints scripted stream-json, so any engine behaviour can be tested end to
 end through `pas run` with no real agent, API key or subscription.
 
-PAS runs `claude` from `PATH` with its own environment minus the provider
-keys plus the `PAS_*` ids, so a test puts this script first on `PATH` as
-`claude` and sets `FAKE_AGENT_SCENARIOS`. A seam 1 test can instead give
-`Agents` a `claude` profile whose command is this script
-(`crates/attractor-handler-claude-p/tests/claude_p.rs`). The Rust helper that does this is
-`crates/attractor-cli/tests/fake_agent/mod.rs`; the tests are in
-`crates/attractor-cli/tests/fake_agent_harness.rs`.
+Tests select it by agent profile (ticket 03): the test repo's `pas.toml`
+defines a `fake` profile (`mechanism = "claude-p"`, `command` = this script,
+`test_only = true`), pipelines use `agent="fake"`, and `pas run` gets
+`--allow-test-agents`. PAS runs it with its own environment minus the
+profile's `env.remove` plus `env.set` and the `PAS_*` ids; the test sets
+`FAKE_AGENT_SCENARIOS`. Extra profile fields (`kill_grace`, `timeout`,
+`reasoning_args`, `env.set`, ...) go in the same `pas.toml`. Only the test of
+the `llm_provider="claude"` alias still puts this script first on `PATH` as
+`claude`. A seam 1 test can instead give `Agents` a profile whose command is
+this script (`crates/attractor-handler-claude-p/tests/claude_p.rs`). The Rust
+helper is `crates/attractor-cli/tests/fake_agent/mod.rs`; the tests are in
+`crates/attractor-cli/tests/fake_agent_harness.rs` and
+`crates/attractor-cli/tests/agent_profiles.rs`.
 
 ## Contract
 
 - **Flags.** It accepts exactly the flags PAS passes to `claude` (the
   built-in `claude` profile's args, the `[codergen.claude]` and node flags,
-  and the `claude-p` handler's own); value flags take their value. An unknown flag
+  `--model`, `--effort`, and the `claude-p` handler's own); value flags take
+  their value. An unknown flag
   exits 2 with `fake-claude: unknown flag <x>`, so argv drift shows up in
   tests. `-p` is required.
 - **Scenario.** The scenario text is the first match of:

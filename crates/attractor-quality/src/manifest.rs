@@ -1,5 +1,6 @@
+use attractor_agent_handler::ProfileConfig;
 use serde::{Deserialize, Deserializer};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -10,6 +11,10 @@ pub struct Manifest {
     pub quality: Option<QualitySection>,
     pub codergen: Option<CodergenSection>,
     pub run: Option<RunSection>,
+    /// `[agents.<name>]`: profiles that replace a built-in one of the same
+    /// name, or add one.
+    #[serde(default)]
+    pub agents: BTreeMap<String, ProfileConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

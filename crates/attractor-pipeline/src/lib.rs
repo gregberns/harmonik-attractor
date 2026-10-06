@@ -46,8 +46,8 @@ pub use handler::{
 };
 pub use handlers::wait_human::WaitHumanHandler;
 pub use handlers::{
-    BeadsCloseHandler, BeadsSelectHandler, CodergenHandler, FanInHandler, ManagerLoopHandler,
-    ParallelHandler, QualityHandler, ToolHandler,
+    agent_profiles, BeadsCloseHandler, BeadsSelectHandler, CodergenHandler, FanInHandler,
+    ManagerLoopHandler, ParallelHandler, QualityHandler, ToolHandler,
 };
 pub use interviewer::{
     Answer, AutoApproveInterviewer, ConsoleInterviewer, Interviewer, JournalInterviewer, Question,
@@ -66,6 +66,6 @@ pub use run_configuration::{
 pub use stylesheet::{apply_stylesheet, parse_stylesheet, Declaration, Rule, Selector, Stylesheet};
 pub use transforms::{apply_transforms, expand_variables};
 pub use validation::{
-    validate, validate_beads_available, validate_or_raise, validate_plan, Diagnostic, LintRule,
-    Severity,
+    check_agents, validate, validate_beads_available, validate_or_raise, validate_plan, Diagnostic,
+    LintRule, Severity,
 };

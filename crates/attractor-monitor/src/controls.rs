@@ -25,8 +25,6 @@ use crate::views::run::current_status;
 const STARTUP_WINDOW: Duration = Duration::from_secs(2);
 /// Bytes of `console.log` shown when a start fails.
 const TAIL_BYTES: u64 = 4096;
-/// Kill escalates to SIGKILL after this long, inside the 5 s the Run has to end.
-const KILL_GRACE: &str = "3s";
 
 /// Which actions a Run in a given status offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -225,7 +223,9 @@ pub async fn kill(State(state): State<AppState>, UrlPath(id): UrlPath<String>) -
         Ok(t) => t,
         Err(r) => return r,
     };
-    let args = ["kill", &t.id, "--grace", KILL_GRACE, "--json"].map(OsString::from);
+    // No --grace: pas kill waits as long as the Run's agent profiles need
+    // (recorded in AttemptStarted), so the Run can still journal its end.
+    let args = ["kill", &t.id, "--json"].map(OsString::from);
     run_pas_command(&state, args.to_vec(), "Killed.").await
 }
 

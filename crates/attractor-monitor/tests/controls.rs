@@ -123,6 +123,7 @@ fn add_run(e: &Env, kind: Kind, argv: &[&str]) -> String {
         argv: vec!["pas".into()],
         git_head: None,
         resumed_from_node: None,
+        stop_wait_ms: None,
     })
     .unwrap();
     let end = match kind {
@@ -212,12 +213,12 @@ async fn stop_error_message_from_json_is_shown() {
 }
 
 #[tokio::test]
-async fn kill_calls_pas_kill_with_short_grace_and_shows_failures() {
+async fn kill_calls_pas_kill_with_the_runs_default_grace_and_shows_failures() {
     let e = env("exit 0").await;
     let id = add_run(&e, Kind::Running, RUN_ARGV);
     page(&e, &id).await;
     assert_eq!(post(&e, &id, "kill").await.0, 200);
-    assert!(e.calls().contains(&format!("kill {id} --grace 3s --json")));
+    assert!(e.calls().contains(&format!("kill {id} --json")));
 
     let e = env(r#"echo '{"error":{"code":"pid_not_lock_holder","message":"pid 7 does not hold the lock"}}'; exit 1"#).await;
     let id = add_run(&e, Kind::Running, RUN_ARGV);

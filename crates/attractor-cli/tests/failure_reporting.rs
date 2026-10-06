@@ -17,7 +17,7 @@ fn one_node(attrs: &str) -> String {
     format!(
         r#"digraph G {{
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="claude", {attrs}]
+            work [shape="box", agent="fake", {attrs}]
             done [shape="Msquare"]
             start -> work -> done
         }}"#
@@ -115,8 +115,8 @@ fn a_fail_with_only_a_success_edge_stops_the_run() {
         &fake,
         r#"digraph G {
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=fail"]
-            next [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
+            work [shape="box", agent="fake", timeout="30s", prompt="scenario=fail"]
+            next [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
             done [shape="Msquare"]
             start -> work
             work -> next [condition="outcome=success"]
@@ -143,8 +143,8 @@ fn a_success_with_only_non_matching_edges_stops_the_run() {
         &fake,
         r#"digraph G {
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
-            fix [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
+            work [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
+            fix [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
             done [shape="Msquare"]
             start -> work
             work -> fix [condition="outcome=fail"]
@@ -168,8 +168,8 @@ fn a_failed_diamond_agent_ending_with_pass_does_not_take_the_pass_edge() {
         &fake,
         r#"digraph G {
             start [shape="Mdiamond"]
-            work [shape="diamond", llm_provider="claude", timeout="30s", prompt="scenario=fail label=PASS"]
-            next [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
+            work [shape="diamond", agent="fake", timeout="30s", prompt="scenario=fail label=PASS"]
+            next [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
             done [shape="Msquare"]
             start -> work
             work -> next [label="PASS", condition="outcome=success"]
@@ -192,9 +192,9 @@ fn preferred_label_conditions_still_route() {
     let output = fake.run(
         r#"digraph G {
             start [shape="Mdiamond"]
-            work [shape="diamond", llm_provider="claude", timeout="30s", prompt="scenario=label label=beta_route"]
-            a [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
-            b [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
+            work [shape="diamond", agent="fake", timeout="30s", prompt="scenario=label label=beta_route"]
+            a [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
+            b [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
             done [shape="Msquare"]
             start -> work
             work -> a [label="alpha_route", condition="preferred_label=alpha_route"]
@@ -215,8 +215,8 @@ fn a_resume_after_no_matching_edge_does_not_run_the_node_again() {
     let fake = FakeAgent::new();
     let dot = r#"digraph G {
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=fail"]
-            next [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
+            work [shape="box", agent="fake", timeout="30s", prompt="scenario=fail"]
+            next [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
             done [shape="Msquare"]
             start -> work
             work -> next [condition="outcome=success"]

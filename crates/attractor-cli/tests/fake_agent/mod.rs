@@ -1,9 +1,13 @@
 //! Runs `pas run` against the fake `claude` (`tests/agents/fake-claude`).
 //!
-//! Each [`FakeAgent`] owns a scratch folder: a git repo with one commit used
-//! as the workdir, a `bin/` holding the fake as `claude` (first on `PATH`),
-//! the fake's scenario folder, and the Run's logs and state folders. Git
-//! ignores the developer's global and system config (hooks, templates).
+//! Each [`FakeAgent`] owns a scratch folder: a git repo used as the workdir,
+//! whose first commit holds a `pas.toml` with the `fake` agent profile
+//! (`test_only`, `command` = the fake script), the fake's scenario folder,
+//! and the Run's logs and state folders. Pipelines select the fake with
+//! `agent="fake"`, and every `pas run` passes `--allow-test-agents`. A
+//! `bin/` first on `PATH` holds the fake as `claude` only after
+//! [`FakeAgent::shim_claude_on_path`] (the `llm_provider="claude"` alias).
+//! Git ignores the developer's global and system config (hooks, templates).
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -29,10 +33,39 @@ impl FakeAgent {
         for dir in [fake.bin(), fake.scenarios(), fake.repo()] {
             fs::create_dir_all(dir).unwrap();
         }
-        std::os::unix::fs::symlink(fake_claude(), fake.bin().join("claude")).unwrap();
         fake.git(&["init", "-q"]);
-        fake.git(&["commit", "-q", "--allow-empty", "-m", "base"]);
+        fake.write_pas_toml("");
+        fake.git(&["add", "pas.toml"]);
+        fake.git(&["commit", "-q", "-m", "base"]);
         fake
+    }
+
+    /// Writes the repo's `pas.toml`: the `fake` profile, then `agents`
+    /// (more `[agents.<name>]` tables, or an override of `fake`'s fields
+    /// when it starts with plain keys). Does not commit.
+    pub fn write_pas_toml(&self, agents: &str) {
+        let fake = fake_claude().canonicalize().unwrap();
+        fs::write(
+            self.repo().join("pas.toml"),
+            format!(
+                "[project]\nname = \"fake-test\"\n\n[agents.fake]\nmechanism = \"claude-p\"\ncommand = {fake:?}\ntest_only = true\n{agents}\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    /// [`FakeAgent::write_pas_toml`], committed, so the Run's worktree and
+    /// the dirty check see it.
+    pub fn commit_pas_toml(&self, agents: &str) {
+        self.write_pas_toml(agents);
+        self.git(&["add", "pas.toml"]);
+        self.git(&["commit", "-q", "-m", "pas.toml"]);
+    }
+
+    /// Puts the fake on `PATH` as `claude`, for `llm_provider="claude"`.
+    #[allow(dead_code)]
+    pub fn shim_claude_on_path(&self) {
+        std::os::unix::fs::symlink(fake_claude(), self.bin().join("claude")).unwrap();
     }
 
     fn path(&self) -> &Path {
@@ -81,7 +114,7 @@ impl FakeAgent {
         String::from_utf8(output.stdout).unwrap().trim().to_string()
     }
 
-    /// Writes `dot` and runs `pas run` on it with the fake first on `PATH`.
+    /// Writes `dot` and runs `pas run` on it with test agents allowed.
     pub fn run(&self, dot: &str) -> Output {
         self.command(dot).output().unwrap()
     }
@@ -89,19 +122,22 @@ impl FakeAgent {
     /// Writes `dot` and returns the `pas run` command [`Self::run`] runs, for
     /// tests that add to its environment or stdin.
     pub fn command(&self, dot: &str) -> Command {
-        let pipeline = self.path().join("p.dot");
-        fs::write(&pipeline, dot).unwrap();
+        let mut command = self.pas_run(dot);
+        command
+            .arg("--workdir")
+            .arg(self.repo())
+            .arg("--logs")
+            .arg(self.logs());
+        command
+    }
+
+    /// `pas` with the fake's environment, in the scratch folder.
+    fn pas(&self) -> Command {
         let path = std::env::var_os("PATH").unwrap_or_default();
         let mut paths = vec![self.bin()];
         paths.extend(std::env::split_paths(&path));
         let mut command = Command::new(env!("CARGO_BIN_EXE_pas"));
         command
-            .arg("run")
-            .arg(&pipeline)
-            .arg("--workdir")
-            .arg(self.repo())
-            .arg("--logs")
-            .arg(self.logs())
             .env("PATH", std::env::join_paths(paths).unwrap())
             .env("FAKE_AGENT_SCENARIOS", self.scenarios())
             .env("PAS_STATE_DIR", self.path().join("state"))
@@ -113,6 +149,13 @@ impl FakeAgent {
             .env_remove("PAS_HEARTBEAT_INTERVAL_MS")
             .current_dir(self.path());
         command
+    }
+
+    /// Writes `dot` as the pipeline file and returns its path.
+    fn pipeline(&self, dot: &str) -> PathBuf {
+        let pipeline = self.path().join("p.dot");
+        fs::write(&pipeline, dot).unwrap();
+        pipeline
     }
 
     /// The journal of the one Run made so far.
@@ -245,28 +288,52 @@ impl FakeAgent {
         command
     }
 
-    /// `pas run <pipeline>` for `dot`, with no `--workdir` or `--logs`,
-    /// in the scratch folder, with the fake's environment.
+    /// `pas run <pipeline> --allow-test-agents` for `dot`, with no
+    /// `--workdir` or `--logs`, in the scratch folder, with the fake's
+    /// environment.
     pub fn pas_run(&self, dot: &str) -> Command {
-        let pipeline = self.path().join("p.dot");
-        fs::write(&pipeline, dot).unwrap();
-        let path = std::env::var_os("PATH").unwrap_or_default();
-        let mut paths = vec![self.bin()];
-        paths.extend(std::env::split_paths(&path));
-        let mut command = Command::new(env!("CARGO_BIN_EXE_pas"));
+        let mut command = self.pas();
         command
             .arg("run")
-            .arg(&pipeline)
-            .env("PATH", std::env::join_paths(paths).unwrap())
-            .env("FAKE_AGENT_SCENARIOS", self.scenarios())
-            .env("PAS_STATE_DIR", self.path().join("state"))
-            .env("GIT_CEILING_DIRECTORIES", self.path())
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("PAS_HEARTBEAT_INTERVAL_MS")
-            .current_dir(self.path());
+            .arg(self.pipeline(dot))
+            .arg("--allow-test-agents");
+        command
+    }
+
+    /// [`FakeAgent::command`] without `--allow-test-agents`.
+    pub fn command_without_test_agents(&self, dot: &str) -> Command {
+        let mut command = self.pas();
+        command
+            .arg("run")
+            .arg(self.pipeline(dot))
+            .arg("--workdir")
+            .arg(self.repo())
+            .arg("--logs")
+            .arg(self.logs());
+        command
+    }
+
+    /// `pas validate <pipeline> <extra>` for `dot`, run in the repo so it
+    /// reads the repo's `pas.toml`.
+    pub fn validate(&self, dot: &str, extra: &[&str]) -> Output {
+        self.pas()
+            .arg("validate")
+            .arg(self.pipeline(dot))
+            .args(extra)
+            .current_dir(self.repo())
+            .output()
+            .unwrap()
+    }
+
+    /// `pas <args>` with the fake's environment (e.g. `stop`, `kill`).
+    pub fn pas_cli(&self, args: &[&str]) -> Output {
+        self.pas_cli_command(args).output().unwrap()
+    }
+
+    /// The command [`FakeAgent::pas_cli`] runs, to spawn it.
+    pub fn pas_cli_command(&self, args: &[&str]) -> Command {
+        let mut command = self.pas();
+        command.args(args);
         command
     }
 

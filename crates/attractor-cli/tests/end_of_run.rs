@@ -21,7 +21,7 @@ fn one_node(attrs: &str) -> String {
     format!(
         r#"digraph G {{
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="claude", {attrs}]
+            work [shape="box", agent="fake", {attrs}]
             done [shape="Msquare"]
             start -> work -> done
         }}"#
@@ -196,7 +196,7 @@ fn a_stop_between_stages_keeps_the_worktree_and_reports_stopped() {
         r#"digraph G {{
             start [shape="Mdiamond"]
             wait [shape="parallelogram", timeout="120s", tool_command="{go}"]
-            work [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
+            work [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
             done [shape="Msquare"]
             start -> wait -> work -> done
         }}"#,
@@ -264,6 +264,8 @@ fn a_non_git_workdir_reports_null_git_fields() {
     let fake = FakeAgent::new();
     let plain: PathBuf = fake.root().join("plain");
     fs::create_dir(&plain).unwrap();
+    // The fake profile comes from pas.toml, which the plain folder needs too.
+    fs::copy(fake.repo().join("pas.toml"), plain.join("pas.toml")).unwrap();
     let output = fake
         .command_in(
             &one_node(r#"timeout="30s", prompt="scenario=success""#),

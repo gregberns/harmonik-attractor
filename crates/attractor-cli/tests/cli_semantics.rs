@@ -714,7 +714,9 @@ fn run_renders_missing_provider_as_typed_diagnostic_before_side_effects() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        stdout.contains("Fix: Add llm_provider=\"claude\", \"codex\", or \"gemini\""),
+        stdout.contains(
+            "Fix: Add agent=\"<profile>\" or llm_provider=\"claude\", \"codex\", or \"gemini\""
+        ),
         "{stdout}"
     );
     assert!(

@@ -25,8 +25,8 @@ fn success_completes_with_fake_result_text() {
     let output = fake.run(
         r#"digraph G {
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
-            next [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
+            work [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
+            next [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
             done [shape="Msquare"]
             start -> work -> next -> done
         }"#,
@@ -53,7 +53,7 @@ fn one_node(attrs: &str) -> String {
     format!(
         r#"digraph G {{
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="claude", {attrs}]
+            work [shape="box", agent="fake", {attrs}]
             done [shape="Msquare"]
             start -> work -> done
         }}"#
@@ -73,9 +73,9 @@ fn reported_failure_routes_on_outcome_fail_edge() {
     let output = fake.run(
         r#"digraph G {
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=fail"]
-            on_ok [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
-            on_fail [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
+            work [shape="box", agent="fake", timeout="30s", prompt="scenario=fail"]
+            on_ok [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
+            on_fail [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
             done [shape="Msquare"]
             start -> work
             work -> on_ok [condition="outcome=success"]
@@ -99,9 +99,9 @@ fn label_routing_follows_the_labelled_edge() {
     let output = fake.run(
         r#"digraph G {
             start [shape="Mdiamond"]
-            work [shape="diamond", llm_provider="claude", timeout="30s", prompt="scenario=label label=beta_route"]
-            alpha [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
-            beta [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
+            work [shape="diamond", agent="fake", timeout="30s", prompt="scenario=label label=beta_route"]
+            alpha [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
+            beta [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
             done [shape="Msquare"]
             start -> work
             work -> alpha [label="alpha_route", condition="preferred_label=alpha_route"]
@@ -393,8 +393,14 @@ fn alive(pid: u32) -> bool {
     unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
 }
 
-/// The fake's pid in its last start.
+/// The fake's pid in its last start. `LlmStarted` is journalled when the
+/// process exists, which can be before the fake has written its env log.
 fn fake_pid(fake: &FakeAgent) -> u32 {
+    wait_for("the fake's env log", Duration::from_secs(20), || {
+        fake.env_logs()
+            .last()
+            .is_some_and(|env| env.contains_key("FAKE_PID"))
+    });
     fake.env_logs().last().unwrap()["FAKE_PID"].parse().unwrap()
 }
 
@@ -426,7 +432,7 @@ fn llm_started_is_journalled_with_the_fakes_pid_and_paths() {
     assert_eq!(started["node_id"], "work");
     assert_eq!(started["attempt"], 1);
     assert_eq!(started["spawn"], 1);
-    assert_eq!(started["profile"], "claude");
+    assert_eq!(started["profile"], "fake");
     assert_eq!(started["invocation_id"], invoked["invocation_id"]);
     let run = &fake.run_dirs()[0];
     for key in ["transcript", "stderr"] {
@@ -479,11 +485,12 @@ fn a_timeout_sends_term_first() {
     );
 }
 
-// Waits the built-in 10 s grace; ticket 03 shortens it with a `fake` profile.
+// The node sets no timeout: the profile's timeout and kill_grace apply.
 #[test]
-fn an_agent_that_ignores_term_is_killed_after_the_grace() {
+fn an_agent_that_ignores_term_is_killed_after_the_profiles_grace() {
     let fake = FakeAgent::new();
-    let stderr = failed_run(&fake, r#"timeout="1s", prompt="scenario=hang_ignore_term""#);
+    fake.commit_pas_toml("timeout = \"1s\"\nkill_grace = \"1s\"");
+    let stderr = failed_run(&fake, r#"prompt="scenario=hang_ignore_term""#);
     assert!(
         stderr.contains("node 'work' attempt 1 failed: timeout after 1000ms"),
         "{stderr}"
@@ -537,6 +544,7 @@ fn a_stop_sends_term_to_the_agent_first() {
 #[test]
 fn a_stop_still_kills_an_agent_that_ignores_term() {
     let fake = FakeAgent::new();
+    fake.commit_pas_toml("kill_grace = \"1s\"");
     let mut child = spawn_run(
         &fake,
         &one_node(r#"timeout="120s", prompt="scenario=hang_ignore_term""#),
@@ -569,7 +577,7 @@ fn a_stop_between_nodes_starts_nothing_new() {
         r#"digraph G {{
             start [shape="Mdiamond"]
             wait [shape="parallelogram", timeout="120s", tool_command="{go}"]
-            work [shape="box", llm_provider="claude", timeout="30s", prompt="scenario=success"]
+            work [shape="box", agent="fake", timeout="30s", prompt="scenario=success"]
             done [shape="Msquare"]
             start -> wait -> work -> done
         }}"#,

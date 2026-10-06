@@ -10,7 +10,8 @@ use async_trait::async_trait;
 
 use attractor_agent_handler::{
     AgentHandler, AgentObserver, AgentRequest, AgentResult, AgentStatus, Agents, CancellationToken,
-    ConfigError, FailureClass, Invocation, Profile, Record, Selection, Spawned, Started, Usage,
+    ConfigError, FailureClass, Invocation, Profile, ProfileEnv, Record, Selection, Spawned,
+    Started, Usage,
 };
 
 /// The argv, env and prompt one invocation was given.
@@ -109,8 +110,17 @@ fn profile(name: &str, mechanism: &str) -> Profile {
         mechanism: mechanism.into(),
         command: vec!["agent".into()],
         args: vec!["--quiet".into()],
+        model: None,
         model_args: vec!["--model".into(), "{model}".into()],
+        reasoning: None,
+        reasoning_args: vec!["--effort".into(), "{reasoning}".into()],
+        timeout: Duration::from_secs(600),
         kill_grace: Duration::from_millis(50),
+        env: ProfileEnv {
+            remove: vec!["ANTHROPIC_API_KEY".into()],
+            set: BTreeMap::new(),
+        },
+        test_only: false,
     }
 }
 
@@ -119,11 +129,12 @@ fn request<'a>(profile: &str, observer: Option<&'a dyn AgentObserver>) -> AgentR
         selection: Selection {
             profile: profile.into(),
             model: Some("m1".into()),
+            reasoning: None,
         },
         prompt: "do it".into(),
         extra_args: vec!["--extra".into()],
         workdir: PathBuf::from("/work"),
-        timeout: Duration::from_secs(5),
+        timeout: Some(Duration::from_secs(5)),
         record: Record {
             run_id: Some("run-1".into()),
             node_id: "work".into(),
@@ -152,6 +163,7 @@ async fn run_hands_the_handler_argv_env_and_prompt() {
         vec![recorder.clone()],
         vec![profile("p", "fake")],
         env(&[("PATH", "/bin"), ("ANTHROPIC_API_KEY", "sk-test")]),
+        false,
     )
     .unwrap();
 
@@ -178,7 +190,7 @@ async fn run_hands_the_handler_argv_env_and_prompt() {
 
 #[tokio::test]
 async fn unknown_profile_is_a_launch_failure_naming_it() {
-    let agents = Agents::new(vec![Recorder::new("fake")], vec![], BTreeMap::new()).unwrap();
+    let agents = Agents::new(vec![Recorder::new("fake")], vec![], BTreeMap::new(), false).unwrap();
 
     let result = agents.run(request("nope", None)).await;
 
@@ -193,6 +205,7 @@ async fn observer_is_told_once_with_the_returned_value() {
         vec![Recorder::new("fake")],
         vec![profile("p", "fake")],
         BTreeMap::new(),
+        false,
     )
     .unwrap();
     let counter = Counter::default();
@@ -209,6 +222,7 @@ fn new_refuses_a_duplicate_mechanism() {
         vec![Recorder::new("fake"), Recorder::new("fake")],
         vec![],
         BTreeMap::new(),
+        false,
     )
     .unwrap_err();
     assert_eq!(err, ConfigError::DuplicateMechanism("fake".into()));
@@ -220,6 +234,7 @@ fn new_refuses_a_duplicate_profile() {
         vec![Recorder::new("fake")],
         vec![profile("p", "fake"), profile("p", "fake")],
         BTreeMap::new(),
+        false,
     )
     .unwrap_err();
     assert_eq!(err, ConfigError::DuplicateProfile("p".into()));
@@ -231,6 +246,7 @@ fn new_refuses_a_profile_without_a_handler() {
         vec![Recorder::new("fake")],
         vec![profile("p", "other")],
         BTreeMap::new(),
+        false,
     )
     .unwrap_err();
     assert_eq!(
@@ -248,6 +264,7 @@ fn transcript_usage_asks_the_profiles_handler() {
         vec![Recorder::new("fake")],
         vec![profile("p", "fake")],
         BTreeMap::new(),
+        false,
     )
     .unwrap();
     assert_eq!(
@@ -266,6 +283,7 @@ async fn started_reports_each_spawn_with_the_request_ids_and_paths() {
         vec![Recorder::new("fake")],
         vec![profile("p", "fake")],
         BTreeMap::new(),
+        false,
     )
     .unwrap();
     let counter = Counter::default();
@@ -297,12 +315,13 @@ async fn a_handler_that_ignores_its_timeout_is_cut_off_at_the_hard_deadline() {
         vec![Arc::new(Stuck)],
         vec![profile("p", "stuck")],
         BTreeMap::new(),
+        false,
     )
     .unwrap()
     .with_hard_deadline_margin(Duration::from_millis(50));
     let counter = Counter::default();
     let mut req = request("p", Some(&counter));
-    req.timeout = Duration::from_millis(100);
+    req.timeout = Some(Duration::from_millis(100));
 
     let result = agents.run(req).await;
 
@@ -320,18 +339,31 @@ fn stop_grace_is_the_longest_kill_grace_plus_the_margin() {
         vec![Recorder::new("fake")],
         vec![profile("p", "fake"), slow],
         BTreeMap::new(),
+        false,
     )
     .unwrap()
     .with_hard_deadline_margin(Duration::from_secs(1));
     assert_eq!(agents.max_kill_grace(), Duration::from_secs(3));
     assert_eq!(agents.stop_grace(), Duration::from_secs(4));
+    assert_eq!(
+        agents.stop_grace_of(["p", "nope"]),
+        Duration::from_millis(1050)
+    );
+    assert_eq!(agents.stop_grace_of(["p", "slow"]), Duration::from_secs(4));
+    assert_eq!(agents.stop_grace_of([]), Duration::from_secs(1));
 }
 
 #[test]
 fn stop_grace_saturates_instead_of_overflowing() {
     let mut huge = profile("huge", "fake");
     huge.kill_grace = Duration::MAX;
-    let agents = Agents::new(vec![Recorder::new("fake")], vec![huge], BTreeMap::new()).unwrap();
+    let agents = Agents::new(
+        vec![Recorder::new("fake")],
+        vec![huge],
+        BTreeMap::new(),
+        false,
+    )
+    .unwrap();
     assert_eq!(agents.stop_grace(), Duration::MAX);
 }
 
@@ -341,9 +373,165 @@ async fn a_huge_timeout_does_not_overflow_the_hard_deadline() {
         vec![Recorder::new("fake")],
         vec![profile("p", "fake")],
         BTreeMap::new(),
+        false,
     )
     .unwrap();
     let mut req = request("p", None);
-    req.timeout = Duration::MAX;
+    req.timeout = Some(Duration::MAX);
     assert_eq!(agents.run(req).await.status, AgentStatus::Completed);
+}
+
+/// Records the timeout and kill grace each invocation was given.
+struct Timeouts(Mutex<Vec<(Duration, Duration)>>);
+
+#[async_trait]
+impl AgentHandler for Timeouts {
+    fn mechanism(&self) -> &'static str {
+        "timeouts"
+    }
+
+    async fn run(&self, inv: Invocation<'_>) -> AgentResult {
+        self.0.lock().unwrap().push((inv.timeout, inv.kill_grace));
+        AgentResult::failed(inv.invocation_id, FailureClass::Reported, "")
+    }
+
+    fn transcript_usage(&self, _transcript: &str) -> Usage {
+        Usage::default()
+    }
+}
+
+#[tokio::test]
+async fn no_request_timeout_uses_the_profiles() {
+    let handler = Arc::new(Timeouts(Mutex::new(Vec::new())));
+    let mut p = profile("p", "timeouts");
+    p.timeout = Duration::from_secs(7);
+    let agents = Agents::new(vec![handler.clone()], vec![p], BTreeMap::new(), false).unwrap();
+
+    let mut req = request("p", None);
+    req.timeout = None;
+    agents.run(req).await;
+    agents.run(request("p", None)).await;
+
+    assert_eq!(
+        *handler.0.lock().unwrap(),
+        vec![
+            (Duration::from_secs(7), Duration::from_millis(50)),
+            (Duration::from_secs(5), Duration::from_millis(50)),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn reasoning_and_the_profiles_model_reach_the_argv() {
+    let recorder = Recorder::new("fake");
+    let mut p = profile("p", "fake");
+    p.model = Some("m0".into());
+    let agents = Agents::new(vec![recorder.clone()], vec![p], BTreeMap::new(), false).unwrap();
+    let counter = Counter::default();
+
+    let mut req = request("p", Some(&counter));
+    req.selection.model = None;
+    req.selection.reasoning = Some("high".into());
+    agents.run(req).await;
+
+    let seen = recorder.seen.lock().unwrap();
+    assert_eq!(
+        seen[0].0,
+        ["agent", "--quiet", "--extra", "--model", "m0", "--effort", "high"]
+    );
+    let started = counter.started.lock().unwrap();
+    assert_eq!(started[0].model.as_deref(), Some("m0"));
+}
+
+#[tokio::test]
+async fn env_set_reaches_the_child_even_when_removed() {
+    let recorder = Recorder::new("fake");
+    let mut p = profile("p", "fake");
+    p.env
+        .set
+        .insert("ANTHROPIC_API_KEY".into(), "set-by-profile".into());
+    let agents = Agents::new(
+        vec![recorder.clone()],
+        vec![p],
+        env(&[("ANTHROPIC_API_KEY", "inherited")]),
+        false,
+    )
+    .unwrap();
+
+    agents.run(request("p", None)).await;
+
+    let seen = recorder.seen.lock().unwrap();
+    assert_eq!(
+        seen[0].1.get("ANTHROPIC_API_KEY").map(String::as_str),
+        Some("set-by-profile")
+    );
+}
+
+#[tokio::test]
+async fn a_test_only_profile_runs_only_when_allowed() {
+    let mut p = profile("fake", "fake");
+    p.test_only = true;
+    let selection = request("fake", None).selection;
+
+    let refused = Recorder::new("fake");
+    let agents = Agents::new(
+        vec![refused.clone()],
+        vec![p.clone()],
+        BTreeMap::new(),
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        agents.check(&selection),
+        Err(ConfigError::TestOnly {
+            profile: "fake".into()
+        })
+    );
+    let result = agents.run(request("fake", None)).await;
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::Launch));
+    assert!(
+        result.detail.contains("--allow-test-agents"),
+        "{}",
+        result.detail
+    );
+    assert!(refused.seen.lock().unwrap().is_empty(), "nothing started");
+
+    let allowed = Recorder::new("fake");
+    let agents = Agents::new(vec![allowed.clone()], vec![p], BTreeMap::new(), true).unwrap();
+    assert_eq!(agents.check(&selection), Ok(()));
+    assert_eq!(
+        agents.run(request("fake", None)).await.status,
+        AgentStatus::Completed
+    );
+}
+
+#[test]
+fn check_refuses_an_unknown_profile_and_reasoning_without_args() {
+    let mut plain = profile("plain", "fake");
+    plain.reasoning_args.clear();
+    let agents = Agents::new(
+        vec![Recorder::new("fake")],
+        vec![profile("p", "fake"), plain],
+        BTreeMap::new(),
+        false,
+    )
+    .unwrap();
+    let selection = |profile: &str, reasoning: Option<&str>| Selection {
+        profile: profile.into(),
+        model: None,
+        reasoning: reasoning.map(String::from),
+    };
+
+    assert_eq!(
+        agents.check(&selection("nope", None)),
+        Err(ConfigError::UnknownProfile("nope".into()))
+    );
+    assert_eq!(agents.check(&selection("p", Some("high"))), Ok(()));
+    assert_eq!(agents.check(&selection("plain", None)), Ok(()));
+    assert_eq!(
+        agents.check(&selection("plain", Some("high"))),
+        Err(ConfigError::NoReasoningArgs {
+            profile: "plain".into()
+        })
+    );
 }

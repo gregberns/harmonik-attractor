@@ -9,7 +9,7 @@ pub mod tool_handler;
 pub mod wait_human;
 
 pub use beads::{BeadsCloseHandler, BeadsSelectHandler};
-pub use codergen_handler::CodergenHandler;
+pub use codergen_handler::{agent_profiles, CodergenHandler, CLAUDE_PROFILE};
 pub use manager::ManagerLoopHandler;
 pub use parallel::{FanInHandler, ParallelHandler};
 pub use quality_handler::QualityHandler;
@@ -59,13 +59,14 @@ pub(crate) mod tests {
     pub(crate) fn claude_agents(command: &std::path::Path) -> std::sync::Arc<Agents> {
         let profile = Profile {
             command: vec![command.to_string_lossy().into_owned()],
-            ..builtin_profiles().remove(0)
+            ..builtin_profiles().unwrap().remove(0)
         };
         std::sync::Arc::new(
             Agents::new(
                 vec![std::sync::Arc::new(attractor_handler_claude_p::ClaudeP)],
                 vec![profile],
                 std::env::vars().collect(),
+                false,
             )
             .unwrap(),
         )
