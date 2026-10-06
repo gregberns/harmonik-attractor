@@ -1,30 +1,33 @@
-description: Build the plan's tickets one at a time (the crew shares one checkout), each on its own branch from main; review and test on the branch; one integrator merges to main after the full checks and pushes it.
-input: the ready plan in this repo, plans/2026-10-04-attractor/ (spec.md, tickets/, README.md ticket table and status).
+description: Build the plan's tickets in parallel, each in its own git worktree and branch from main; review and test in the ticket's worktree; one integrator merges passed tickets to main one at a time, pushes, and cleans up.
+input: the ready plan in this repo, plans/2026-10-04-attractor/ (spec.md, tickets/, README.md ticket table, edges and status); git workflow in docs/git-workflow.md.
 steps:
-  - name: pick up
+  - name: hand out
     who: captain
-    does: When no ticket is in flight, takes the next ticket whose blockers are merged, per the plan README, and gives it to the planner.
+    does: Whenever a ticket's blockers are merged and a builder is free, hands that ticket to the planner and a builder, naming its worktree path; several tickets can be in flight at once.
   - name: plan
     who: planner
-    does: Breaks the ticket into ordered build steps with their tests and sends them to plan-reviewer.
+    does: Breaks the ticket into ordered build steps with their tests, marking pieces that can be built in parallel, and sends them to plan-reviewer.
   - name: review plan
     who: plan-reviewer
-    does: Reviews the build steps against the ticket and spec and sends findings back until ready, then tells the captain and builder.
-  - name: branch
+    does: Reviews the build steps against the ticket and spec and sends findings back until ready, then tells the captain and the builder.
+  - name: worktree
     who: builder
-    does: Checks out main and cuts ticket/<nn>-<slug> from it (only while reviewer and tester are idle); may push the branch.
+    does: Creates the ticket worktree from current main (git worktree add .worktrees/<nn>-<slug> -b ticket/<nn>-<slug> main); never switches the root checkout.
   - name: build
     who: builder
-    does: Implements the steps on the ticket branch, test first, committing each verified change with its docs; tells code-reviewer and tester what changed.
+    does: Implements the steps in the ticket worktree, test first; hands independent pieces to subagents in sub-worktrees cut from the ticket branch and merges them back, removing each sub-worktree; commits each verified change with its docs; may push the ticket branch; tells code-reviewer and tester the worktree path and what changed.
   - name: review
     who: code-reviewer
-    does: Reviews each change on the branch and reports findings to the builder, who fixes them on the branch.
+    does: Reviews each change in the ticket worktree and reports findings to the builder, who fixes them there.
   - name: test
     who: tester
-    does: Runs the ticket's acceptance checks on the branch with cargo test and the fake agents, reports defects to the builder, and tells the integrator and captain when the branch passes.
+    does: Runs the ticket's acceptance checks in the ticket worktree with cargo test and the fake agents, reports defects to the builder, and tells the integrator and captain when the ticket passes.
   - name: integrate
     who: integrator
-    does: On the passed branch, rebases onto main and resolves all conflicts; runs cargo test --workspace, cargo fmt --all -- --check and cargo clippy --workspace --all-targets (no new warnings); marks the ticket done in the plan README; fast-forwards main with git fetch . HEAD:main; pushes main; deletes the branch; tells the captain. Sends the branch back to the builder if a check fails.
+    does: One passed ticket at a time, in its worktree, rebases onto main and resolves all conflicts; runs cargo test --workspace, cargo fmt --all -- --check and cargo clippy --workspace --all-targets (no new warnings); marks the ticket done in the plan README; fast-forwards main in the root checkout (git -C <root> merge --ff-only ticket/<nn>-<slug>); pushes main. Sends the ticket back to its builder if a check fails.
+  - name: clean up
+    who: integrator
+    does: From the root checkout, removes the ticket worktree (git -C <root> worktree remove .worktrees/<nn>-<slug>), deletes the branch locally and on GitHub (never force-pushing the rebased branch), runs git worktree prune, and tells the captain.
   - name: report
     who: captain
-    does: Reports the merged ticket to the operator and starts the next one, which branches from the updated main.
+    does: Reports merged tickets to the operator and hands out the tickets they unblocked, which branch from the updated main.

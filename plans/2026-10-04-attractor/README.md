@@ -6,9 +6,12 @@ below). The research and the operator's decisions stay in harmonik-v3:
 [research](https://github.com/gregberns/harmonik-v3/blob/main/plans/2026-10-04-attractor/research/), [decisions.md](https://github.com/gregberns/harmonik-v3/blob/main/plans/2026-10-04-attractor/decisions.md),
 [requirements.md](https://github.com/gregberns/harmonik-v3/blob/main/plans/2026-10-04-attractor/requirements.md).
 
-Status: READY. Build tickets in number order, one ticket in flight at a
-time (the crew shares one checkout; see
-[docs/git-workflow.md](../../docs/git-workflow.md)).
+Status: READY. Tickets run in parallel, each in its own worktree, as soon
+as their blockers are merged; the integrator merges them one at a time
+([docs/git-workflow.md](../../docs/git-workflow.md)). After 01: 02a and 06
+can start; after 02a: 02b and 03; and so on down the table. 02a/02b, 05 and
+06 all touch the engine and run preparation, so expect the integrator to
+resolve conflicts between them.
 
 - [spec.md](spec.md): what to build, testing decisions, out of scope, risks
 - [design.md](design.md): the design, with code references and reasoning
@@ -19,8 +22,9 @@ time (the crew shares one checkout; see
 
 Tracer-bullet order. Every ticket is verified with `cargo test
 --workspace` and the shell-script fakes; no real agent or subscription.
-Tickets 10-12 are low priority. The integrator updates a ticket's status
-here in the commit that merges it to main.
+Tickets 10-12 are low priority. The captain marks a ticket in progress in
+the hand-out message; the integrator marks it done here, on the ticket
+branch, as part of merging it.
 
 | # | Ticket | Blocked by | Status |
 |---|---|---|---|

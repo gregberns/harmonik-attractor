@@ -64,9 +64,10 @@ and never judgment; judgment belongs to agents and graph authors. Read
 
 ## Git workflow
 
-One ticket at a time on its own branch from `main` (the crew shares one
-checkout); only the integrator merges to `main`, after the full checks, and
-pushes it. Builders may push ticket branches. See
+Each ticket in its own worktree, `.worktrees/<nn>-<slug>` on branch
+`ticket/<nn>-<slug>` from `main`; tickets run in parallel. The root checkout
+stays on a clean `main`: never switch or edit it. Only the integrator merges
+to `main` (fast-forward), then pushes it and removes the worktree. See
 [docs/git-workflow.md](docs/git-workflow.md).
 
 ## Docs
