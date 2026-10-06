@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 
-use attractor_agent_handler::{AgentHandler, AgentResult, FailureClass, Invocation};
+use attractor_agent_handler::{AgentHandler, AgentResult, FailureClass, Invocation, Usage};
 use attractor_agent_process::{run_local, LocalRun};
 
 pub use parse::{classify, claude_result_line, summarize, Exited};
@@ -21,17 +21,19 @@ impl ClaudeP {
     pub const MECHANISM: &'static str = "claude-p";
 }
 
-/// The invocation's argv followed by the flags the parser depends on.
-fn full_argv(inv: &Invocation<'_>) -> Vec<String> {
-    let mut argv = inv.argv.clone();
-    argv.extend([
-        "-p".to_string(),
-        inv.prompt.to_string(),
-        "--output-format".to_string(),
-        "stream-json".to_string(),
-        "--verbose".to_string(),
-    ]);
-    argv
+impl ClaudeP {
+    /// The invocation's argv followed by the flags the parser depends on.
+    pub fn argv(inv: &Invocation<'_>) -> Vec<String> {
+        let mut argv = inv.argv.clone();
+        argv.extend([
+            "-p".to_string(),
+            inv.prompt.to_string(),
+            "--output-format".to_string(),
+            "stream-json".to_string(),
+            "--verbose".to_string(),
+        ]);
+        argv
+    }
 }
 
 #[async_trait]
@@ -43,7 +45,7 @@ impl AgentHandler for ClaudeP {
     async fn run(&self, inv: Invocation<'_>) -> AgentResult {
         let started = Instant::now();
         let local = run_local(
-            &full_argv(&inv),
+            &Self::argv(&inv),
             &inv.env,
             inv.workdir,
             inv.transcript,
@@ -65,16 +67,22 @@ impl AgentHandler for ClaudeP {
                     started.elapsed(),
                 )
             }
-            LocalRun::TimedOut => AgentResult::failed(
-                id,
-                FailureClass::Timeout,
-                format!("timed out after {}ms", inv.timeout.as_millis()),
-            ),
-            LocalRun::WaitFailed(error) => AgentResult::failed(
-                id,
-                FailureClass::Crash,
-                format!("execution failed: {error}"),
-            ),
+            LocalRun::TimedOut => AgentResult {
+                usage: partial_usage(&inv),
+                ..AgentResult::failed(
+                    id,
+                    FailureClass::Timeout,
+                    format!("timed out after {}ms", inv.timeout.as_millis()),
+                )
+            },
+            LocalRun::WaitFailed(error) => AgentResult {
+                usage: partial_usage(&inv),
+                ..AgentResult::failed(
+                    id,
+                    FailureClass::Crash,
+                    format!("execution failed: {error}"),
+                )
+            },
             LocalRun::LaunchFailed(error) => AgentResult {
                 launch_error: Some(error.kind()),
                 ..AgentResult::failed(id, FailureClass::Launch, error.to_string())
@@ -85,4 +93,17 @@ impl AgentHandler for ClaudeP {
             ..result
         }
     }
+
+    fn transcript_usage(&self, transcript: &str) -> Usage {
+        summarize(transcript)
+    }
+}
+
+/// Usage from the transcript written so far, for a run that ended without
+/// its full output (timeout, or a failed wait).
+fn partial_usage(inv: &Invocation<'_>) -> Usage {
+    inv.transcript
+        .and_then(|path| std::fs::read(path).ok())
+        .map(|bytes| summarize(&String::from_utf8_lossy(&bytes)))
+        .unwrap_or_default()
 }

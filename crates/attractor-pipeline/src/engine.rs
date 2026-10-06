@@ -558,6 +558,8 @@ impl PipelineExecutor {
                     configured.controls(),
                     self.run_dir.as_deref(),
                     Some(&self.observers),
+                    self.run_id.as_deref(),
+                    u32::try_from(attempt + 1).unwrap_or(u32::MAX),
                 ),
                 configured.plan().graph(),
             );

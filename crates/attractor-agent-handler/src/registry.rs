@@ -8,7 +8,7 @@ use async_trait::async_trait;
 
 use crate::env::child_env;
 use crate::profile::{argv, Profile};
-use crate::types::{AgentRequest, AgentResult, FailureClass, Invocation};
+use crate::types::{AgentRequest, AgentResult, FailureClass, Invocation, Usage};
 
 /// One way of driving an agent, named by its mechanism (e.g. `claude-p`).
 #[async_trait]
@@ -17,6 +17,10 @@ pub trait AgentHandler: Send + Sync {
     fn mechanism(&self) -> &'static str;
     /// Run one invocation to its end. Never returns an error.
     async fn run(&self, inv: Invocation<'_>) -> AgentResult;
+    /// Usage read from a transcript (the agent's stdout so far). Never
+    /// fails: missing or unreadable data is `None`. For an invocation whose
+    /// future was dropped before `run` returned.
+    fn transcript_usage(&self, transcript: &str) -> Usage;
 }
 
 /// Told about each invocation's end (the engine journals it).
@@ -137,6 +141,14 @@ impl Agents {
             observer.finished(&result);
         }
         result
+    }
+
+    /// [`AgentHandler::transcript_usage`] of the profile's handler; empty for
+    /// an unknown profile.
+    pub fn transcript_usage(&self, profile: &str, transcript: &str) -> Usage {
+        self.resolve(profile)
+            .map(|(_, handler)| handler.transcript_usage(transcript))
+            .unwrap_or_default()
     }
 
     fn resolve(&self, name: &str) -> Option<(&Profile, &Arc<dyn AgentHandler>)> {

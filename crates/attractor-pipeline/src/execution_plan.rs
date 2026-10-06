@@ -1963,9 +1963,10 @@ mod tests {
 
     #[test]
     fn builtin_catalog_matches_default_registry() {
-        let registry = crate::handler::default_registry_with_interviewer(std::sync::Arc::new(
-            crate::interviewer::AutoApproveInterviewer,
-        ));
+        let registry = crate::handler::default_registry_with_interviewer(
+            std::sync::Arc::new(attractor_agent_handler::Agents::empty()),
+            std::sync::Arc::new(crate::interviewer::AutoApproveInterviewer),
+        );
         assert_eq!(registry.handler_capabilities(), builtin_handler_catalog());
 
         let plan = ExecutionPlan::compile(beads_graph(r#", epic="e-1""#, "")).unwrap();

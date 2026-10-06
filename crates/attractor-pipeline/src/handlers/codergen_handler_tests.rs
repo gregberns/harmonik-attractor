@@ -59,29 +59,6 @@ fn provider_binary_names() {
 // --- Output parsers ---
 
 #[test]
-fn parse_claude_output_success() {
-    let json = r#"{"result":"Hello world","is_error":false,"subtype":"","total_cost_usd":0.05,"num_turns":3}"#;
-    let result = parse_claude_output(json, "test_node").unwrap();
-    assert_eq!(result.text, "Hello world");
-    assert!(!result.is_error);
-    assert_eq!(result.cost_usd, Some(0.05));
-    assert_eq!(result.turns, Some(3));
-}
-
-#[test]
-fn parse_claude_output_error() {
-    let json = r#"{"result":"Something failed","is_error":true,"subtype":"error","total_cost_usd":0.01,"num_turns":1}"#;
-    let result = parse_claude_output(json, "test_node").unwrap();
-    assert!(result.is_error);
-}
-
-#[test]
-fn parse_claude_output_invalid_json() {
-    let result = parse_claude_output("not json", "test_node");
-    assert!(result.is_err());
-}
-
-#[test]
 fn parse_codex_output_extracts_last_message() {
     let jsonl = concat!(
         r#"{"type":"item.completed","item":{"type":"agent_message","text":"First message"}}"#,
@@ -149,7 +126,7 @@ fn parse_gemini_output_invalid_json() {
 
 #[test]
 fn parse_cli_output_empty_stdout_errors() {
-    let result = parse_cli_output(LlmCliProvider::Claude, "", "some error", "n");
+    let result = parse_cli_output(CliProvider::Codex, "", "some error", "n");
     assert!(result.is_err());
     assert!(result
         .unwrap_err()
@@ -159,110 +136,101 @@ fn parse_cli_output_empty_stdout_errors() {
 
 // --- build_cli_command ---
 
-#[test]
-fn build_cli_command_claude_has_stream_json_output() {
+/// The argv a Claude node runs with: the `claude` profile's command and
+/// args, the node's extra args, the model args, then the `claude-p`
+/// handler's own flags. Since ticket 02a the flags come in that order (the
+/// settings-mode flag used to come first); the set of flags and values is
+/// unchanged.
+fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
+    use attractor_agent_handler::{argv, builtin_profiles, Invocation};
     let node = make_node("n", "box", Some("do work"), HashMap::new());
-    let graph = make_minimal_graph();
-    let cfg = CliRunConfig {
-        provider: LlmCliProvider::Claude,
-        prompt: "test prompt",
-        model: Some("sonnet"),
-        workdir: None,
-        node: &node,
-        graph: &graph,
-        claude: ClaudeCliConfig::default(),
+    let request = AgentRequest {
+        selection: Selection {
+            profile: CLAUDE_PROFILE.into(),
+            model: model.map(str::to_owned),
+        },
+        prompt: "test prompt".into(),
+        extra_args: claude_extra_args(&cfg, &node),
+        workdir: PathBuf::from("."),
+        timeout: DEFAULT_TIMEOUT,
+        record: Record {
+            run_id: None,
+            node_id: node.id.clone(),
+            attempt: 1,
+            invocation_id: "i".into(),
+        },
+        transcript: None,
+        observer: None,
     };
-    let cmd = build_cli_command(&cfg);
-    let args: Vec<_> = cmd
-        .as_std()
-        .get_args()
-        .map(|a| a.to_str().unwrap())
-        .collect();
-    let format = args.iter().position(|a| *a == "--output-format").unwrap();
-    assert_eq!(args[format + 1], "stream-json");
-    assert!(args.contains(&"--verbose"));
-    assert!(args.contains(&"--safe-mode"));
-    assert!(!args.contains(&"--bare"));
-    assert!(args.contains(&"--strict-mcp-config"));
-    assert!(args.contains(&"--disable-slash-commands"));
-    assert!(!args.contains(&"--setting-sources"));
-    assert!(args.contains(&"--model"));
-    assert!(args.contains(&"sonnet"));
-    assert!(args.contains(&"-p"));
+    attractor_handler_claude_p::ClaudeP::argv(&Invocation {
+        invocation_id: "i",
+        argv: argv(&builtin_profiles()[0], &request),
+        env: Default::default(),
+        prompt: "test prompt",
+        workdir: Path::new("."),
+        timeout: DEFAULT_TIMEOUT,
+        transcript: None,
+    })
 }
 
 #[test]
-fn build_cli_command_claude_strict_bare_is_opt_in() {
-    let node = make_node("n", "box", Some("do work"), HashMap::new());
-    let graph = make_minimal_graph();
-    let cfg = CliRunConfig {
-        provider: LlmCliProvider::Claude,
-        prompt: "test prompt",
-        model: None,
-        workdir: None,
-        node: &node,
-        graph: &graph,
-        claude: ClaudeCliConfig {
+fn claude_argv_has_todays_flags_with_stream_json_output() {
+    let args = claude_args(ClaudeCliConfig::default(), Some("sonnet"));
+    assert_eq!(
+        args,
+        [
+            "claude",
+            "--no-session-persistence",
+            "--dangerously-skip-permissions",
+            "--strict-mcp-config",
+            "--disable-slash-commands",
+            "--safe-mode",
+            "--model",
+            "sonnet",
+            "-p",
+            "test prompt",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+        ]
+    );
+}
+
+#[test]
+fn claude_argv_strict_bare_is_opt_in() {
+    let args = claude_args(
+        ClaudeCliConfig {
             settings_mode: ClaudeSettingsMode::StrictBare,
             ..ClaudeCliConfig::default()
         },
-    };
-
-    let cmd = build_cli_command(&cfg);
-    let args: Vec<_> = cmd
-        .as_std()
-        .get_args()
-        .map(|a| a.to_str().unwrap())
-        .collect();
-
-    assert!(args.contains(&"--bare"));
-    assert!(!args.contains(&"--safe-mode"));
-    assert!(!args.contains(&"--setting-sources"));
+        None,
+    );
+    assert!(args.iter().any(|a| a == "--bare"));
+    assert!(!args.iter().any(|a| a == "--safe-mode"));
+    assert!(!args.iter().any(|a| a == "--setting-sources"));
+    assert!(!args.iter().any(|a| a == "--model"));
 }
 
 #[test]
-fn build_cli_command_claude_inherit_uses_setting_sources() {
-    let node = make_node("n", "box", Some("do work"), HashMap::new());
-    let graph = make_minimal_graph();
-    let cfg = CliRunConfig {
-        provider: LlmCliProvider::Claude,
-        prompt: "test prompt",
-        model: None,
-        workdir: None,
-        node: &node,
-        graph: &graph,
-        claude: ClaudeCliConfig {
+fn claude_argv_inherit_uses_setting_sources() {
+    let args = claude_args(
+        ClaudeCliConfig {
             settings_mode: ClaudeSettingsMode::Inherit,
             setting_sources: vec!["user".into(), "project".into()],
             ..ClaudeCliConfig::default()
         },
-    };
-
-    let cmd = build_cli_command(&cfg);
-    let args: Vec<_> = cmd
-        .as_std()
-        .get_args()
-        .map(|a| a.to_str().unwrap())
-        .collect();
-
-    assert!(!args.contains(&"--bare"));
-    assert!(!args.contains(&"--safe-mode"));
-    assert!(args.contains(&"--setting-sources"));
-    assert!(args.contains(&"user,project"));
+        None,
+    );
+    assert!(!args.iter().any(|a| a == "--bare"));
+    assert!(!args.iter().any(|a| a == "--safe-mode"));
+    let at = args.iter().position(|a| a == "--setting-sources").unwrap();
+    assert_eq!(args[at + 1], "user,project");
 }
 
 #[test]
-fn build_cli_command_claude_emits_explicit_pas_owned_config() {
-    let node = make_node("n", "box", Some("do work"), HashMap::new());
-    let graph = make_minimal_graph();
-    let cfg = CliRunConfig {
-        provider: LlmCliProvider::Claude,
-        prompt: "test prompt",
-        model: None,
-        workdir: None,
-        node: &node,
-        graph: &graph,
-        claude: ClaudeCliConfig {
+fn claude_argv_emits_explicit_pas_owned_config() {
+    let args = claude_args(
+        ClaudeCliConfig {
             settings: Some(r#"{"enabledPlugins":{}}"#.into()),
             tools: Some("Read,Edit".into()),
             agents: Some(r#"{"reviewer":{"prompt":"review"}}"#.into()),
@@ -270,25 +238,41 @@ fn build_cli_command_claude_emits_explicit_pas_owned_config() {
             mcp_config: Some("{}".into()),
             ..ClaudeCliConfig::default()
         },
+        None,
+    );
+    let value_of = |flag: &str| {
+        let at = args.iter().position(|a| a == flag).unwrap();
+        args[at + 1].clone()
     };
+    assert_eq!(value_of("--settings"), r#"{"enabledPlugins":{}}"#);
+    assert_eq!(value_of("--tools"), "Read,Edit");
+    assert_eq!(value_of("--agents"), r#"{"reviewer":{"prompt":"review"}}"#);
+    assert_eq!(value_of("--plugin-dir"), "/tmp/pas-plugin");
+    assert_eq!(value_of("--mcp-config"), "{}");
+}
 
-    let cmd = build_cli_command(&cfg);
-    let args: Vec<_> = cmd
-        .as_std()
-        .get_args()
-        .map(|a| a.to_str().unwrap())
-        .collect();
-
-    assert!(args.contains(&"--settings"));
-    assert!(args.contains(&r#"{"enabledPlugins":{}}"#));
-    assert!(args.contains(&"--tools"));
-    assert!(args.contains(&"Read,Edit"));
-    assert!(args.contains(&"--agents"));
-    assert!(args.contains(&r#"{"reviewer":{"prompt":"review"}}"#));
-    assert!(args.contains(&"--plugin-dir"));
-    assert!(args.contains(&"/tmp/pas-plugin"));
-    assert!(args.contains(&"--mcp-config"));
-    assert!(args.contains(&"{}"));
+#[test]
+fn claude_extra_args_carry_allowed_tools_and_budget() {
+    let mut attrs = HashMap::new();
+    attrs.insert(
+        "allowed_tools".to_string(),
+        attractor_dot::AttributeValue::String("Read,Grep".into()),
+    );
+    attrs.insert(
+        "max_budget_usd".to_string(),
+        attractor_dot::AttributeValue::String("2.5".into()),
+    );
+    let node = make_node("n", "box", Some("do work"), attrs);
+    assert_eq!(
+        claude_extra_args(&ClaudeCliConfig::default(), &node),
+        [
+            "--safe-mode",
+            "--allowedTools",
+            "Read,Grep",
+            "--max-budget-usd",
+            "2.5"
+        ]
+    );
 }
 
 #[test]
@@ -362,16 +346,13 @@ fn resolve_claude_cli_config_requires_sources_for_inherit() {
 
 #[test]
 fn build_cli_command_codex_uses_exec_with_positional_prompt() {
-    let node = make_node("n", "box", Some("do work"), HashMap::new());
     let graph = make_minimal_graph();
     let cfg = CliRunConfig {
-        provider: LlmCliProvider::Codex,
+        provider: CliProvider::Codex,
         prompt: "test prompt",
         model: None,
         workdir: Some("/tmp"),
-        node: &node,
         graph: &graph,
-        claude: ClaudeCliConfig::default(),
     };
     let cmd = build_cli_command(&cfg);
     let args: Vec<_> = cmd
@@ -390,16 +371,13 @@ fn build_cli_command_codex_uses_exec_with_positional_prompt() {
 
 #[test]
 fn build_cli_command_gemini_matches_documented_invocation() {
-    let node = make_node("n", "box", Some("do work"), HashMap::new());
     let graph = make_minimal_graph();
     let cfg = CliRunConfig {
-        provider: LlmCliProvider::Gemini,
+        provider: CliProvider::Gemini,
         prompt: "test prompt",
         model: Some("gemini-2.5-pro"),
         workdir: None,
-        node: &node,
         graph: &graph,
-        claude: ClaudeCliConfig::default(),
     };
     let cmd = build_cli_command(&cfg);
     let args: Vec<_> = cmd
@@ -426,7 +404,7 @@ fn build_cli_command_gemini_matches_documented_invocation() {
 #[tokio::test]
 async fn codergen_dry_run_includes_provider() {
     use attractor_types::Context;
-    let handler = CodergenHandler;
+    let handler = CodergenHandler::new(std::sync::Arc::new(Agents::empty()));
     let mut node = make_node("llm_step", "box", Some("Do the thing"), HashMap::new());
     node.llm_provider = Some("gemini".into());
     let ctx = Context::default();
@@ -455,7 +433,7 @@ async fn codergen_dry_run_includes_provider() {
 #[tokio::test]
 async fn codergen_rejects_missing_provider_even_in_dry_run() {
     use attractor_types::Context;
-    let handler = CodergenHandler;
+    let handler = CodergenHandler::new(std::sync::Arc::new(Agents::empty()));
     let node = make_node("llm_step", "box", Some("Do the thing"), HashMap::new());
     let ctx = Context::default();
     ctx.set("dry_run", serde_json::Value::Bool(true)).await;
@@ -507,49 +485,6 @@ fn extract_label_returns_none_when_no_match() {
 
 const CLAUDE_RESULT_LINE: &str = r#"{"type":"result","subtype":"success","is_error":false,"result":"done","total_cost_usd":0.01,"num_turns":2}"#;
 
-#[test]
-fn parse_claude_stream_uses_final_result_line_like_json_mode() {
-    let stream = format!(
-        "{}\n{}\n{}\n",
-        r#"{"type":"system","subtype":"init","model":"claude-haiku"}"#,
-        r#"{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}"#,
-        CLAUDE_RESULT_LINE
-    );
-    let streamed = parse_claude_output(&stream, "n").unwrap();
-    let single = parse_claude_output(CLAUDE_RESULT_LINE, "n").unwrap();
-    assert_eq!(streamed.text, "done");
-    assert_eq!(streamed.text, single.text);
-    assert_eq!(streamed.is_error, single.is_error);
-    assert_eq!(streamed.cost_usd, single.cost_usd);
-    assert_eq!(streamed.turns, single.turns);
-}
-
-#[test]
-fn parse_claude_stream_last_result_line_wins_and_crlf_is_accepted() {
-    let stream = format!(
-        "{}\r\n{}\r\n",
-        r#"{"type":"result","result":"first","is_error":false}"#,
-        r#"{"type":"result","result":"second","is_error":true,"subtype":"error"}"#
-    );
-    let parsed = parse_claude_output(&stream, "n").unwrap();
-    assert_eq!(parsed.text, "second");
-    assert!(parsed.is_error);
-}
-
-#[test]
-fn parse_claude_stream_without_result_line_is_a_parse_error() {
-    let stream = "{\"type\":\"system\"}\n{\"type\":\"assistant\"}\n";
-    assert_eq!(claude_result_line(stream), None);
-    let error = parse_claude_output(stream, "n").unwrap_err().to_string();
-    assert!(error.contains("Failed to parse Claude output"), "{error}");
-}
-
-#[test]
-fn claude_result_line_ignores_non_json_and_non_result_lines() {
-    let stream = format!("{CLAUDE_RESULT_LINE}\nnot json\n{{\"type\":\"rate_limit_event\"}}\nlast");
-    assert_eq!(claude_result_line(&stream), Some(CLAUDE_RESULT_LINE));
-}
-
 // --- Streaming Transcripts with stub providers ---
 
 #[cfg(unix)]
@@ -600,7 +535,7 @@ mod transcripts {
             provider: Some(provider),
             invocation: Default::default(),
         };
-        CodergenHandler
+        CodergenHandler::new(crate::handlers::tests::claude_agents(&program))
             .execute_with_controls(
                 &node,
                 &resolved,
@@ -613,6 +548,8 @@ mod transcripts {
                     run_dir: run_dir.map(Path::to_path_buf),
                     program: Some(program),
                     events: None,
+                    run_id: None,
+                    attempt: 1,
                 },
             )
             .await
@@ -1007,7 +944,7 @@ mod transcripts {
             provider: Some(provider),
             invocation: Default::default(),
         };
-        CodergenHandler
+        CodergenHandler::new(crate::handlers::tests::claude_agents(&program))
             .execute_with_controls(
                 node,
                 &resolved,
@@ -1020,6 +957,8 @@ mod transcripts {
                     run_dir: run_dir.map(Path::to_path_buf),
                     program: Some(program),
                     events: Some(events),
+                    run_id: None,
+                    attempt: 1,
                 },
             )
             .await
@@ -1442,8 +1381,6 @@ mod transcripts {
 
 // --- Provider stream summaries (model, tokens, cost) ---
 
-const CLAUDE_FIXTURE: &str =
-    include_str!("../../tests/fixtures/providers/claude-2.1.282.stream.jsonl");
 const CODEX_FIXTURE: &str = include_str!("../../tests/fixtures/providers/codex-0.151.0.jsonl");
 const GEMINI_STREAM_FIXTURE: &str =
     include_str!("../../tests/fixtures/providers/gemini-0.61.0.stream.jsonl");
@@ -1464,30 +1401,10 @@ fn usage(
     }
 }
 
-// AC1: recorded Claude fixture.
-#[test]
-fn claude_fixture_yields_text_model_tokens_cost() {
-    let parsed = parse_cli_output(LlmCliProvider::Claude, CLAUDE_FIXTURE, "", "n").unwrap();
-    assert_eq!(parsed.text, "OK");
-    assert!(!parsed.is_error);
-    assert_eq!(parsed.cost_usd, Some(0.03932));
-    assert_eq!(parsed.turns, Some(1));
-    // Input counts uncached (10) + cache-creation (19555) + cache-read (0).
-    assert_eq!(
-        parsed.usage,
-        usage(
-            Some("claude-haiku-4-5-20251001"),
-            Some(19_565),
-            Some(40),
-            Some(0.03932)
-        )
-    );
-}
-
 // AC1: recorded Codex fixture. Codex reports neither model nor cost.
 #[test]
 fn codex_fixture_yields_text_and_tokens() {
-    let parsed = parse_cli_output(LlmCliProvider::Codex, CODEX_FIXTURE, "", "n").unwrap();
+    let parsed = parse_cli_output(CliProvider::Codex, CODEX_FIXTURE, "", "n").unwrap();
     assert_eq!(parsed.text, "OK");
     assert!(!parsed.is_error);
     assert_eq!(parsed.cost_usd, None);
@@ -1498,7 +1415,7 @@ fn codex_fixture_yields_text_and_tokens() {
 // over the configured `init` model; Gemini reports no cost.
 #[test]
 fn gemini_stream_fixture_yields_text_model_tokens() {
-    let parsed = parse_cli_output(LlmCliProvider::Gemini, GEMINI_STREAM_FIXTURE, "", "n").unwrap();
+    let parsed = parse_cli_output(CliProvider::Gemini, GEMINI_STREAM_FIXTURE, "", "n").unwrap();
     assert_eq!(parsed.text, GEMINI_FIXTURE_TEXT);
     assert!(!parsed.is_error);
     assert_eq!(parsed.cost_usd, None);
@@ -1511,9 +1428,8 @@ fn gemini_stream_fixture_yields_text_model_tokens() {
 // AC1: Gemini json fixture gives the same text and summary as stream-json.
 #[test]
 fn gemini_json_fixture_yields_text_model_tokens() {
-    let parsed = parse_cli_output(LlmCliProvider::Gemini, GEMINI_JSON_FIXTURE, "", "n").unwrap();
-    let streamed =
-        parse_cli_output(LlmCliProvider::Gemini, GEMINI_STREAM_FIXTURE, "", "n").unwrap();
+    let parsed = parse_cli_output(CliProvider::Gemini, GEMINI_JSON_FIXTURE, "", "n").unwrap();
+    let streamed = parse_cli_output(CliProvider::Gemini, GEMINI_STREAM_FIXTURE, "", "n").unwrap();
     assert_eq!(parsed.text, GEMINI_FIXTURE_TEXT);
     assert!(!parsed.is_error);
     assert_eq!(
@@ -1563,10 +1479,9 @@ fn with_unknown_fields(stdout: &str, multi_line_object: bool) -> String {
 #[test]
 fn summaries_ignore_unknown_fields_and_event_types() {
     for (provider, fixture, multi_line_object) in [
-        (LlmCliProvider::Claude, CLAUDE_FIXTURE, false),
-        (LlmCliProvider::Codex, CODEX_FIXTURE, false),
-        (LlmCliProvider::Gemini, GEMINI_STREAM_FIXTURE, false),
-        (LlmCliProvider::Gemini, GEMINI_JSON_FIXTURE, true),
+        (CliProvider::Codex, CODEX_FIXTURE, false),
+        (CliProvider::Gemini, GEMINI_STREAM_FIXTURE, false),
+        (CliProvider::Gemini, GEMINI_JSON_FIXTURE, true),
     ] {
         let widened = with_unknown_fields(fixture, multi_line_object);
         assert!(widened.contains("pas_unknown_field"));
@@ -1586,32 +1501,12 @@ fn summaries_ignore_unknown_fields_and_event_types() {
 // and the Outcome fields are what they were before summaries existed.
 #[test]
 fn stream_without_model_or_cost_yields_none() {
-    // Claude: a bare result line, as older CLIs and `json` mode print.
-    let bare = r#"{"type":"result","result":"done","is_error":false}"#;
-    let parsed = parse_cli_output(LlmCliProvider::Claude, bare, "", "n").unwrap();
-    assert_eq!(parsed.text, "done");
-    assert_eq!(parsed.cost_usd, Some(0.0), "Outcome cost is unchanged");
-    assert_eq!(parsed.usage, InvocationUsage::default());
-
-    // Claude: tokens but no model and no cost.
-    let tokens_only =
-        r#"{"type":"result","result":"done","usage":{"input_tokens":3,"output_tokens":4}}"#;
-    assert_eq!(
-        summarize_stream(LlmCliProvider::Claude, tokens_only),
-        usage(None, Some(3), Some(4), None)
-    );
-
-    // Claude: model known from init but the run has no result line yet.
-    let no_result = "{\"type\":\"system\",\"subtype\":\"init\",\"model\":\"m\"}\n";
-    assert_eq!(
-        summarize_stream(LlmCliProvider::Claude, no_result),
-        usage(Some("m"), None, None, None)
-    );
+    // Claude's cases are in attractor-handler-claude-p.
 
     // Codex: no turn.completed event.
     let codex =
         "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"hi\"}}\n";
-    let parsed = parse_cli_output(LlmCliProvider::Codex, codex, "", "n").unwrap();
+    let parsed = parse_cli_output(CliProvider::Codex, codex, "", "n").unwrap();
     assert_eq!(parsed.text, "hi");
     assert_eq!(parsed.usage, InvocationUsage::default());
 
@@ -1619,13 +1514,13 @@ fn stream_without_model_or_cost_yields_none() {
     let gemini_stream =
         "{\"type\":\"message\",\"role\":\"assistant\",\"content\":\"hi\",\"delta\":true}\n\
         {\"type\":\"result\",\"status\":\"success\"}\n";
-    let parsed = parse_cli_output(LlmCliProvider::Gemini, gemini_stream, "", "n").unwrap();
+    let parsed = parse_cli_output(CliProvider::Gemini, gemini_stream, "", "n").unwrap();
     assert_eq!(parsed.text, "hi");
     assert!(!parsed.is_error);
     assert_eq!(parsed.usage, InvocationUsage::default());
 
     // Gemini json: no stats.
-    let parsed = parse_cli_output(LlmCliProvider::Gemini, r#"{"response":"hi"}"#, "", "n").unwrap();
+    let parsed = parse_cli_output(CliProvider::Gemini, r#"{"response":"hi"}"#, "", "n").unwrap();
     assert_eq!(parsed.text, "hi");
     assert_eq!(parsed.usage, InvocationUsage::default());
 }
@@ -1636,11 +1531,7 @@ fn summaries_of_unreadable_streams_are_empty() {
     let torn = "not json\n{\"type\":\"result\",\"total_cost_usd\":0.5,\"usa";
     let wrong_types = "{\"type\":\"result\",\"total_cost_usd\":\"cheap\",\"result\":\"x\"}\n\
         {\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":\"many\"}}\n";
-    for provider in [
-        LlmCliProvider::Claude,
-        LlmCliProvider::Codex,
-        LlmCliProvider::Gemini,
-    ] {
+    for provider in [CliProvider::Codex, CliProvider::Gemini] {
         for stdout in ["", "   \n", "not json at all", torn, wrong_types, "[1,2]"] {
             assert_eq!(
                 summarize_stream(provider, stdout),
@@ -1652,44 +1543,12 @@ fn summaries_of_unreadable_streams_are_empty() {
 }
 
 #[test]
-fn claude_summary_sums_subagent_model_usage_and_keeps_init_model() {
-    let stream = format!(
-        "{}\n{}\n",
-        r#"{"type":"system","subtype":"init","model":"claude-opus"}"#,
-        r#"{"type":"result","result":"x","total_cost_usd":1.5,"modelUsage":{"claude-opus":{"inputTokens":10,"outputTokens":20,"cacheReadInputTokens":5},"claude-haiku":{"inputTokens":1,"outputTokens":2,"cacheCreationInputTokens":3}},"usage":{"input_tokens":999,"output_tokens":999}}"#
-    );
-    assert_eq!(
-        summarize_stream(LlmCliProvider::Claude, &stream),
-        usage(Some("claude-opus"), Some(19), Some(22), Some(1.5))
-    );
-
-    // Without init, the last assistant message names the model.
-    let stream = format!(
-        "{}\n{}\n{}\n",
-        r#"{"type":"assistant","message":{"model":"first"}}"#,
-        r#"{"type":"assistant","message":{"model":"second"}}"#,
-        r#"{"type":"result","result":"x"}"#
-    );
-    assert_eq!(
-        summarize_stream(LlmCliProvider::Claude, &stream).model_actual,
-        Some("second".into())
-    );
-
-    // Without init or messages, a single modelUsage entry names the model.
-    let single = r#"{"type":"result","result":"x","modelUsage":{"only":{"outputTokens":1}}}"#;
-    assert_eq!(
-        summarize_stream(LlmCliProvider::Claude, single),
-        usage(Some("only"), None, Some(1), None)
-    );
-}
-
-#[test]
 fn codex_summary_sums_turns() {
     let stream =
         "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}\n\
         {\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":20,\"output_tokens\":2}}\n";
     assert_eq!(
-        summarize_stream(LlmCliProvider::Codex, stream),
+        summarize_stream(CliProvider::Codex, stream),
         usage(None, Some(30), Some(3), None)
     );
 }
@@ -1699,7 +1558,7 @@ fn parse_gemini_stream_error_result_is_an_error_result() {
     let stream = "{\"type\":\"init\",\"model\":\"gemini-2.5-pro\"}\n\
         {\"type\":\"message\",\"role\":\"assistant\",\"content\":\"partial\",\"delta\":true}\n\
         {\"type\":\"result\",\"status\":\"error\",\"error\":{\"type\":\"FatalTurnLimitedError\",\"message\":\"turn limit\"},\"stats\":{\"input_tokens\":5,\"output_tokens\":1}}\n";
-    let parsed = parse_cli_output(LlmCliProvider::Gemini, stream, "", "n").unwrap();
+    let parsed = parse_cli_output(CliProvider::Gemini, stream, "", "n").unwrap();
     assert!(parsed.is_error);
     assert_eq!(parsed.text, "turn limit");
     assert_eq!(
@@ -1721,16 +1580,13 @@ fn parse_gemini_stream_without_result_is_a_parse_error() {
 // AC5 (command): the chosen Gemini format is what reaches argv.
 #[test]
 fn build_cli_command_gemini_stream_json_replaces_json() {
-    let node = make_node("n", "box", Some("do work"), HashMap::new());
     let graph = make_minimal_graph();
     let cfg = CliRunConfig {
-        provider: LlmCliProvider::Gemini,
+        provider: CliProvider::Gemini,
         prompt: "test prompt",
         model: None,
         workdir: None,
-        node: &node,
         graph: &graph,
-        claude: ClaudeCliConfig::default(),
     };
     let args = |format| {
         build_cli_command_with_program(&cfg, "gemini".as_ref(), format)
@@ -1794,7 +1650,7 @@ mod stream_formats {
             provider: Some(provider),
             invocation: Default::default(),
         };
-        CodergenHandler
+        CodergenHandler::new(crate::handlers::tests::claude_agents(&program))
             .execute_with_controls(
                 &node,
                 &resolved,
@@ -1807,6 +1663,8 @@ mod stream_formats {
                     run_dir: None,
                     program: Some(program),
                     events: None,
+                    run_id: None,
+                    attempt: 1,
                 },
             )
             .await
@@ -1957,4 +1815,151 @@ mod stream_formats {
 
     // AC1 at the stage level: each recorded fixture gives the same Outcome
     // text through the handler as through the parser.
+}
+
+// --- claude_outcome: one AgentResult per row of the mapping ---
+
+mod claude_outcomes {
+    use attractor_agent_handler::{AgentResult, AgentStatus, FailureClass, Usage};
+    use attractor_types::{AttractorError, StageStatus};
+
+    use super::*;
+
+    fn completed(text: &str, status: AgentStatus) -> AgentResult {
+        AgentResult {
+            status,
+            text: text.into(),
+            usage: Usage {
+                cost_usd: Some(0.25),
+                turns: Some(3),
+                ..Usage::default()
+            },
+            ..AgentResult::failed("inv", FailureClass::NoResult, "")
+        }
+    }
+
+    fn outcome_of(result: &AgentResult) -> attractor_types::Result<Outcome> {
+        let node = make_node("step", "box", Some("do work"), HashMap::new());
+        let resolved = ResolvedNode {
+            node_id: node.id.clone(),
+            kind: ResolvedNodeKind::Task,
+            handler: crate::HandlerIdentity::Codergen,
+            provider: Some(LlmProvider::Claude),
+            invocation: Default::default(),
+        };
+        claude_outcome(result, &node, &resolved, &make_minimal_graph(), 1500)
+    }
+
+    fn handler_error(message: &str) -> String {
+        AttractorError::HandlerError {
+            handler: "codergen".into(),
+            node: "step".into(),
+            message: message.into(),
+        }
+        .to_string()
+    }
+
+    #[test]
+    fn completed_is_success_with_todays_context_updates() {
+        let outcome = outcome_of(&completed("all done", AgentStatus::Completed)).unwrap();
+        assert_eq!(outcome.status, StageStatus::Success);
+        assert_eq!(outcome.notes, "all done");
+        assert_eq!(outcome.failure_reason, None);
+        let updates = &outcome.context_updates;
+        assert_eq!(updates["step.result"], "all done");
+        assert_eq!(updates["step.completed"], true);
+        assert_eq!(updates["step.provider"], "Claude Code");
+        assert_eq!(updates["step.cost_usd"], 0.25);
+        assert_eq!(updates["step.turns"], 3);
+    }
+
+    #[test]
+    fn completed_without_cost_records_zero_cost_as_before() {
+        let result = AgentResult {
+            usage: Usage::default(),
+            ..completed("x", AgentStatus::Completed)
+        };
+        let outcome = outcome_of(&result).unwrap();
+        assert_eq!(outcome.context_updates["step.cost_usd"], 0.0);
+        assert!(!outcome.context_updates.contains_key("step.turns"));
+    }
+
+    #[test]
+    fn reported_is_fail_with_todays_reason() {
+        let result = completed("it broke", AgentStatus::Failed(FailureClass::Reported));
+        let outcome = outcome_of(&result).unwrap();
+        assert_eq!(outcome.status, StageStatus::Fail);
+        assert_eq!(
+            outcome.failure_reason.as_deref(),
+            Some("Claude Code returned an error")
+        );
+        assert_eq!(outcome.context_updates["step.result"], "it broke");
+    }
+
+    #[test]
+    fn timeout_is_the_retryable_command_timeout() {
+        let result = AgentResult::failed("inv", FailureClass::Timeout, "timed out after 1500ms");
+        let error = outcome_of(&result).unwrap_err();
+        assert!(
+            matches!(error, AttractorError::CommandTimeout { timeout_ms: 1500 }),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn crash_keeps_todays_exited_with_message() {
+        let result = AgentResult::failed(
+            "inv",
+            FailureClass::Crash,
+            "exited with exit status: 3: fake-claude: crashed",
+        );
+        assert_eq!(
+            outcome_of(&result).unwrap_err().to_string(),
+            handler_error("Claude Code exited with exit status: 3: fake-claude: crashed")
+        );
+    }
+
+    #[test]
+    fn no_result_passes_the_parse_message_through() {
+        let result = AgentResult::failed(
+            "inv",
+            FailureClass::NoResult,
+            "Failed to parse Claude output: oops — raw: x",
+        );
+        assert_eq!(
+            outcome_of(&result).unwrap_err().to_string(),
+            handler_error("Failed to parse Claude output: oops — raw: x")
+        );
+    }
+
+    #[test]
+    fn launch_not_found_is_cli_not_found() {
+        let result = AgentResult {
+            launch_error: Some(std::io::ErrorKind::NotFound),
+            ..AgentResult::failed("inv", FailureClass::Launch, "No such file or directory")
+        };
+        let error = outcome_of(&result).unwrap_err();
+        assert!(
+            matches!(&error, AttractorError::CliNotFound { binary } if binary == "claude"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn other_launch_failures_are_failed_to_spawn() {
+        let result = AgentResult {
+            launch_error: Some(std::io::ErrorKind::PermissionDenied),
+            ..AgentResult::failed("inv", FailureClass::Launch, "Permission denied")
+        };
+        assert_eq!(
+            outcome_of(&result).unwrap_err().to_string(),
+            handler_error("Failed to spawn Claude Code: Permission denied")
+        );
+        let unknown =
+            AgentResult::failed("inv", FailureClass::Launch, "unknown agent profile claude");
+        assert_eq!(
+            outcome_of(&unknown).unwrap_err().to_string(),
+            handler_error("Failed to spawn Claude Code: unknown agent profile claude")
+        );
+    }
 }

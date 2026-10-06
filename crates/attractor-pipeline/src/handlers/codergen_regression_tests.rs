@@ -595,7 +595,7 @@ async fn run_both(
     let program = stub(dir.path(), &response.streamed, code);
     let run_dir = dir.path().join("run");
 
-    let new = CodergenHandler
+    let new = CodergenHandler::new(crate::handlers::tests::claude_agents(&program))
         .execute_with_controls(
             &stage.node,
             &stage.resolved,
@@ -608,6 +608,8 @@ async fn run_both(
                 run_dir: with_run_dir.then(|| run_dir.clone()),
                 program: Some(program),
                 events: None,
+                run_id: None,
+                attempt: 1,
             },
         )
         .await;

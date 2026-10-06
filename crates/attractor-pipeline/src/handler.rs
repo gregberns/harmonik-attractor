@@ -25,6 +25,8 @@ pub struct HandlerExecutionContext<'a> {
     config: &'a ResolvedConfig,
     run_dir: Option<&'a Path>,
     events: Option<&'a dyn EventSink>,
+    run_id: Option<&'a str>,
+    attempt: u32,
 }
 
 impl<'a> HandlerExecutionContext<'a> {
@@ -33,13 +35,27 @@ impl<'a> HandlerExecutionContext<'a> {
         config: &'a ResolvedConfig,
         run_dir: Option<&'a Path>,
         events: Option<&'a dyn EventSink>,
+        run_id: Option<&'a str>,
+        attempt: u32,
     ) -> Self {
         Self {
             workflow,
             config,
             run_dir,
             events,
+            run_id,
+            attempt,
         }
+    }
+
+    /// The Run's id; `None` for library use without a Run Journal.
+    pub fn run_id(self) -> Option<&'a str> {
+        self.run_id
+    }
+
+    /// This attempt at the node, 1-based.
+    pub fn attempt(self) -> u32 {
+        self.attempt
     }
 
     pub fn config(self) -> &'a ResolvedConfig {
@@ -233,6 +249,8 @@ impl DynHandler {
             execution.config(),
             execution.run_dir(),
             execution.events(),
+            execution.run_id(),
+            execution.attempt(),
         );
         let mut outcome = match self.0.provider_handler() {
             Some(handler) => {
@@ -404,14 +422,24 @@ impl NodeHandler for ConditionalHandler {
 // Default registry factory
 // ---------------------------------------------------------------------------
 
+/// The standard handlers. Claude nodes run through an `Agents` with no
+/// profiles, so they fail to launch: use [`default_registry_with_agents`]
+/// to run agents.
 pub fn default_registry() -> HandlerRegistry {
+    default_registry_with_agents(std::sync::Arc::new(attractor_agent_handler::Agents::empty()))
+}
+
+/// The standard handlers, with Claude nodes run through `agents`.
+pub fn default_registry_with_agents(
+    agents: std::sync::Arc<attractor_agent_handler::Agents>,
+) -> HandlerRegistry {
     let mut reg = HandlerRegistry::new();
     reg.register(StartHandler);
     reg.register(ExitHandler);
     reg.register(ConditionalHandler);
     reg.register(crate::handlers::ToolHandler);
     reg.register(crate::handlers::QualityHandler);
-    reg.register(crate::handlers::CodergenHandler);
+    reg.register(crate::handlers::CodergenHandler::new(agents));
     reg.register(crate::handlers::ParallelHandler);
     reg.register(crate::handlers::FanInHandler);
     reg.register(crate::handlers::ManagerLoopHandler);
@@ -426,9 +454,10 @@ pub fn default_registry() -> HandlerRegistry {
 /// plus WaitHumanHandler configured with the provided interviewer.
 /// Use this when you need to support hexagon (human review) nodes in pipelines.
 pub fn default_registry_with_interviewer(
+    agents: std::sync::Arc<attractor_agent_handler::Agents>,
     interviewer: std::sync::Arc<dyn crate::interviewer::Interviewer>,
 ) -> HandlerRegistry {
-    let mut reg = default_registry();
+    let mut reg = default_registry_with_agents(agents);
     reg.register(crate::handlers::wait_human::WaitHumanHandler::new(
         interviewer,
     ));
@@ -587,7 +616,15 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        let registry = default_registry();
+        // The builtin `claude` profile, run by `claude-p`: `claude` from the
+        // shim-only PATH the parent test set.
+        let agents = attractor_agent_handler::Agents::new(
+            vec![std::sync::Arc::new(attractor_handler_claude_p::ClaudeP)],
+            attractor_agent_handler::builtin_profiles(),
+            std::env::vars().collect(),
+        )
+        .unwrap();
+        let registry = default_registry_with_agents(std::sync::Arc::new(agents));
         let node = graph.node("choice").unwrap();
 
         assert_eq!(registry.resolve_type(node), "codergen");

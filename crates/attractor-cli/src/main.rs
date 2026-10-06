@@ -1,5 +1,6 @@
 //! CLI binary for running and validating Attractor pipelines.
 
+mod agents;
 mod commands;
 
 use std::path::PathBuf;

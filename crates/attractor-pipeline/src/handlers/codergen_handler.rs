@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use attractor_agent_handler::{AgentRequest, AgentStatus, Agents, FailureClass, Record, Selection};
 use attractor_dot::AttributeValue;
 use attractor_quality::{
     ClaudeCodergenConfig, ClaudeSettingSource, ClaudeSettingsMode, ResolutionError,
@@ -18,16 +20,19 @@ use crate::handler::{EventSink, HandlerExecutionContext, NodeHandler, ProviderNo
 use attractor_agent_process::process_group::{self, ProcessGroupGuard};
 use attractor_agent_process::{run_streaming, Transcript};
 
+#[path = "codergen_claude.rs"]
+mod claude;
 #[path = "codergen_provider.rs"]
 mod provider;
+use claude::{claude_extra_args, claude_outcome, invocation_usage, ClaudeCliConfig};
 #[cfg(test)]
 use provider::{
-    build_cli_command, claude_result_line, parse_claude_output, parse_codex_output,
-    parse_gemini_output, parse_gemini_stream_output, LlmCliProvider,
+    build_cli_command, parse_codex_output, parse_gemini_output, parse_gemini_stream_output,
+    LlmCliProvider,
 };
 use provider::{
     build_cli_command_with_program, gemini_output_format, has_final_result, parse_cli_output,
-    summarize_stream, ClaudeCliConfig, CliRunConfig, GeminiOutputFormat, InvocationUsage,
+    summarize_stream, CliProvider, CliRunConfig, GeminiOutputFormat, InvocationUsage,
 };
 
 // ---------------------------------------------------------------------------
@@ -54,7 +59,22 @@ use provider::{
 // once the provider exits, fails, or times out.
 // ---------------------------------------------------------------------------
 
-pub struct CodergenHandler;
+pub struct CodergenHandler {
+    /// Runs Claude nodes (the `claude` profile); Codex and Gemini nodes
+    /// still run through this module's own process code.
+    agents: Arc<Agents>,
+}
+
+impl CodergenHandler {
+    pub fn new(agents: Arc<Agents>) -> Self {
+        Self { agents }
+    }
+}
+
+/// The agent profile Claude nodes run with.
+const CLAUDE_PROFILE: &str = "claude";
+/// A Claude node's timeout when it sets none.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 
 struct CodergenExecutionControls<'a> {
     dry_run: bool,
@@ -63,9 +83,14 @@ struct CodergenExecutionControls<'a> {
     /// Run folder that receives Transcripts; `None` writes no Transcript.
     run_dir: Option<PathBuf>,
     /// Executable to start instead of the provider's binary (test stubs).
+    /// Codex and Gemini only: Claude runs the `claude` profile's command.
     program: Option<PathBuf>,
     /// Receives `LlmInvoked`; `None` emits nothing.
     events: Option<&'a dyn EventSink>,
+    /// The Run's id, for `PAS_RUN_ID`; `None` outside a Run.
+    run_id: Option<&'a str>,
+    /// This attempt at the node, 1-based, for `PAS_ATTEMPT`.
+    attempt: u32,
 }
 
 /// `LlmInvoked.status` values (spec C3).
@@ -79,6 +104,8 @@ const INVOKED_TIMEOUT: &str = "timeout";
 /// emits it with status `timeout`, so either timer yields exactly one Event.
 struct LlmInvocation<'a> {
     events: &'a dyn EventSink,
+    /// Reads usage from a (partial) Transcript, for the `Drop` path.
+    summarize: &'a (dyn Fn(&str) -> InvocationUsage + Sync),
     run_dir: PathBuf,
     invocation_id: String,
     node_id: String,
@@ -93,13 +120,18 @@ impl LlmInvocation<'_> {
         self.emit(status, usage);
     }
 
+    /// No Model Invocation happened (the agent could not start): emit nothing.
+    fn disarm(mut self) {
+        self.emitted = true;
+    }
+
     /// Usage read back from the Transcript, which holds the provider's stdout
     /// so far. Missing or unreadable → all `None`.
     fn transcript_usage(&self) -> InvocationUsage {
         let path =
             attractor_journal::RunDir::from_path(&self.run_dir).transcript(&self.invocation_id);
         std::fs::read(path)
-            .map(|bytes| summarize_stream(self.provider, &String::from_utf8_lossy(&bytes)))
+            .map(|bytes| (self.summarize)(&String::from_utf8_lossy(&bytes)))
             .unwrap_or_default()
     }
 
@@ -284,25 +316,34 @@ impl CodergenHandler {
                 _ => None,
             });
 
+        let cli = match provider {
+            LlmProvider::Claude => {
+                return self
+                    .run_claude(node, resolved, graph, full_prompt, model, controls)
+                    .await
+            }
+            LlmProvider::Codex => CliProvider::Codex,
+            LlmProvider::Gemini => CliProvider::Gemini,
+        };
+        let summarize = move |stdout: &str| summarize_stream(cli, stdout);
+
         // Build the CLI command via the provider-specific builder
         let program = controls
             .program
             .clone()
             .unwrap_or_else(|| PathBuf::from(provider.binary_name()));
-        let gemini_format = if provider == LlmProvider::Gemini {
+        let gemini_format = if cli == CliProvider::Gemini {
             gemini_output_format(&program).await
         } else {
             GeminiOutputFormat::Json
         };
         let mut cmd = build_cli_command_with_program(
             &CliRunConfig {
-                provider,
+                provider: cli,
                 prompt: &full_prompt,
                 model,
                 workdir: controls.workdir.as_deref(),
-                node,
                 graph,
-                claude: controls.claude,
             },
             program.as_os_str(),
             gemini_format,
@@ -353,6 +394,7 @@ impl CodergenHandler {
         let invocation = match (controls.events, &controls.run_dir) {
             (Some(events), Some(run_dir)) => Some(LlmInvocation {
                 events,
+                summarize: &summarize,
                 run_dir: run_dir.clone(),
                 invocation_id: invocation_id.clone(),
                 node_id: node.id.clone(),
@@ -414,12 +456,8 @@ impl CodergenHandler {
 
         // A stream that ends without its final `result` line carries no
         // answer; report the exit like an empty stdout, as before streaming.
-        if !output.status.success() && !has_final_result(provider, &stdout) {
-            finish(
-                invocation,
-                INVOKED_FAILED,
-                summarize_stream(provider, &stdout),
-            );
+        if !output.status.success() && !has_final_result(cli, &stdout) {
+            finish(invocation, INVOKED_FAILED, summarize_stream(cli, &stdout));
             return Err(AttractorError::HandlerError {
                 handler: "codergen".into(),
                 node: node.id.clone(),
@@ -433,14 +471,10 @@ impl CodergenHandler {
         }
 
         // Parse output via the provider-specific parser
-        let cli_result = match parse_cli_output(provider, &stdout, &stderr, &node.id) {
+        let cli_result = match parse_cli_output(cli, &stdout, &stderr, &node.id) {
             Ok(cli_result) => cli_result,
             Err(error) => {
-                finish(
-                    invocation,
-                    INVOKED_FAILED,
-                    summarize_stream(provider, &stdout),
-                );
+                finish(invocation, INVOKED_FAILED, summarize_stream(cli, &stdout));
                 return Err(error);
             }
         };
@@ -467,64 +501,184 @@ impl CodergenHandler {
             provider.display_name()
         );
 
-        // Determine status
-        let status = if cli_result.is_error {
-            StageStatus::Fail
-        } else {
-            StageStatus::Success
-        };
+        Ok(provider_outcome(
+            node,
+            resolved,
+            graph,
+            provider,
+            ProviderResult {
+                text: &cli_result.text,
+                is_error: cli_result.is_error,
+                cost_usd: cli_result.cost_usd,
+                turns: cli_result.turns,
+            },
+        ))
+    }
 
-        // Extract preferred_label from the response for conditional routing
-        let preferred_label = if matches!(
-            resolved.kind,
-            ResolvedNodeKind::Conditional { llm_backed: true }
-        ) {
-            let edges = graph.outgoing_edges(&node.id);
-            let labels: Vec<String> = edges.iter().filter_map(|e| e.label.clone()).collect();
-            extract_label(&cli_result.text, &labels)
+    /// A Claude node: one invocation of the `claude` profile through `Agents`.
+    async fn run_claude(
+        &self,
+        node: &PipelineNode,
+        resolved: &ResolvedNode,
+        graph: &PipelineGraph,
+        prompt: String,
+        model: Option<&str>,
+        controls: CodergenExecutionControls<'_>,
+    ) -> Result<Outcome> {
+        // One id names the Model Invocation everywhere: `LlmInvoked`, the
+        // Transcript file and `PAS_INVOCATION_ID`.
+        let invocation_id = attractor_journal::new_invocation_id();
+        let transcript = controls.run_dir.as_ref().map(|run_dir| {
+            attractor_journal::RunDir::from_path(run_dir).transcript(&invocation_id)
+        });
+        let summarize =
+            |stdout: &str| invocation_usage(&self.agents.transcript_usage(CLAUDE_PROFILE, stdout));
+        // Armed before the agent starts: if the engine's outer deadline drops
+        // this future, `Drop` still emits `LlmInvoked` with status `timeout`.
+        let invocation = match (controls.events, &controls.run_dir) {
+            (Some(events), Some(run_dir)) => Some(LlmInvocation {
+                events,
+                summarize: &summarize,
+                run_dir: run_dir.clone(),
+                invocation_id: invocation_id.clone(),
+                node_id: node.id.clone(),
+                provider: LlmProvider::Claude,
+                model_requested: model.map(str::to_owned),
+                started: Instant::now(),
+                emitted: false,
+            }),
+            _ => None,
+        };
+        let timeout = node.timeout.unwrap_or(DEFAULT_TIMEOUT);
+        let result = self
+            .agents
+            .run(AgentRequest {
+                selection: Selection {
+                    profile: CLAUDE_PROFILE.to_string(),
+                    model: model.map(str::to_owned),
+                },
+                prompt,
+                extra_args: claude_extra_args(&controls.claude, node),
+                workdir: PathBuf::from(controls.workdir.as_deref().unwrap_or(".")),
+                timeout,
+                record: Record {
+                    run_id: controls.run_id.map(str::to_owned),
+                    node_id: node.id.clone(),
+                    attempt: controls.attempt,
+                    invocation_id,
+                },
+                transcript,
+                observer: None,
+            })
+            .await;
+        if let Some(invocation) = invocation {
+            match result.status {
+                AgentStatus::Failed(FailureClass::Launch) => invocation.disarm(),
+                AgentStatus::Completed => {
+                    invocation.finish(INVOKED_SUCCESS, invocation_usage(&result.usage))
+                }
+                AgentStatus::Failed(FailureClass::Timeout) => {
+                    invocation.finish(INVOKED_TIMEOUT, invocation_usage(&result.usage))
+                }
+                AgentStatus::Failed(
+                    FailureClass::Reported | FailureClass::Crash | FailureClass::NoResult,
+                ) => invocation.finish(INVOKED_FAILED, invocation_usage(&result.usage)),
+            }
+        }
+        tracing::info!(
+            node = %node.id,
+            status = ?result.status,
+            model_actual = result.usage.model_actual.as_deref(),
+            input_tokens = result.usage.input_tokens,
+            output_tokens = result.usage.output_tokens,
+            cost_usd = result.usage.cost_usd,
+            "Claude Code finished"
+        );
+        claude_outcome(
+            &result,
+            node,
+            resolved,
+            graph,
+            u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+        )
+    }
+}
+
+/// What a provider answered, as the outcome needs it.
+struct ProviderResult<'a> {
+    text: &'a str,
+    is_error: bool,
+    cost_usd: Option<f64>,
+    turns: Option<u32>,
+}
+
+/// The outcome of a provider that answered: Success, or Fail when it
+/// reported an error, with the node's context updates and, for an
+/// LLM-backed conditional, the label found in the text.
+fn provider_outcome(
+    node: &PipelineNode,
+    resolved: &ResolvedNode,
+    graph: &PipelineGraph,
+    provider: LlmProvider,
+    answer: ProviderResult<'_>,
+) -> Outcome {
+    // Determine status
+    let status = if answer.is_error {
+        StageStatus::Fail
+    } else {
+        StageStatus::Success
+    };
+
+    // Extract preferred_label from the response for conditional routing
+    let preferred_label = if matches!(
+        resolved.kind,
+        ResolvedNodeKind::Conditional { llm_backed: true }
+    ) {
+        let edges = graph.outgoing_edges(&node.id);
+        let labels: Vec<String> = edges.iter().filter_map(|e| e.label.clone()).collect();
+        extract_label(answer.text, &labels)
+    } else {
+        None
+    };
+
+    // Build context updates
+    let mut updates = HashMap::new();
+    updates.insert(
+        format!("{}.completed", node.id),
+        serde_json::Value::Bool(true),
+    );
+    updates.insert(
+        format!("{}.result", node.id),
+        serde_json::Value::String(answer.text.to_string()),
+    );
+    updates.insert(
+        format!("{}.provider", node.id),
+        serde_json::Value::String(provider.display_name().into()),
+    );
+    if let Some(cost) = answer.cost_usd {
+        updates.insert(format!("{}.cost_usd", node.id), serde_json::json!(cost));
+    }
+    if let Some(turns) = answer.turns {
+        updates.insert(format!("{}.turns", node.id), serde_json::json!(turns));
+    }
+    if let Some(ref lbl) = preferred_label {
+        updates.insert(
+            format!("{}.label", node.id),
+            serde_json::Value::String(lbl.clone()),
+        );
+    }
+
+    Outcome {
+        status,
+        preferred_label,
+        suggested_next_ids: vec![],
+        context_updates: updates,
+        notes: answer.text.to_string(),
+        failure_reason: if status == StageStatus::Fail {
+            Some(format!("{} returned an error", provider.display_name()))
         } else {
             None
-        };
-
-        // Build context updates
-        let mut updates = HashMap::new();
-        updates.insert(
-            format!("{}.completed", node.id),
-            serde_json::Value::Bool(true),
-        );
-        updates.insert(
-            format!("{}.result", node.id),
-            serde_json::Value::String(cli_result.text.clone()),
-        );
-        updates.insert(
-            format!("{}.provider", node.id),
-            serde_json::Value::String(provider.display_name().into()),
-        );
-        if let Some(cost) = cli_result.cost_usd {
-            updates.insert(format!("{}.cost_usd", node.id), serde_json::json!(cost));
-        }
-        if let Some(turns) = cli_result.turns {
-            updates.insert(format!("{}.turns", node.id), serde_json::json!(turns));
-        }
-        if let Some(ref lbl) = preferred_label {
-            updates.insert(
-                format!("{}.label", node.id),
-                serde_json::Value::String(lbl.clone()),
-            );
-        }
-
-        Ok(Outcome {
-            status,
-            preferred_label,
-            suggested_next_ids: vec![],
-            context_updates: updates,
-            notes: cli_result.text,
-            failure_reason: if status == StageStatus::Fail {
-                Some(format!("{} returned an error", provider.display_name()))
-            } else {
-                None
-            },
-        })
+        },
     }
 }
 
@@ -559,6 +713,8 @@ impl ProviderNodeHandler for CodergenHandler {
                 run_dir: None,
                 program: None,
                 events: None,
+                run_id: None,
+                attempt: 1,
             },
         )
         .await
@@ -621,6 +777,8 @@ impl CodergenHandler {
                 run_dir: execution.run_dir().map(Path::to_path_buf),
                 program,
                 events: execution.events(),
+                run_id: execution.run_id(),
+                attempt: execution.attempt(),
             },
         )
         .await

@@ -53,6 +53,13 @@ impl AgentHandler for Recorder {
             launch_error: None,
         }
     }
+
+    fn transcript_usage(&self, transcript: &str) -> Usage {
+        Usage {
+            model_actual: Some(transcript.to_string()),
+            ..Usage::default()
+        }
+    }
 }
 
 #[derive(Default)]
@@ -197,4 +204,22 @@ fn new_refuses_a_profile_without_a_handler() {
             mechanism: "other".into()
         }
     );
+}
+
+#[test]
+fn transcript_usage_asks_the_profiles_handler() {
+    let agents = Agents::new(
+        vec![Recorder::new("fake")],
+        vec![profile("p", "fake")],
+        BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        agents
+            .transcript_usage("p", "stream")
+            .model_actual
+            .as_deref(),
+        Some("stream")
+    );
+    assert_eq!(agents.transcript_usage("nope", "stream"), Usage::default());
 }

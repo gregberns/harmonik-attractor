@@ -3,34 +3,39 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use attractor_dot::AttributeValue;
-use attractor_quality::ClaudeSettingsMode;
 use attractor_types::{AttractorError, Result};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
+use crate::execution_plan::LlmProvider;
+#[cfg(test)]
 pub(super) use crate::execution_plan::LlmProvider as LlmCliProvider;
-use crate::graph::{PipelineGraph, PipelineNode};
+use crate::graph::PipelineGraph;
+
+/// The providers this module still starts itself. Claude runs through
+/// `Agents` (the `claude-p` handler); Codex and Gemini move there in ticket 04.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum CliProvider {
+    Codex,
+    Gemini,
+}
+
+impl CliProvider {
+    pub(super) fn provider(self) -> LlmProvider {
+        match self {
+            Self::Codex => LlmProvider::Codex,
+            Self::Gemini => LlmProvider::Gemini,
+        }
+    }
+
+    pub(super) fn display_name(self) -> &'static str {
+        self.provider().display_name()
+    }
+}
 
 // ---------------------------------------------------------------------------
 // CLI output structs
 // ---------------------------------------------------------------------------
-
-/// Result shape from `claude -p --output-format json`, which is also the final
-/// `{"type":"result",...}` line of `--output-format stream-json`.
-#[derive(Deserialize)]
-pub(super) struct ClaudeOutput {
-    #[serde(default)]
-    pub(super) result: String,
-    #[serde(default)]
-    pub(super) is_error: bool,
-    #[serde(default)]
-    pub(super) subtype: String,
-    #[serde(default)]
-    pub(super) total_cost_usd: f64,
-    #[serde(default)]
-    pub(super) num_turns: u32,
-}
 
 /// Codex JSONL event (tagged enum for streaming deserializer).
 /// Source: codex-rs/exec/src/exec_events.rs — ThreadEvent has 8 variants.
@@ -152,42 +157,6 @@ struct GeminiJsonTokens {
     candidates: Option<u64>,
 }
 
-/// The parts of a Claude `stream-json` line read for [`InvocationUsage`].
-#[derive(Deserialize)]
-struct ClaudeUsageLine {
-    #[serde(rename = "type")]
-    kind: Option<String>,
-    subtype: Option<String>,
-    model: Option<String>,
-    message: Option<ClaudeMessageModel>,
-    total_cost_usd: Option<f64>,
-    usage: Option<ClaudeUsage>,
-    #[serde(rename = "modelUsage")]
-    model_usage: Option<BTreeMap<String, ClaudeModelUsage>>,
-}
-
-#[derive(Deserialize)]
-struct ClaudeMessageModel {
-    model: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct ClaudeUsage {
-    input_tokens: Option<u64>,
-    cache_creation_input_tokens: Option<u64>,
-    cache_read_input_tokens: Option<u64>,
-    output_tokens: Option<u64>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ClaudeModelUsage {
-    input_tokens: Option<u64>,
-    cache_creation_input_tokens: Option<u64>,
-    cache_read_input_tokens: Option<u64>,
-    output_tokens: Option<u64>,
-}
-
 /// The parts of a Codex JSONL event read for [`InvocationUsage`].
 #[derive(Deserialize)]
 struct CodexUsageLine {
@@ -230,39 +199,12 @@ pub(super) struct NormalizedCliResult {
 // ---------------------------------------------------------------------------
 
 pub(super) struct CliRunConfig<'a> {
-    pub(super) provider: LlmCliProvider,
+    pub(super) provider: CliProvider,
     pub(super) prompt: &'a str,
     pub(super) model: Option<&'a str>,
     pub(super) workdir: Option<&'a str>,
-    pub(super) node: &'a PipelineNode,
     #[allow(dead_code)]
     pub(super) graph: &'a PipelineGraph,
-    pub(super) claude: ClaudeCliConfig,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct ClaudeCliConfig {
-    pub(super) settings_mode: ClaudeSettingsMode,
-    pub(super) setting_sources: Vec<String>,
-    pub(super) settings: Option<String>,
-    pub(super) tools: Option<String>,
-    pub(super) agents: Option<String>,
-    pub(super) plugin_dirs: Vec<String>,
-    pub(super) mcp_config: Option<String>,
-}
-
-impl Default for ClaudeCliConfig {
-    fn default() -> Self {
-        Self {
-            settings_mode: ClaudeSettingsMode::SubscriptionBare,
-            setting_sources: vec![],
-            settings: None,
-            tools: None,
-            agents: None,
-            plugin_dirs: vec![],
-            mcp_config: None,
-        }
-    }
 }
 
 /// The `--output-format` PAS passes to the Gemini CLI.
@@ -337,7 +279,7 @@ async fn probe_gemini_output_format(program: &Path) -> GeminiOutputFormat {
 pub(super) fn build_cli_command(cfg: &CliRunConfig<'_>) -> tokio::process::Command {
     build_cli_command_with_program(
         cfg,
-        cfg.provider.binary_name().as_ref(),
+        cfg.provider.provider().binary_name().as_ref(),
         GeminiOutputFormat::Json,
     )
 }
@@ -351,59 +293,7 @@ pub(super) fn build_cli_command_with_program(
     gemini_format: GeminiOutputFormat,
 ) -> tokio::process::Command {
     let mut cmd = match cfg.provider {
-        LlmCliProvider::Claude => {
-            let mut cmd = tokio::process::Command::new(program);
-            match cfg.claude.settings_mode {
-                ClaudeSettingsMode::SubscriptionBare => {
-                    cmd.arg("--safe-mode");
-                }
-                ClaudeSettingsMode::StrictBare => {
-                    cmd.arg("--bare");
-                }
-                ClaudeSettingsMode::Inherit => {
-                    if !cfg.claude.setting_sources.is_empty() {
-                        cmd.arg("--setting-sources")
-                            .arg(cfg.claude.setting_sources.join(","));
-                    }
-                }
-            }
-
-            cmd.arg("-p")
-                .arg(cfg.prompt)
-                .arg("--output-format")
-                .arg("stream-json")
-                .arg("--verbose")
-                .arg("--no-session-persistence")
-                .arg("--dangerously-skip-permissions")
-                .arg("--strict-mcp-config")
-                .arg("--disable-slash-commands");
-            if let Some(mcp_config) = &cfg.claude.mcp_config {
-                cmd.arg("--mcp-config").arg(mcp_config);
-            }
-            if let Some(settings) = &cfg.claude.settings {
-                cmd.arg("--settings").arg(settings);
-            }
-            if let Some(tools) = &cfg.claude.tools {
-                cmd.arg("--tools").arg(tools);
-            }
-            if let Some(agents) = &cfg.claude.agents {
-                cmd.arg("--agents").arg(agents);
-            }
-            for plugin_dir in &cfg.claude.plugin_dirs {
-                cmd.arg("--plugin-dir").arg(plugin_dir);
-            }
-            if let Some(model) = cfg.model {
-                cmd.arg("--model").arg(model);
-            }
-            if let Some(AttributeValue::String(tools)) = cfg.node.raw_attrs.get("allowed_tools") {
-                cmd.arg("--allowedTools").arg(tools);
-            }
-            if let Some(AttributeValue::String(budget)) = cfg.node.raw_attrs.get("max_budget_usd") {
-                cmd.arg("--max-budget-usd").arg(budget);
-            }
-            cmd
-        }
-        LlmCliProvider::Codex => {
+        CliProvider::Codex => {
             let mut cmd = tokio::process::Command::new(program);
             cmd.arg("exec")
                 .arg("--json")
@@ -420,7 +310,7 @@ pub(super) fn build_cli_command_with_program(
             cmd.arg(cfg.prompt);
             cmd
         }
-        LlmCliProvider::Gemini => {
+        CliProvider::Gemini => {
             let mut cmd = tokio::process::Command::new(program);
             cmd.arg("--output-format")
                 .arg(gemini_format.as_arg())
@@ -459,7 +349,7 @@ fn head(s: &str, max: usize) -> &str {
 }
 
 pub(super) fn parse_cli_output(
-    provider: LlmCliProvider,
+    provider: CliProvider,
     stdout: &str,
     stderr: &str,
     node_id: &str,
@@ -477,12 +367,11 @@ pub(super) fn parse_cli_output(
     }
 
     let mut result = match provider {
-        LlmCliProvider::Claude => parse_claude_output(stdout, node_id),
-        LlmCliProvider::Codex => parse_codex_output(stdout, node_id),
-        LlmCliProvider::Gemini if is_gemini_stream(stdout) => {
+        CliProvider::Codex => parse_codex_output(stdout, node_id),
+        CliProvider::Gemini if is_gemini_stream(stdout) => {
             parse_gemini_stream_output(stdout, node_id)
         }
-        LlmCliProvider::Gemini => parse_gemini_output(stdout, node_id),
+        CliProvider::Gemini => parse_gemini_output(stdout, node_id),
     }?;
     result.usage = summarize_stream(provider, stdout);
     Ok(result)
@@ -490,14 +379,11 @@ pub(super) fn parse_cli_output(
 
 /// Whether stdout holds the answer the provider ends a run with. Without it,
 /// a non-zero exit is reported like an empty stdout.
-pub(super) fn has_final_result(provider: LlmCliProvider, stdout: &str) -> bool {
+pub(super) fn has_final_result(provider: CliProvider, stdout: &str) -> bool {
     match provider {
-        LlmCliProvider::Claude => claude_result_line(stdout).is_some(),
-        LlmCliProvider::Gemini if is_gemini_stream(stdout) => {
-            json_lines::<GeminiStreamLine>(stdout)
-                .any(|line| line.kind.as_deref() == Some("result"))
-        }
-        LlmCliProvider::Codex | LlmCliProvider::Gemini => !stdout.is_empty(),
+        CliProvider::Gemini if is_gemini_stream(stdout) => json_lines::<GeminiStreamLine>(stdout)
+            .any(|line| line.kind.as_deref() == Some("result")),
+        CliProvider::Codex | CliProvider::Gemini => !stdout.is_empty(),
     }
 }
 
@@ -535,73 +421,11 @@ fn busiest_model<'a>(
 
 /// Read the actual model, token counts, and cost of one Model Invocation from
 /// its provider stdout. Never fails: missing or unreadable data is `None`.
-pub(super) fn summarize_stream(provider: LlmCliProvider, stdout: &str) -> InvocationUsage {
+pub(super) fn summarize_stream(provider: CliProvider, stdout: &str) -> InvocationUsage {
     match provider {
-        LlmCliProvider::Claude => summarize_claude(stdout),
-        LlmCliProvider::Codex => summarize_codex(stdout),
-        LlmCliProvider::Gemini if is_gemini_stream(stdout) => summarize_gemini_stream(stdout),
-        LlmCliProvider::Gemini => summarize_gemini_json(stdout),
-    }
-}
-
-/// Claude: the model of the `system/init` line (the main loop), else of the
-/// last assistant message, else the only `modelUsage` entry. Tokens and cost
-/// come from the final `result` line; `modelUsage` also counts subagents.
-fn summarize_claude(stdout: &str) -> InvocationUsage {
-    let mut init_model = None;
-    let mut message_model = None;
-    for line in json_lines::<ClaudeUsageLine>(stdout) {
-        match (line.kind.as_deref(), line.subtype.as_deref()) {
-            (Some("system"), Some("init")) if init_model.is_none() => init_model = line.model,
-            (Some("assistant"), _) => {
-                if let Some(model) = line.message.and_then(|message| message.model) {
-                    message_model = Some(model);
-                }
-            }
-            _ => {}
-        }
-    }
-    let result: Option<ClaudeUsageLine> =
-        serde_json::from_str(claude_result_line(stdout).unwrap_or(stdout.trim())).ok();
-    let Some(result) = result else {
-        return InvocationUsage {
-            model_actual: init_model.or(message_model),
-            ..InvocationUsage::default()
-        };
-    };
-
-    let (input_tokens, output_tokens, only_model) = match &result.model_usage {
-        Some(models) if !models.is_empty() => (
-            sum_present(models.values().map(|m| {
-                sum_present([
-                    m.input_tokens,
-                    m.cache_read_input_tokens,
-                    m.cache_creation_input_tokens,
-                ])
-            })),
-            sum_present(models.values().map(|m| m.output_tokens)),
-            (models.len() == 1)
-                .then(|| models.keys().next().cloned())
-                .flatten(),
-        ),
-        _ => match &result.usage {
-            Some(usage) => (
-                sum_present([
-                    usage.input_tokens,
-                    usage.cache_read_input_tokens,
-                    usage.cache_creation_input_tokens,
-                ]),
-                usage.output_tokens,
-                None,
-            ),
-            None => (None, None, None),
-        },
-    };
-    InvocationUsage {
-        model_actual: init_model.or(message_model).or(only_model),
-        input_tokens,
-        output_tokens,
-        cost_usd: result.total_cost_usd,
+        CliProvider::Codex => summarize_codex(stdout),
+        CliProvider::Gemini if is_gemini_stream(stdout) => summarize_gemini_stream(stdout),
+        CliProvider::Gemini => summarize_gemini_json(stdout),
     }
 }
 
@@ -677,39 +501,6 @@ fn is_gemini_stream(stdout: &str) -> bool {
         kind: Option<String>,
     }
     json_lines::<Typed>(stdout).any(|line| line.kind.is_some())
-}
-
-/// The last `{"type":"result",...}` line of a Claude `stream-json` stdout.
-pub(super) fn claude_result_line(stdout: &str) -> Option<&str> {
-    stdout.lines().rev().map(str::trim).find(|line| {
-        line.starts_with('{')
-            && serde_json::from_str::<serde_json::Value>(line)
-                .is_ok_and(|value| value.get("type").and_then(|t| t.as_str()) == Some("result"))
-    })
-}
-
-/// Parse Claude output: the final `result` line of a `stream-json` stream, or
-/// (for older CLIs and `json` mode) the whole stdout as one object.
-pub(super) fn parse_claude_output(stdout: &str, node_id: &str) -> Result<NormalizedCliResult> {
-    let final_result = claude_result_line(stdout).unwrap_or(stdout);
-    let parsed: ClaudeOutput =
-        serde_json::from_str(final_result).map_err(|e| AttractorError::HandlerError {
-            handler: "codergen".into(),
-            node: node_id.into(),
-            message: format!(
-                "Failed to parse Claude output: {} — raw: {}",
-                e,
-                head(stdout, 500)
-            ),
-        })?;
-    Ok(NormalizedCliResult {
-        text: parsed.result,
-        is_error: parsed.is_error || parsed.subtype == "error",
-        cost_usd: Some(parsed.total_cost_usd),
-        turns: Some(parsed.num_turns),
-        usage: InvocationUsage::default(),
-        raw_output: stdout.to_string(),
-    })
 }
 
 pub(super) fn parse_codex_output(stdout: &str, node_id: &str) -> Result<NormalizedCliResult> {

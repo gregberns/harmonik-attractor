@@ -147,7 +147,9 @@ name = "attractor-cli"
 version = "0.11.0"
 dependencies = [
  "anyhow",
+ "attractor-agent-handler",
  "attractor-dot",
+ "attractor-handler-claude-p",
  "attractor-journal",
  "attractor-llm",
  "attractor-monitor",
@@ -248,8 +250,10 @@ name = "attractor-pipeline"
 version = "0.11.0"
 dependencies = [
  "async-trait",
+ "attractor-agent-handler",
  "attractor-agent-process",
  "attractor-dot",
+ "attractor-handler-claude-p",
  "attractor-journal",
  "attractor-llm",
  "attractor-quality",

@@ -40,9 +40,9 @@ pub use execution_plan::{
 pub use goal_gate::{check_goal_gates, enforce_goal_gates, GoalGateResult};
 pub use graph::{PipelineEdge, PipelineGraph, PipelineNode};
 pub use handler::{
-    default_registry, default_registry_with_interviewer, ConditionalHandler, DynHandler,
-    ExitHandler, HandlerExecutionContext, HandlerRegistry, NodeHandler, ProviderNodeHandler,
-    ResolvedNodeHandler, StartHandler,
+    default_registry, default_registry_with_agents, default_registry_with_interviewer,
+    ConditionalHandler, DynHandler, ExitHandler, HandlerExecutionContext, HandlerRegistry,
+    NodeHandler, ProviderNodeHandler, ResolvedNodeHandler, StartHandler,
 };
 pub use handlers::wait_human::WaitHumanHandler;
 pub use handlers::{

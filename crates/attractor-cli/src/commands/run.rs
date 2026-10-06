@@ -709,7 +709,10 @@ pub async fn cmd_run(
     // `answers/<question-id>.json`, e.g. written by `pas answer`.
     let interviewer =
         std::sync::Arc::new(attractor_pipeline::JournalInterviewer::new(run_dir.clone()));
-    let registry = attractor_pipeline::default_registry_with_interviewer(interviewer);
+    let registry = attractor_pipeline::default_registry_with_interviewer(
+        crate::agents::agents()?,
+        interviewer,
+    );
     let executor =
         attractor_pipeline::PipelineExecutor::new(registry).with_journal(journal.clone());
     let outcome = {

@@ -26,6 +26,7 @@ pub(crate) mod quality_handler_tests;
 pub(crate) mod tests {
     use std::collections::HashMap;
 
+    use attractor_agent_handler::{builtin_profiles, Agents, Profile};
     use attractor_dot::AttributeValue;
 
     use crate::graph::{PipelineGraph, PipelineNode};
@@ -51,6 +52,23 @@ pub(crate) mod tests {
             llm_provider: None,
             raw_attrs: attrs,
         }
+    }
+
+    /// `Agents` whose `claude` profile runs `command` (a stub script) through
+    /// the `claude-p` handler, with this process's environment as the parent.
+    pub(crate) fn claude_agents(command: &std::path::Path) -> std::sync::Arc<Agents> {
+        let profile = Profile {
+            command: vec![command.to_string_lossy().into_owned()],
+            ..builtin_profiles().remove(0)
+        };
+        std::sync::Arc::new(
+            Agents::new(
+                vec![std::sync::Arc::new(attractor_handler_claude_p::ClaudeP)],
+                vec![profile],
+                std::env::vars().collect(),
+            )
+            .unwrap(),
+        )
     }
 
     pub(crate) fn make_minimal_graph() -> PipelineGraph {
