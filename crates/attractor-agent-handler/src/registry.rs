@@ -30,6 +30,16 @@ pub trait AgentHandler: Send + Sync {
     fn argv(&self, inv: &Invocation<'_>) -> Vec<String> {
         inv.argv.clone()
     }
+    /// The agent's name in messages and the node's `<id>.provider`
+    /// context value, e.g. "Claude Code". Defaults to the mechanism.
+    fn display_name(&self) -> &'static str {
+        self.mechanism()
+    }
+    /// Whether the agent's output carries a dollar cost (preflight warns
+    /// about nodes whose spend the budget cannot see).
+    fn reports_cost(&self) -> bool {
+        true
+    }
     /// Run one invocation to its end. Never returns an error.
     async fn run(&self, inv: Invocation<'_>) -> AgentResult;
     /// Usage read from a transcript (the agent's stdout so far). Never
@@ -311,6 +321,7 @@ impl Agents {
                 let inv = Invocation {
                     invocation_id: &req.record.invocation_id,
                     argv: argv(profile, &req),
+                    command_len: profile.command.len(),
                     env: child_env(&self.parent_env, &profile.env, &req.record),
                     prompt: &req.prompt,
                     workdir: &req.workdir,
@@ -361,6 +372,18 @@ impl Agents {
             observer.finished(&result);
         }
         result
+    }
+
+    /// [`AgentHandler::display_name`] of the profile's handler.
+    pub fn display_name(&self, profile: &str) -> Option<&'static str> {
+        self.resolve(profile)
+            .map(|(_, handler)| handler.display_name())
+    }
+
+    /// [`AgentHandler::reports_cost`] of the profile's handler.
+    pub fn reports_cost(&self, profile: &str) -> Option<bool> {
+        self.resolve(profile)
+            .map(|(_, handler)| handler.reports_cost())
     }
 
     /// [`AgentHandler::transcript_usage`] of the profile's handler; empty for

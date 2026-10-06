@@ -69,6 +69,10 @@ pub struct Invocation<'a> {
     /// filled reasoning args.
     /// The handler appends its own flags and must not drop any of these.
     pub argv: Vec<String>,
+    /// How many leading words of `argv` are the profile's `command` (a
+    /// command can be several words, e.g. `npx @google/gemini-cli`), for a
+    /// handler that puts a flag right after the program.
+    pub command_len: usize,
     /// The complete child environment; the handler uses exactly this map.
     pub env: BTreeMap<String, String>,
     pub prompt: &'a str,
@@ -90,6 +94,7 @@ impl std::fmt::Debug for Invocation<'_> {
         f.debug_struct("Invocation")
             .field("invocation_id", &self.invocation_id)
             .field("argv", &self.argv)
+            .field("command_len", &self.command_len)
             .field("env", &self.env)
             .field("prompt", &self.prompt)
             .field("workdir", &self.workdir)

@@ -42,6 +42,10 @@ impl AgentHandler for ClaudeP {
         argv
     }
 
+    fn display_name(&self) -> &'static str {
+        "Claude Code"
+    }
+
     async fn run(&self, inv: Invocation<'_>) -> AgentResult {
         let started = Instant::now();
         let spawned = |spawn: Spawn| {

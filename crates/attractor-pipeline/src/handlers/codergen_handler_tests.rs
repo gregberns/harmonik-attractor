@@ -174,6 +174,7 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
         &Invocation {
             invocation_id: "i",
             argv: argv(&claude, &request),
+            command_len: claude.command.len(),
             env: Default::default(),
             prompt: "test prompt",
             workdir: Path::new("."),

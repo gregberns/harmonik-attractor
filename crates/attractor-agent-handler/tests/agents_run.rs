@@ -535,3 +535,54 @@ fn check_refuses_an_unknown_profile_and_reasoning_without_args() {
         })
     );
 }
+
+/// Records `command_len`; says it is "Named" and reports no cost.
+struct Named(Mutex<Vec<usize>>);
+
+#[async_trait]
+impl AgentHandler for Named {
+    fn mechanism(&self) -> &'static str {
+        "named"
+    }
+
+    fn display_name(&self) -> &'static str {
+        "Named Agent"
+    }
+
+    fn reports_cost(&self) -> bool {
+        false
+    }
+
+    async fn run(&self, inv: Invocation<'_>) -> AgentResult {
+        self.0.lock().unwrap().push(inv.command_len);
+        AgentResult::failed(inv.invocation_id, FailureClass::Reported, "")
+    }
+
+    fn transcript_usage(&self, _transcript: &str) -> Usage {
+        Usage::default()
+    }
+}
+
+#[tokio::test]
+async fn handlers_name_themselves_and_see_the_commands_length() {
+    let named = Arc::new(Named(Mutex::new(Vec::new())));
+    let mut multi = profile("multi", "named");
+    multi.command = vec!["npx".into(), "@google/gemini-cli".into()];
+    let agents = Agents::new(
+        vec![named.clone(), Recorder::new("fake")],
+        vec![multi, profile("p", "fake")],
+        BTreeMap::new(),
+        false,
+    )
+    .unwrap();
+
+    agents.run(request("multi", None)).await;
+
+    assert_eq!(*named.0.lock().unwrap(), vec![2]);
+    assert_eq!(agents.display_name("multi"), Some("Named Agent"));
+    assert_eq!(agents.reports_cost("multi"), Some(false));
+    // The defaults: the mechanism, and a cost.
+    assert_eq!(agents.display_name("p"), Some("fake"));
+    assert_eq!(agents.reports_cost("p"), Some(true));
+    assert_eq!(agents.display_name("nope"), None);
+}
