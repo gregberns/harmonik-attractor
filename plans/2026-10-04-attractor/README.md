@@ -35,7 +35,7 @@ branch, as part of merging it.
 | 04 | [Codex and Gemini as handler crates; remove LlmProvider](tickets/04-port-codex-gemini.md) | 03 | ready |
 | 05 | [Clear run-ending errors and the two failure-hiding fixes](tickets/05-failure-reporting-and-hidden-failures.md) | 02b | done |
 | 06 | [A worktree and branch per run](tickets/06-worktree-and-branch.md) | 01 | done |
-| 07 | [Attempt commits, interrupted attempts and the end-of-run report](tickets/07-attempt-commits-and-end-of-run.md) | 05, 06 | ready |
+| 07 | [Attempt commits, interrupted attempts and the end-of-run report](tickets/07-attempt-commits-and-end-of-run.md) | 05, 06 | done |
 | 08 | [Continue a node's agent session on retry and loop-back](tickets/08-sessions-continue.md) | 04, 07 | ready |
 | 09 | [The Pi handler for DeepSeek, GLM and the hosted Qwen](tickets/09-pi-handler.md) | 08 | ready |
 | 10 | [(low) Rate-limit retry window in the claude-p handler](tickets/10-rate-limit-window.md) | 08, 09 | ready |
