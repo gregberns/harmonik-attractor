@@ -39,5 +39,5 @@ branch, as part of merging it.
 | 08 | [Continue a node's agent session on retry and loop-back](tickets/08-sessions-continue.md) | 04, 07 | done |
 | 09 | [The Pi handler for DeepSeek, GLM and the hosted Qwen](tickets/09-pi-handler.md) | 08 | ready |
 | 10 | [(low) Rate-limit retry window in the claude-p handler](tickets/10-rate-limit-window.md) | 08, 09 | ready |
-| 11 | [(low) Retry prompt names the previous failure](tickets/11-retry-prompt.md) | 08 | ready |
+| 11 | [(low) Retry prompt names the previous failure](tickets/11-retry-prompt.md) | 08 | done |
 | 12 | [(low) Prompt file and run-folder documentation](tickets/12-prompt-file-and-run-folder-doc.md) | 07 | done |
