@@ -19,7 +19,7 @@ option, it is the proposal those questions would confirm or change.
 
 ## Summary
 
-- **Agent handlers.** A small public interface crate (`attractor-agent`)
+- **Agent handlers.** A small public interface crate (`attractor-agent-handler`)
   holds the handler trait, the request and result types and the registry.
   Each handler is its own crate (Q31, Q35): `claude-p` and `pi` (the
   multi-model handler for DeepSeek, GLM and the hosted Qwen, Q34) are built
@@ -92,12 +92,15 @@ Constraints:
 ```
 attractor-cli (pas) ──registers──▶ handler crates ──▶ attractor-agent-process
        │                                │                     │
-       └──▶ attractor-pipeline ──▶ attractor-agent (interface, registry, config) ◀┘
+       └──▶ attractor-pipeline ──▶ attractor-agent-handler (interface, registry, config) ◀┘
 ```
+
+The interface crate is `attractor-agent-handler`: `attractor-agent` is the
+existing agent-session-loop crate, so the name was changed in ticket 02a.
 
 | Crate | Holds |
 |---|---|
-| `attractor-agent` | The public interface: the `AgentHandler` trait; `AgentRequest`, `AgentResult`, `Session`, `FailureClass`, `Usage`, `InvocationFiles`; the `AgentObserver`; profile config loading; and `Agents`, the registry the engine calls. Depends on no other PAS crate |
+| `attractor-agent-handler` | The public interface: the `AgentHandler` trait; `AgentRequest`, `AgentResult`, `Session`, `FailureClass`, `Usage`, `InvocationFiles`; the `AgentObserver`; profile config loading; and `Agents`, the registry the engine calls. Depends on no other PAS crate |
 | `attractor-agent-process` | Shared local-process runner: spawn with the given env, cwd and stdin; own process group; prompt, transcript and stderr files written live; `Started`; timeout and cancel with TERM, grace, KILL; drop guard. Handlers that run a local process use it; handlers that don't (remote, ACP over a socket) skip it |
 | `attractor-handler-claude-p` | Claude `-p` stream-json: argv, parser, failure table, session id. Built new |
 | `attractor-handler-codex-exec` | Today's Codex command and parser (`codergen_provider.rs:406-421, 715-757`), moved |
@@ -111,7 +114,7 @@ per-agent parts into the handler crates. `LlmProvider` is deleted.
 ### The interface
 
 ```rust
-// attractor-agent
+// attractor-agent-handler
 #[async_trait]
 pub trait AgentHandler: Send + Sync {
     /// The `mechanism` name profiles use, e.g. "claude-p".
