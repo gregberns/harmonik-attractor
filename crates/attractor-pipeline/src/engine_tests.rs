@@ -3834,3 +3834,179 @@ async fn direct_context_removal_reaches_later_stages() {
     assert!(!result.final_context.contains_key("task.id"));
     assert_eq!(result.final_context["keep"], "me");
 }
+
+// --- Ticket 05: fix (a) no matching edge, fix (b) an exhausted Retry ---
+
+/// A `codergen` double that counts its calls and returns `status`.
+struct Returns {
+    status: StageStatus,
+    calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[async_trait]
+impl NodeHandler for Returns {
+    fn handler_type(&self) -> &str {
+        "codergen"
+    }
+
+    async fn execute(
+        &self,
+        _node: &crate::PipelineNode,
+        _ctx: &Context,
+        _graph: &PipelineGraph,
+    ) -> Result<Outcome> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(Outcome::with_label(self.status, "double"))
+    }
+}
+
+fn returning(
+    status: StageStatus,
+) -> (
+    HandlerRegistry,
+    std::sync::Arc<std::sync::atomic::AtomicUsize>,
+) {
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut registry = HandlerRegistry::new();
+    registry.register(StartHandler);
+    registry.register(ExitHandler);
+    registry.register(Returns {
+        status,
+        calls: std::sync::Arc::clone(&calls),
+    });
+    (registry, calls)
+}
+
+fn drain(receiver: &mut tokio::sync::broadcast::Receiver<PipelineEvent>) -> Vec<PipelineEvent> {
+    let mut events = Vec::new();
+    while let Ok(event) = receiver.try_recv() {
+        events.push(event);
+    }
+    events
+}
+
+#[tokio::test]
+async fn a_fail_whose_edges_match_nothing_stops_the_run() {
+    let graph = parse_graph(
+        r#"digraph G {
+            node [llm_provider="claude"]
+            start [shape="Mdiamond"]
+            work [shape="box", prompt="work"]
+            next [shape="box", prompt="next"]
+            done [shape="Msquare"]
+            start -> work
+            work -> next [condition="outcome=success"]
+            next -> done
+        }"#,
+    );
+    let (registry, calls) = returning(StageStatus::Fail);
+    let emitter = EventEmitter::new(64);
+    let mut receiver = emitter.subscribe();
+
+    let error = PipelineExecutor::new(registry)
+        .with_event_emitter(emitter)
+        .run(&graph)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "node 'work' outcome fail matched no outgoing edge (conditions: outcome=success)"
+    );
+    // `next` never ran: only `work` called the double.
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let events = drain(&mut receiver);
+    assert!(events.iter().any(|e| matches!(e,
+        PipelineEvent::StageCompleted { node_id, status, .. } if node_id == "work" && status == "fail")));
+    assert!(!events
+        .iter()
+        .any(|e| matches!(e, PipelineEvent::StageFailed { .. })));
+}
+
+#[tokio::test]
+async fn a_success_whose_edges_match_nothing_stops_the_run() {
+    let graph = parse_graph(
+        r#"digraph G {
+            node [llm_provider="claude"]
+            start [shape="Mdiamond"]
+            work [shape="box", prompt="work"]
+            fix [shape="box", prompt="fix"]
+            done [shape="Msquare"]
+            start -> work
+            work -> fix [condition="outcome=fail"]
+            work -> done [condition="outcome=partial_success"]
+            fix -> done
+        }"#,
+    );
+    let (registry, calls) = returning(StageStatus::Success);
+
+    let error = PipelineExecutor::new(registry)
+        .run(&graph)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "node 'work' outcome success matched no outgoing edge \
+         (conditions: outcome=fail, outcome=partial_success)"
+    );
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn a_retry_on_the_last_attempt_stops_the_run() {
+    let graph = parse_graph(
+        r#"digraph G {
+            node [llm_provider="claude"]
+            start [shape="Mdiamond"]
+            work [shape="box", prompt="work", max_retries=2]
+            next [shape="box", prompt="next"]
+            done [shape="Msquare"]
+            start -> work -> next -> done
+        }"#,
+    );
+    let (registry, calls) = returning(StageStatus::Retry);
+    let emitter = EventEmitter::new(64);
+    let mut receiver = emitter.subscribe();
+    let logs = tempfile::tempdir().unwrap();
+
+    let error = PipelineExecutor::new(registry)
+        .with_event_emitter(emitter)
+        .run_with_checkpoint(&graph, Context::new(), logs.path())
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(&error, AttractorError::StillRetrying { node, attempts: 3 } if node == "work"),
+        "{error}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "node 'work' still retrying after 3 attempts"
+    );
+    // Three attempts on `work`, and `next` never ran.
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
+    let events = drain(&mut receiver);
+    let retrying = events
+        .iter()
+        .filter(|e| matches!(e, PipelineEvent::StageRetrying { .. }))
+        .count();
+    assert_eq!(retrying, 2);
+    assert!(!events.iter().any(|e| matches!(e,
+        PipelineEvent::StageCompleted { status, .. } if status == "retry")));
+    assert!(events.iter().any(|e| matches!(e,
+        PipelineEvent::StageFailed { node_id, error } if node_id == "work"
+            && error == "node 'work' still retrying after 3 attempts")));
+
+    // Resuming from the saved checkpoint does not call the double again.
+    let (registry, calls) = returning(StageStatus::Retry);
+    let error = PipelineExecutor::new(registry)
+        .run_with_checkpoint(&graph, Context::new(), logs.path())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, AttractorError::RetriesExhausted { attempts: 3, .. }),
+        "{error}"
+    );
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+}

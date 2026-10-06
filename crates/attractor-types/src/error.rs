@@ -81,6 +81,22 @@ pub enum AttractorError {
     #[error("node '{node}' was cancelled")]
     Cancelled { node: String },
 
+    /// A node's outcome matched none of its outgoing edges (every edge is
+    /// conditional and no condition held). There is no first-edge fallback.
+    #[error(
+        "node '{node}' outcome {outcome} matched no outgoing edge (conditions: {})",
+        conditions.join(", ")
+    )]
+    NoMatchingEdge {
+        node: String,
+        outcome: String,
+        conditions: Vec<String>,
+    },
+
+    /// A node still returned Retry on its last attempt.
+    #[error("node '{node}' still retrying after {attempts} attempts")]
+    StillRetrying { node: String, attempts: usize },
+
     // === Agent Errors ===
     #[error("Agent loop detected after {window} consecutive identical tool calls")]
     LoopDetected { window: usize },
@@ -289,6 +305,34 @@ mod tests {
             message: "bad request".into(),
             retryable: false,
         };
+        assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn no_matching_edge_names_the_node_outcome_and_conditions() {
+        let err = AttractorError::NoMatchingEdge {
+            node: "work".into(),
+            outcome: "fail".into(),
+            conditions: vec!["outcome=success".into(), "outcome=partial_success".into()],
+        };
+        assert_eq!(
+            err.to_string(),
+            "node 'work' outcome fail matched no outgoing edge \
+             (conditions: outcome=success, outcome=partial_success)"
+        );
+        assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn still_retrying_names_the_node_and_attempts() {
+        let err = AttractorError::StillRetrying {
+            node: "work".into(),
+            attempts: 3,
+        };
+        assert_eq!(
+            err.to_string(),
+            "node 'work' still retrying after 3 attempts"
+        );
         assert!(!err.is_retryable());
     }
 

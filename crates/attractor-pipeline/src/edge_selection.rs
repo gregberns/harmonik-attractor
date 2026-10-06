@@ -10,7 +10,13 @@ use crate::condition::{evaluate_condition, parse_condition};
 use crate::graph::{PipelineEdge, PipelineGraph};
 
 /// Select the next edge to follow after a node completes.
-/// Returns `None` if no edges are available (terminal node).
+///
+/// A conditional edge is taken only when its condition holds (step 1); a
+/// preferred label or suggested next id selects only among the unconditional
+/// edges. Returns `None` when no edge applies: the node has no outgoing
+/// edges, or every edge is conditional and none matched. There is no
+/// first-edge fallback (ticket 05, fix (a)): the caller reports a node whose
+/// edges match nothing.
 pub fn select_edge<'a>(
     node_id: &str,
     outcome: &attractor_types::Outcome,
@@ -41,10 +47,15 @@ pub fn select_edge<'a>(
         return Some(best_by_weight_then_lexical(&condition_edges));
     }
 
+    // Steps 2-5 consider only unconditional edges: a conditional edge whose
+    // condition is false is never taken.
+    let unconditional: Vec<&PipelineEdge> =
+        edges.iter().filter(|e| e.condition.is_none()).collect();
+
     // Step 2: Preferred label match
     if let Some(ref label) = outcome.preferred_label {
         let normalized = normalize_label(label);
-        for edge in edges {
+        for edge in unconditional.iter().copied() {
             if let Some(ref elabel) = edge.label {
                 if normalize_label(elabel) == normalized {
                     return Some(edge);
@@ -55,7 +66,7 @@ pub fn select_edge<'a>(
 
     // Step 3: Suggested next IDs
     for suggested in &outcome.suggested_next_ids {
-        for edge in edges {
+        for edge in unconditional.iter().copied() {
             if edge.to == *suggested {
                 return Some(edge);
             }
@@ -63,15 +74,8 @@ pub fn select_edge<'a>(
     }
 
     // Step 4 & 5: Unconditional edges by weight with lexical tiebreak
-    let unconditional: Vec<_> = edges.iter().filter(|e| e.condition.is_none()).collect();
     if unconditional.is_empty() {
-        // Last resort: all edges have conditions but none matched — fall back
-        // to the first edge and warn, since routing is now arbitrary.
-        tracing::warn!(
-            node = %node_id,
-            "All outgoing edges have conditions but none matched; falling back to first edge"
-        );
-        return edges.first();
+        return None;
     }
     Some(best_by_weight_then_lexical(&unconditional))
 }
@@ -227,6 +231,96 @@ mod tests {
         let edge = select_edge("A", &outcome, &resolve, &pg).unwrap();
         // condition is false, so fall through to step 4/5 unconditional
         assert_eq!(edge.to, "C");
+    }
+
+    // Ticket 05 fix (a): no first-edge fallback.
+    #[test]
+    fn all_edges_conditional_and_none_matching_returns_none() {
+        let pg = parse_and_build(
+            r#"digraph G {
+            A -> B [condition="outcome=success"]
+            A -> C [condition="outcome=partial_success"]
+        }"#,
+        );
+        let outcome = attractor_types::Outcome::fail("no");
+        let resolve = make_resolve("fail");
+        assert!(select_edge("A", &outcome, &resolve, &pg).is_none());
+    }
+
+    #[test]
+    fn a_matching_conditional_edge_is_still_picked() {
+        let pg = parse_and_build(
+            r#"digraph G {
+            A -> B [condition="outcome=success"]
+            A -> C [condition="outcome=fail"]
+        }"#,
+        );
+        let resolve = make_resolve("fail");
+        let edge = select_edge("A", &make_outcome(), &resolve, &pg).unwrap();
+        assert_eq!(edge.to, "C");
+    }
+
+    #[test]
+    fn a_label_never_selects_a_conditional_edge_whose_condition_is_false() {
+        // A diamond agent that failed but ended its text with PASS.
+        let pg = parse_and_build(
+            r#"digraph G {
+            A -> B [label="PASS", condition="outcome=success"]
+        }"#,
+        );
+        let mut outcome = attractor_types::Outcome::fail("no");
+        outcome.preferred_label = Some("PASS".to_string());
+        let resolve = make_resolve("fail");
+        assert!(select_edge("A", &outcome, &resolve, &pg).is_none());
+    }
+
+    #[test]
+    fn a_suggested_id_never_selects_a_conditional_edge_whose_condition_is_false() {
+        let pg = parse_and_build(
+            r#"digraph G {
+            A -> B [condition="outcome=success"]
+        }"#,
+        );
+        let mut outcome = attractor_types::Outcome::fail("no");
+        outcome.suggested_next_ids = vec!["B".to_string()];
+        let resolve = make_resolve("fail");
+        assert!(select_edge("A", &outcome, &resolve, &pg).is_none());
+    }
+
+    #[test]
+    fn a_label_or_suggested_id_still_selects_an_unconditional_edge() {
+        let pg = parse_and_build(
+            r#"digraph G {
+            A -> B [label="approve", condition="outcome=success"]
+            A -> C [label="approve"]
+            A -> D
+        }"#,
+        );
+        let resolve = make_resolve("fail");
+        let mut labelled = attractor_types::Outcome::fail("no");
+        labelled.preferred_label = Some("approve".to_string());
+        assert_eq!(select_edge("A", &labelled, &resolve, &pg).unwrap().to, "C");
+        let mut suggested = attractor_types::Outcome::fail("no");
+        suggested.suggested_next_ids = vec!["D".to_string()];
+        assert_eq!(select_edge("A", &suggested, &resolve, &pg).unwrap().to, "D");
+    }
+
+    #[test]
+    fn preferred_label_conditions_still_route_through_step_1() {
+        let pg = parse_and_build(
+            r#"digraph G {
+            A -> B [condition="preferred_label=alpha_route"]
+            A -> C [condition="preferred_label=beta_route"]
+        }"#,
+        );
+        let mut outcome = make_outcome();
+        outcome.preferred_label = Some("beta_route".to_string());
+        let resolve = |key: &str| match key {
+            "outcome" => "success".to_string(),
+            "preferred_label" => "beta_route".to_string(),
+            _ => String::new(),
+        };
+        assert_eq!(select_edge("A", &outcome, &resolve, &pg).unwrap().to, "C");
     }
 
     // Test 8: label normalization strips accelerators

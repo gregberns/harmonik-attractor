@@ -668,6 +668,27 @@ impl PipelineExecutor {
                         attempt: next_attempt,
                     });
                 }
+                // Fix (b): a node still asking to retry on its last attempt
+                // stops the Run instead of being routed as a completed stage.
+                Ok(outcome) if outcome.status == StageStatus::Retry => {
+                    if let Some(cost) = outcome
+                        .context_updates
+                        .get(&format!("{}.cost_usd", node.id))
+                        .and_then(serde_json::Value::as_f64)
+                    {
+                        progress.total_cost += cost;
+                        checkpoint.save(&node.id, progress).await?;
+                    }
+                    let error = AttractorError::StillRetrying {
+                        node: node.id.clone(),
+                        attempts: attempt + 1,
+                    };
+                    self.emit(PipelineEvent::StageFailed {
+                        node_id: node.id.clone(),
+                        error: error.to_string(),
+                    });
+                    return Err(error);
+                }
                 Ok(outcome) => {
                     self.emit(PipelineEvent::StageCompleted {
                         node_id: node.id.clone(),
@@ -1196,6 +1217,22 @@ impl PipelineExecutor {
                     prev_node_id = Some(just_completed);
                 }
                 None => {
+                    // Edges exist but none applies: stop and say so. There is
+                    // no first-edge fallback. For a non-Fail outcome this
+                    // diverges on purpose from the upstream spec (lines
+                    // 390-392), which ends the Run normally: edges that match
+                    // nothing are a graph mistake to report, not a success.
+                    let edges = graph.outgoing_edges(&current_node.id);
+                    if !edges.is_empty() {
+                        return Err(AttractorError::NoMatchingEdge {
+                            node: current_node.id.clone(),
+                            outcome: status_to_string(outcome.status),
+                            conditions: edges
+                                .iter()
+                                .filter_map(|edge| edge.condition.clone())
+                                .collect(),
+                        });
+                    }
                     // No outgoing edge and not an exit node
                     if outcome.status == StageStatus::Fail {
                         return Err(AttractorError::HandlerError {
