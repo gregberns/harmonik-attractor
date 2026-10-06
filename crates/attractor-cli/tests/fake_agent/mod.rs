@@ -2,7 +2,8 @@
 //!
 //! Each [`FakeAgent`] owns a scratch folder: a git repo with one commit used
 //! as the workdir, a `bin/` holding the fake as `claude` (first on `PATH`),
-//! the fake's scenario folder, and the Run's logs and state folders.
+//! the fake's scenario folder, and the Run's logs and state folders. Git
+//! ignores the developer's global and system config (hooks, templates).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -69,6 +70,8 @@ impl FakeAgent {
             .args(args)
             .current_dir(self.repo())
             .env("GIT_CEILING_DIRECTORIES", self.path())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .output()
@@ -95,6 +98,8 @@ impl FakeAgent {
             .env("FAKE_AGENT_SCENARIOS", self.scenarios())
             .env("PAS_STATE_DIR", self.path().join("state"))
             .env("GIT_CEILING_DIRECTORIES", self.path())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .env_remove("PAS_HEARTBEAT_INTERVAL_MS")

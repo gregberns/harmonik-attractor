@@ -208,8 +208,10 @@ fn error_max_turns_counts_as_success_today() {
     assert_eq!(work["status"], "success");
 }
 
+// Permanent, not a 02a flip: a final result wins over the exit status
+// (design §5, "Completed, even after a non-zero exit").
 #[test]
-fn crash_after_result_counts_as_success_today() {
+fn crash_after_result_counts_as_success() {
     let fake = FakeAgent::new();
     let output = fake.run(&one_node(
         r#"timeout="30s", prompt="scenario=crash_after_result""#,
