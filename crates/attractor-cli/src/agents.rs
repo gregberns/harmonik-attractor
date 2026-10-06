@@ -13,7 +13,7 @@ use attractor_handler_pi::Pi;
 /// The handlers `pas` ships with.
 fn handlers() -> Vec<Arc<dyn AgentHandler>> {
     vec![
-        Arc::new(ClaudeP),
+        Arc::new(ClaudeP::default()),
         Arc::new(CodexExec),
         Arc::new(Gemini::default()),
         Arc::new(Pi),

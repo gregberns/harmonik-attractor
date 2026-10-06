@@ -118,7 +118,7 @@ impl Fixture {
             ..builtin_profiles().unwrap().remove(0)
         };
         Agents::new(
-            vec![Arc::new(ClaudeP)],
+            vec![Arc::new(ClaudeP::default())],
             vec![profile],
             self.parent_env(extra_env),
             false,

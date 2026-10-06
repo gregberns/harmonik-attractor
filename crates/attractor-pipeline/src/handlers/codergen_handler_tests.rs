@@ -74,7 +74,7 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
     let config = fold_codergen_claude(AgentsConfig::builtin().unwrap(), claude_settings_args(&cfg));
     let claude = config.resolve().unwrap().remove(0);
     attractor_agent_handler::AgentHandler::argv(
-        &attractor_handler_claude_p::ClaudeP,
+        &attractor_handler_claude_p::ClaudeP::default(),
         &Invocation {
             invocation_id: "i",
             argv: argv(&claude, &request),

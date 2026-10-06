@@ -181,6 +181,79 @@ pub fn classify(invocation_id: &str, out: &Exited<'_>, duration: Duration) -> Ag
     }
 }
 
+/// An attempt the API rate-limited (design §5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RateLimit {
+    /// When the limit resets (`rate_limit_event`'s `resetsAt`, Unix
+    /// seconds); `None` when only the error text said so.
+    pub resets_at: Option<u64>,
+    /// The result's error text (its `errors`, else its `result`).
+    pub text: String,
+}
+
+/// The `rate_limit_info` of a `rate_limit_event` line.
+#[derive(Deserialize)]
+struct RateLimitLine {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    rate_limit_info: Option<RateLimitInfo>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RateLimitInfo {
+    status: Option<String>,
+    resets_at: Option<u64>,
+}
+
+/// Whether the attempt was rate limited: its final result is an error
+/// (`is_error`, or an `error*` subtype) and either the last
+/// `rate_limit_event` before it has a `status` other than `allowed` or
+/// `allowed_warning` (Claude's "close to the limit"), or the error text
+/// says "rate limit", "usage limit" (any case) or `429` as a whole word.
+/// `None` for anything else: 05's failure table applies.
+pub fn rate_limited(stdout: &str) -> Option<RateLimit> {
+    let line = claude_result_line(stdout)?;
+    let error = reported_error(line)?;
+    let limited_event = json_lines::<RateLimitLine>(stdout)
+        .filter(|line| line.kind.as_deref() == Some("rate_limit_event"))
+        .filter_map(|line| line.rate_limit_info)
+        .last()
+        .filter(|info| {
+            !matches!(
+                info.status.as_deref(),
+                Some("allowed" | "allowed_warning") | None
+            )
+        });
+    match limited_event {
+        Some(info) => Some(RateLimit {
+            resets_at: info.resets_at,
+            text: error.detail,
+        }),
+        None if says_rate_limited(&error.detail) || says_rate_limited(&error.text) => {
+            Some(RateLimit {
+                resets_at: None,
+                text: error.detail,
+            })
+        }
+        None => None,
+    }
+}
+
+/// "rate limit", "usage limit" (any case), or `429` as a whole word (so
+/// "port 4291" doesn't count).
+fn says_rate_limited(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    if lower.contains("rate limit") || lower.contains("usage limit") {
+        return true;
+    }
+    text.match_indices("429").any(|(at, _)| {
+        let before = text[..at].chars().next_back();
+        let after = text[at + 3..].chars().next();
+        !before.is_some_and(|c| c.is_alphanumeric()) && !after.is_some_and(|c| c.is_alphanumeric())
+    })
+}
+
 /// An error the agent reported on its result line.
 struct ReportedError {
     text: String,
@@ -671,5 +744,76 @@ mod tests {
         // Without init or messages, a single modelUsage entry names the model.
         let single = r#"{"type":"result","result":"x","modelUsage":{"only":{"outputTokens":1}}}"#;
         assert_eq!(summarize(single), usage(Some("only"), None, Some(1), None));
+    }
+
+    fn limited(stdout: &str) -> Option<RateLimit> {
+        rate_limited(stdout)
+    }
+
+    const ERROR_RESULT: &str = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"API Error: Rate limit reached"}"#;
+
+    fn event(status: &str, resets_at: u64) -> String {
+        format!(
+            r#"{{"type":"rate_limit_event","rate_limit_info":{{"status":"{status}","resetsAt":{resets_at},"rateLimitType":"five_hour"}}}}"#
+        )
+    }
+
+    #[test]
+    fn a_rejected_event_before_an_error_result_is_a_rate_limit() {
+        let stdout = format!("{}\n{ERROR_RESULT}\n", event("rejected", 1_700_000_000));
+        assert_eq!(
+            limited(&stdout),
+            Some(RateLimit {
+                resets_at: Some(1_700_000_000),
+                text: "API Error: Rate limit reached".into()
+            })
+        );
+    }
+
+    #[test]
+    fn allowed_and_allowed_warning_are_not_rate_limits() {
+        let quiet = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"tests failed"}"#;
+        for status in ["allowed", "allowed_warning"] {
+            let stdout = format!("{}\n{quiet}\n", event(status, 1));
+            assert_eq!(limited(&stdout), None, "{status}");
+        }
+    }
+
+    #[test]
+    fn the_error_text_alone_can_say_so() {
+        for text in [
+            "API Error: Rate limit reached",
+            "Claude AI usage limit reached|1700000000",
+            "HTTP 429 Too Many Requests",
+        ] {
+            let stdout = format!(
+                r#"{{"type":"result","subtype":"error_during_execution","is_error":true,"result":"{text}"}}"#
+            );
+            assert_eq!(
+                limited(&stdout).map(|rl| rl.resets_at),
+                Some(None),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn other_errors_and_429_inside_a_number_are_not_rate_limits() {
+        for text in ["tests failed", "listening on port 4291", "id 14290"] {
+            let stdout = format!(
+                r#"{{"type":"result","subtype":"error_during_execution","is_error":true,"result":"{text}"}}"#
+            );
+            assert_eq!(limited(&stdout), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_successful_result_is_never_a_rate_limit() {
+        let stdout = format!(
+            "{}\n{}\n",
+            event("rejected", 1),
+            r#"{"type":"result","subtype":"success","is_error":false,"result":"done"}"#
+        );
+        assert_eq!(limited(&stdout), None);
     }
 }

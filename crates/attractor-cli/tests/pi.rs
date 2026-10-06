@@ -152,9 +152,15 @@ fn error_routes_on_the_fail_edge() {
 #[test]
 fn a_retry_after_a_timeout_continues_the_same_pi_session() {
     let fake = FakeAgent::new();
+    // Pi's spawn may run for the timeout plus the rate-limit window (Pi
+    // waits for rate limits itself): no window, so the 1 s timeout applies.
+    fake.commit_pas_toml(
+        "\n[agents.fake-pi-nowait]\ninherit_from = \"fake-pi\"\nrate_limit_window = \"0s\"",
+    );
     node_file(&fake, "work.1", "scenario=hang");
     node_file(&fake, "work", "scenario=stop");
-    assert_success(&run(&fake, &one_node(r#"timeout="1s", max_retries=1"#)));
+    let dot = one_node(r#"timeout="1s", max_retries=1"#).replace("fake-pi", "fake-pi-nowait");
+    assert_success(&run(&fake, &dot));
 
     let argvs = fake.invocations();
     let envs = fake.env_logs();

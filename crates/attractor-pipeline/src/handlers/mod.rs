@@ -63,7 +63,9 @@ pub(crate) mod tests {
         };
         std::sync::Arc::new(
             Agents::new(
-                vec![std::sync::Arc::new(attractor_handler_claude_p::ClaudeP)],
+                vec![std::sync::Arc::new(
+                    attractor_handler_claude_p::ClaudeP::default(),
+                )],
                 vec![profile],
                 std::env::vars().collect(),
                 false,
@@ -87,7 +89,7 @@ pub(crate) mod tests {
         std::sync::Arc::new(
             Agents::new(
                 vec![
-                    std::sync::Arc::new(attractor_handler_claude_p::ClaudeP),
+                    std::sync::Arc::new(attractor_handler_claude_p::ClaudeP::default()),
                     std::sync::Arc::new(attractor_handler_codex_exec::CodexExec),
                     std::sync::Arc::new(attractor_handler_gemini::Gemini::default()),
                 ],

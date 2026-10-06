@@ -685,7 +685,9 @@ mod tests {
             .filter(|profile| profile.name == "claude")
             .collect();
         let agents = attractor_agent_handler::Agents::new(
-            vec![std::sync::Arc::new(attractor_handler_claude_p::ClaudeP)],
+            vec![std::sync::Arc::new(
+                attractor_handler_claude_p::ClaudeP::default(),
+            )],
             claude,
             std::env::vars().collect(),
             false,
