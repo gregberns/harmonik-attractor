@@ -3,11 +3,16 @@
 //! through `pas run` with the fake agents in temporary git repos.
 
 // This crate uses a subset of the shared harness.
+mod common;
 #[allow(dead_code)]
 mod fake_agent;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Child, ExitStatus};
+use std::time::{Duration, Instant};
+
+use common::wait_for_go;
 
 use fake_agent::{stderr, FakeAgent};
 
@@ -387,4 +392,78 @@ fn unknown_base_is_refused_before_any_branch_or_worktree() {
             .count(),
         1
     );
+}
+
+/// A `pas run` in the background, killed if the test fails first.
+struct Spawned(Child);
+
+impl Spawned {
+    fn wait(&mut self) -> ExitStatus {
+        wait_until("the Run to exit", || self.0.try_wait().unwrap())
+    }
+}
+
+impl Drop for Spawned {
+    fn drop(&mut self) {
+        if self.0.try_wait().ok().flatten().is_none() {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+}
+
+/// Polls `check` every 20 ms for up to 60 s.
+fn wait_until<T>(what: &str, mut check: impl FnMut() -> Option<T>) -> T {
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        if let Some(value) = check() {
+            return value;
+        }
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Waits until the one Run's `run.json` names its worktree.
+fn wait_for_worktree(fake: &FakeAgent) -> PathBuf {
+    wait_until("run.json with a worktree", || {
+        let run = fake.run_dirs().into_iter().next()?;
+        let meta: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(run.join("run.json")).ok()?).ok()?;
+        meta["worktree"].as_str().map(PathBuf::from)
+    })
+}
+
+#[test]
+fn second_run_of_same_pipeline_is_refused_before_any_worktree() {
+    let fake = FakeAgent::new();
+    let dot = tool_node(wait_for_go!());
+    let mut a = Spawned(fake.command(&dot, &[]).spawn().unwrap());
+    let wt = wait_for_worktree(&fake);
+
+    let b = fake.run_with(&dot, &["--json"]);
+
+    assert_eq!(b.status.code(), Some(5), "{}", stderr(&b));
+    let first: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&b.stdout).lines().next().unwrap()).unwrap();
+    assert_eq!(first["error"]["code"], "pipeline_locked", "{first}");
+    assert_eq!(
+        fake.git(&["branch", "--list", "pas/run/*"]).lines().count(),
+        1
+    );
+    assert_eq!(
+        fake.git(&["worktree", "list", "--porcelain"])
+            .matches("worktree ")
+            .count(),
+        2
+    );
+    assert_eq!(
+        fs::read_dir(fake.repo().join(".pas/worktrees"))
+            .unwrap()
+            .count(),
+        1
+    );
+
+    fs::write(wt.join("go"), "").unwrap();
+    assert!(a.wait().success());
 }
