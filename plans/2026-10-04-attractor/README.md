@@ -30,7 +30,7 @@ branch, as part of merging it.
 |---|---|---|---|
 | 01 | [Fake-agent harness (digital twin of claude -p)](tickets/01-fake-agent-harness.md) | none | done |
 | 02a | [Agent handler interface, process runner and the claude-p handler](tickets/02a-handler-crates-claude-p.md) | 01 | done |
-| 02b | [Agent start events, live stderr and graceful kill](tickets/02b-agent-start-events-stderr-kill.md) | 02a | ready |
+| 02b | [Agent start events, live stderr and graceful kill](tickets/02b-agent-start-events-stderr-kill.md) | 02a | done (catch-unwind deferred, operator pending) |
 | 03 | [Agent profiles in config, test-only profiles and reasoning level](tickets/03-agent-profiles-config.md) | 02a | ready |
 | 04 | [Codex and Gemini as handler crates; remove LlmProvider](tickets/04-port-codex-gemini.md) | 03 | ready |
 | 05 | [Clear run-ending errors and the two failure-hiding fixes](tickets/05-failure-reporting-and-hidden-failures.md) | 02b | ready |
