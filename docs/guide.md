@@ -462,7 +462,7 @@ When a node completes, the engine selects the next edge using a 5-step priority 
 4. **Highest weight** — The unconditional edge with the highest `weight` value.
 5. **Lexical tiebreak** — Among those, the first by alphabetical target node ID.
 
-To route on an LLM-extracted label, write the label into the condition: `condition="preferred_label=PASS"` (as in the examples below). A label on a conditional edge whose condition is false is never followed, so an agent that failed but ended its text with `PASS` does not take `[label="PASS", condition="outcome=success"]`.
+To route on an LLM-extracted label, write the label into the condition and keep it as the edge's label: `[label="PASS", condition="preferred_label=PASS"]` (as in the examples below). The label is extracted from the agent's text only among the node's edge `label`s, so an edge with the condition but no `label` never matches. A label on a conditional edge whose condition is false is never followed, so an agent that failed but ended its text with `PASS` does not take `[label="PASS", condition="outcome=success"]`.
 
 If the node has outgoing edges and none applies, the run stops with `node '<id>' outcome <status> matched no outgoing edge (conditions: ...)`, whatever the status; there is no fallback to the first edge (this differs on purpose from the upstream spec, which ends the run normally for a non-fail outcome). If the node has no outgoing edges, a `Fail` errors and any other status ends the run normally. A resume after the error reports "Max retries exhausted" for the node; use `--fresh` to start over.
 

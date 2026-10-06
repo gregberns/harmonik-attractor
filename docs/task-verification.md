@@ -116,8 +116,11 @@ Conditions can reference:
    target order.
 
 A preferred label or suggested next id never selects a conditional edge whose
-condition is false. To route on a label, put it in the condition:
-`condition="preferred_label=PASS"`.
+condition is false. To route on a label, put it in the condition and keep it
+as the edge's label too: `[label="PASS", condition="preferred_label=PASS"]`.
+An LLM-backed conditional node takes its label from the agent's text only
+among its edges' `label`s, so an edge with the condition but no `label` never
+matches.
 
 **When no edge applies** (every outgoing edge is conditional and none holds),
 the run stops with an error naming the node, its outcome and the conditions:

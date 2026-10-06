@@ -1190,6 +1190,17 @@ with stdin from `/dev/null` (it never reads `pas`'s stdin). Its environment is
 Its stderr is written, as it arrives, to `transcripts/<invocation-id>.stderr.log`
 next to the Transcript, and kept after the process ends (or crashes).
 
+When an agent times out (after `max_retries`) or crashes, the error that ends
+the Run names the node, the attempt and both files (absolute paths), and a
+crash also shows the last stderr lines:
+
+```
+node 'work' attempt 2 failed: timeout after 1000ms; transcript /…/transcripts/<id>.jsonl; stderr /…/transcripts/<id>.stderr.log
+Handler 'codergen' failed on node 'work': attempt 1: Claude Code exited with exit status: 3; last stderr lines:
+<up to 10 lines>
+transcript /…/transcripts/<id>.jsonl; stderr /…/transcripts/<id>.stderr.log
+```
+
 **Stopping it.** On the node's timeout, or when the Run is stopped (SIGTERM to
 `pas run`, as `pas kill` sends), PAS sends TERM to the agent's process group,
 waits a grace period (10 s), then sends KILL. A stopped Run starts no new stage,
