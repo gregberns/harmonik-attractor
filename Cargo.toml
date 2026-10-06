@@ -7,6 +7,7 @@ members = [
     "crates/attractor-llm",
     "crates/attractor-tools",
     "crates/attractor-agent",
+    "crates/attractor-agent-process",
     "crates/attractor-pipeline",
     "crates/attractor-quality",
     "crates/attractor-cli",

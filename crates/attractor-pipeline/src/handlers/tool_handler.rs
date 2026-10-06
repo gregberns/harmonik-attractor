@@ -8,7 +8,7 @@ use crate::execution_plan::ResolvedNode;
 use crate::graph::{PipelineGraph, PipelineNode};
 use crate::handler::{HandlerExecutionContext, NodeHandler, ResolvedNodeHandler};
 
-use super::process_group::{self, ProcessGroupGuard};
+use attractor_agent_process::process_group::{self, ProcessGroupGuard};
 
 // ---------------------------------------------------------------------------
 // ToolHandler — executes a shell command (parallelogram shape)

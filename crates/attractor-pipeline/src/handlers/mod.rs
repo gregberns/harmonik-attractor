@@ -4,8 +4,6 @@ pub mod beads;
 pub mod codergen_handler;
 pub mod manager;
 pub mod parallel;
-mod process_group;
-mod provider_stream;
 pub mod quality_handler;
 pub mod tool_handler;
 pub mod wait_human;

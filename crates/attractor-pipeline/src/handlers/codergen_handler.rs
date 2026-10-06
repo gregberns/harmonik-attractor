@@ -15,8 +15,8 @@ use crate::execution_plan::{HandlerIdentity, LlmProvider, ResolvedNode, Resolved
 use crate::graph::{PipelineGraph, PipelineNode};
 use crate::handler::{EventSink, HandlerExecutionContext, NodeHandler, ProviderNodeHandler};
 
-use super::process_group::{self, ProcessGroupGuard};
-use super::provider_stream::{run_streaming, Transcript};
+use attractor_agent_process::process_group::{self, ProcessGroupGuard};
+use attractor_agent_process::{run_streaming, Transcript};
 
 #[path = "codergen_provider.rs"]
 mod provider;
