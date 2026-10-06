@@ -33,8 +33,8 @@ pub use edge_selection::select_edge;
 pub use engine::{open_journal, PipelineExecutor, PipelineResult, DEFAULT_MAX_BUDGET_USD};
 pub use events::{EventEmitter, PipelineEvent};
 pub use execution_plan::{
-    ExecutionPlan, HandlerIdentity, LlmProvider, MissingProviderPolicy, NodeInvocationPolicy,
-    PlanCompilation, ResolvedNode, ResolvedNodeKind, SemanticDiagnostic, SemanticDiagnosticKind,
+    ExecutionPlan, HandlerIdentity, MissingProviderPolicy, NodeInvocationPolicy, PlanCompilation,
+    ProviderAlias, ResolvedNode, ResolvedNodeKind, SemanticDiagnostic, SemanticDiagnosticKind,
     SemanticError,
 };
 pub use goal_gate::{check_goal_gates, enforce_goal_gates, GoalGateResult};

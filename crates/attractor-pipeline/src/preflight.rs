@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use attractor_quality::resolution::{resolve, ResolutionError};
 
-use crate::execution_plan::{ExecutionPlan, HandlerIdentity, LlmProvider, ResolvedNodeKind};
+use crate::execution_plan::{ExecutionPlan, HandlerIdentity, ResolvedNodeKind};
 use crate::graph::PipelineGraph;
 use crate::run_configuration::{ConfigurationSource, RunConfiguration};
 use crate::DEFAULT_MAX_BUDGET_USD;
@@ -239,19 +239,20 @@ fn nodes_missing_timeout(plan: &ExecutionPlan) -> Vec<String> {
         .collect()
 }
 
-/// Counts nodes by normalized CLI provider when that provider never reports a
-/// per-call dollar cost.
+/// The built-in agent profiles whose agents never report a per-call dollar
+/// cost.
+const UNCOSTED_PROFILES: [&str; 2] = ["codex", "gemini"];
+
+/// Counts nodes by agent profile when that profile is one of
+/// [`UNCOSTED_PROFILES`].
 fn uncosted_provider_counts(plan: &ExecutionPlan) -> BTreeMap<String, usize> {
     plan.all_nodes().fold(BTreeMap::new(), |mut counts, node| {
-        let Some(provider) = node.provider else {
+        let Some(agent) = &node.agent else {
             return counts;
         };
-        let normalized = match provider {
-            LlmProvider::Codex => "codex",
-            LlmProvider::Gemini => "gemini",
-            _ => return counts,
-        };
-        *counts.entry(normalized.to_string()).or_default() += 1;
+        if UNCOSTED_PROFILES.contains(&agent.profile.as_str()) {
+            *counts.entry(agent.profile.clone()).or_default() += 1;
+        }
         counts
     })
 }
@@ -281,6 +282,7 @@ fn graph_has_quality_node(plan: &ExecutionPlan) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::execution_plan::ProviderAlias;
     use std::fs;
 
     use tempfile::TempDir;
@@ -437,7 +439,7 @@ mod tests {
         }"#;
         let parsed = attractor_dot::parse(dot).unwrap();
         let graph = PipelineGraph::from_dot(parsed).unwrap();
-        let plan = ExecutionPlan::compile_for_generation(graph, LlmProvider::Claude)
+        let plan = ExecutionPlan::compile_for_generation(graph, ProviderAlias::CLAUDE)
             .unwrap()
             .plan;
         assert!(graph_has_quality_node(&plan));
@@ -447,7 +449,7 @@ mod tests {
     #[test]
     fn no_quality_node_detection() {
         let graph = make_graph_without_quality_node();
-        let plan = ExecutionPlan::compile_for_generation(graph, LlmProvider::Claude)
+        let plan = ExecutionPlan::compile_for_generation(graph, ProviderAlias::CLAUDE)
             .unwrap()
             .plan;
         assert!(!graph_has_quality_node(&plan));

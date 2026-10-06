@@ -13,45 +13,35 @@ use crate::handler::HandlerRegistry;
 use crate::handlers::beads::{CLOSE_HANDLER, SELECT_HANDLER};
 use crate::transforms::apply_transforms;
 
+/// A valid `llm_provider` value, normalized to the name of the built-in
+/// agent profile it selects: `claude`, `codex` or `gemini`. Values are
+/// case-insensitive; `anthropic`, `openai` and `google` are aliases. The
+/// agents themselves are profiles and handlers, not a closed list here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LlmProvider {
-    Claude,
-    Codex,
-    Gemini,
-}
+pub struct ProviderAlias(&'static str);
 
-impl LlmProvider {
+impl ProviderAlias {
+    pub const CLAUDE: Self = Self("claude");
+    pub const CODEX: Self = Self("codex");
+    pub const GEMINI: Self = Self("gemini");
+
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
-            "claude" | "anthropic" => Some(Self::Claude),
-            "codex" | "openai" => Some(Self::Codex),
-            "gemini" | "google" => Some(Self::Gemini),
+            "claude" | "anthropic" => Some(Self::CLAUDE),
+            "codex" | "openai" => Some(Self::CODEX),
+            "gemini" | "google" => Some(Self::GEMINI),
             _ => None,
         }
     }
 
+    /// The normalized `llm_provider` value, which is also the built-in
+    /// profile's name.
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Claude => "claude",
-            Self::Codex => "codex",
-            Self::Gemini => "gemini",
-        }
-    }
-
-    pub fn binary_name(self) -> &'static str {
-        self.as_str()
-    }
-
-    pub fn display_name(self) -> &'static str {
-        match self {
-            Self::Claude => "Claude Code",
-            Self::Codex => "Codex CLI",
-            Self::Gemini => "Gemini CLI",
-        }
+        self.0
     }
 }
 
-impl std::str::FromStr for LlmProvider {
+impl std::str::FromStr for ProviderAlias {
     type Err = &'static str;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -59,7 +49,7 @@ impl std::str::FromStr for LlmProvider {
     }
 }
 
-impl fmt::Display for LlmProvider {
+impl fmt::Display for ProviderAlias {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
@@ -124,7 +114,6 @@ pub struct ResolvedNode {
     pub node_id: String,
     pub kind: ResolvedNodeKind,
     pub handler: HandlerIdentity,
-    pub provider: Option<LlmProvider>,
     /// The agent profile the node runs with, and the node's own model and
     /// reasoning level: from `agent=`, or profile `claude` for
     /// `llm_provider="claude"`. `None` for every other node, including
@@ -134,6 +123,11 @@ pub struct ResolvedNode {
 }
 
 impl ResolvedNode {
+    /// The agent profile's name, if the node runs an agent.
+    pub fn profile(&self) -> Option<&str> {
+        self.agent.as_ref().map(|agent| agent.profile.as_str())
+    }
+
     /// Whether the node runs an agent through `Agents`, which bounds it with
     /// its own TERM-grace-KILL and hard deadline and honours the cancel token
     /// itself: codergen nodes with an agent profile.
@@ -208,7 +202,7 @@ impl std::error::Error for SemanticError {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MissingProviderPolicy {
     Reject,
-    Insert(LlmProvider),
+    Insert(ProviderAlias),
 }
 
 #[derive(Debug, Clone)]
@@ -265,7 +259,7 @@ impl ExecutionPlan {
 
     pub fn compile_for_generation(
         graph: PipelineGraph,
-        default_provider: LlmProvider,
+        default_provider: ProviderAlias,
     ) -> Result<PlanCompilation, SemanticError> {
         Self::compile_with_policy(
             graph,
@@ -277,7 +271,7 @@ impl ExecutionPlan {
     pub fn compile_for_generation_with_registry(
         graph: PipelineGraph,
         registry: &HandlerRegistry,
-        default_provider: LlmProvider,
+        default_provider: ProviderAlias,
     ) -> Result<PlanCompilation, SemanticError> {
         Self::compile_with_policy(
             graph,
@@ -387,13 +381,11 @@ impl ExecutionPlan {
             return Err(SemanticError { diagnostics });
         }
 
-        for node_id in &defaulted_provider_nodes {
-            let provider = nodes
-                .get(node_id)
-                .and_then(|node| node.provider)
-                .expect("defaulted node has provider");
-            if let Some(source) = graph.all_nodes_mut().find(|node| node.id == *node_id) {
-                source.llm_provider = Some(provider.as_str().into());
+        if let MissingProviderPolicy::Insert(provider) = policy {
+            for node_id in &defaulted_provider_nodes {
+                if let Some(source) = graph.all_nodes_mut().find(|node| node.id == *node_id) {
+                    source.llm_provider = Some(provider.as_str().into());
+                }
             }
         }
 
@@ -476,11 +468,12 @@ impl ExecutionPlan {
             let node = self.nodes.get(node_id).expect("collected node exists");
             // An `agent=` node has no provider: name its profile, so a
             // changed profile changes the plan. Other nodes are unchanged.
-            let provider = match (node.provider, &node.agent) {
-                (Some(provider), _) => provider.as_str().to_string(),
-                (None, Some(agent)) => format!("agent={}", agent.profile),
-                (None, None) => "-".to_string(),
-            };
+            // The node's agent profile: for `llm_provider` nodes the same
+            // value the provider gave before profiles existed.
+            let provider = node
+                .agent
+                .as_ref()
+                .map_or("-", |agent| agent.profile.as_str());
             canonical.push_str(&format!(
                 "node:{id}|kind:{kind:?}|handler:{handler}|provider:{provider}|attempts:{attempts}|timeout:{timeout};",
                 id = node.node_id,
@@ -998,7 +991,7 @@ fn resolve_node(
     };
 
     if let Some(provider) = node.llm_provider.as_deref() {
-        if LlmProvider::parse(provider).is_none() {
+        if ProviderAlias::parse(provider).is_none() {
             diagnostics.push(SemanticDiagnostic {
                 kind: SemanticDiagnosticKind::UnknownProvider,
                 node_id: Some(node.id.clone()),
@@ -1057,7 +1050,7 @@ fn resolve_node(
         // `agent=` names the profile and satisfies the provider rule.
         (None, false)
     } else {
-        match node.llm_provider.as_deref().and_then(LlmProvider::parse) {
+        match node.llm_provider.as_deref().and_then(ProviderAlias::parse) {
             Some(provider) => (Some(provider), false),
             None => match policy {
                 MissingProviderPolicy::Reject => {
@@ -1090,7 +1083,6 @@ fn resolve_node(
             node_id: node.id.clone(),
             kind,
             handler,
-            provider,
             agent,
             invocation,
         },
@@ -1101,7 +1093,7 @@ fn resolve_node(
 /// The profile a provider-consuming node runs with: `agent=` wins over
 /// `llm_provider` (no error); `llm_provider` names the built-in profile
 /// `claude`, `codex` or `gemini`.
-fn agent_profile(agent: Option<String>, provider: Option<LlmProvider>) -> Option<String> {
+fn agent_profile(agent: Option<String>, provider: Option<ProviderAlias>) -> Option<String> {
     match (agent, provider) {
         (Some(profile), _) => Some(profile),
         (None, Some(provider)) => Some(provider.as_str().to_string()),
@@ -1372,13 +1364,13 @@ mod tests {
                 "task",
                 ResolvedNodeKind::Task,
                 HandlerIdentity::Codergen,
-                Some(LlmProvider::Claude),
+                Some("claude"),
             ),
             (
                 "llm_choice",
                 ResolvedNodeKind::Conditional { llm_backed: true },
                 HandlerIdentity::Codergen,
-                Some(LlmProvider::Codex),
+                Some("codex"),
             ),
             (
                 "route",
@@ -1412,7 +1404,7 @@ mod tests {
             let node = plan.node(id).unwrap();
             assert_eq!(node.kind, kind, "kind for {id}");
             assert_eq!(node.handler, handler, "handler for {id}");
-            assert_eq!(node.provider, provider, "provider for {id}");
+            assert_eq!(node.profile(), provider, "provider for {id}");
         }
     }
 
@@ -1625,7 +1617,7 @@ mod tests {
             })
         };
         assert_eq!(agent("named"), selection("fake", Some("m1"), Some("high")));
-        assert_eq!(plan.node("named").unwrap().provider, None);
+        assert_eq!(plan.node("named").unwrap().profile(), Some("fake"));
         assert_eq!(agent("both"), selection("fake", None, None), "agent wins");
         assert_eq!(agent("alias"), selection("claude", None, Some("high")));
         assert_eq!(
@@ -1747,7 +1739,7 @@ mod tests {
                     branch -> done
                 }}"#
             );
-            let error = ExecutionPlan::compile_for_generation(graph(&source), LlmProvider::Codex)
+            let error = ExecutionPlan::compile_for_generation(graph(&source), ProviderAlias::CODEX)
                 .unwrap_err();
             assert!(
                 error.diagnostics.iter().any(|diagnostic| {
@@ -1848,7 +1840,7 @@ mod tests {
 
         let resolved = plan.node("work").unwrap();
         assert_eq!(resolved.kind, ResolvedNodeKind::Task);
-        assert_eq!(resolved.provider, Some(LlmProvider::Gemini));
+        assert_eq!(resolved.profile(), Some("gemini"));
         let source = plan.source_node("work").unwrap();
         assert_eq!(source.prompt.as_deref(), Some("Goal: ship safely"));
         assert_eq!(source.llm_model.as_deref(), Some("gemini-test"));
@@ -1869,14 +1861,8 @@ mod tests {
         ))
         .unwrap();
 
-        assert_eq!(
-            plan.node("styled").unwrap().provider,
-            Some(LlmProvider::Codex)
-        );
-        assert_eq!(
-            plan.node("explicit").unwrap().provider,
-            Some(LlmProvider::Gemini)
-        );
+        assert_eq!(plan.node("styled").unwrap().profile(), Some("codex"));
+        assert_eq!(plan.node("explicit").unwrap().profile(), Some("gemini"));
     }
 
     #[test]
@@ -2008,7 +1994,7 @@ mod tests {
                     start -> task -> route -> llm_route -> quality -> done
                 }"#,
             ),
-            LlmProvider::Claude,
+            ProviderAlias::CLAUDE,
         )
         .unwrap();
 
@@ -2017,11 +2003,11 @@ mod tests {
             vec!["llm_route".to_string(), "task".to_string()]
         );
         assert_eq!(
-            compilation.plan.node("route").unwrap().provider,
+            compilation.plan.node("route").unwrap().profile(),
             None,
             "pass-through conditionals do not consume providers"
         );
-        assert_eq!(compilation.plan.node("quality").unwrap().provider, None);
+        assert_eq!(compilation.plan.node("quality").unwrap().profile(), None);
     }
 
     fn beads_graph(select_attrs: &str, close_attrs: &str) -> PipelineGraph {
@@ -2060,18 +2046,18 @@ mod tests {
             let node = plan.node(id).unwrap();
             assert_eq!(node.kind, ResolvedNodeKind::Custom);
             assert_eq!(node.handler, HandlerIdentity::Custom(handler.into()));
-            assert_eq!(node.provider, None, "{id} must not get a provider");
+            assert_eq!(node.profile(), None, "{id} must not get a provider");
             assert_eq!(plan.handler_capabilities.get(handler), Some(&false));
         }
 
         let generated = ExecutionPlan::compile_for_generation(
             beads_graph(r#", epic="e-1""#, ""),
-            LlmProvider::Claude,
+            ProviderAlias::CLAUDE,
         )
         .unwrap();
         assert!(generated.defaulted_provider_nodes.is_empty());
         for id in ["pick_task", "close_task"] {
-            assert_eq!(generated.plan.node(id).unwrap().provider, None);
+            assert_eq!(generated.plan.node(id).unwrap().profile(), None);
             assert_eq!(generated.plan.source_node(id).unwrap().llm_provider, None);
         }
     }

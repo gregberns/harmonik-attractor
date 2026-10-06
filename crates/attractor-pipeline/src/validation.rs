@@ -10,7 +10,7 @@ use attractor_dot::AttributeValue;
 
 use crate::graph::PipelineGraph;
 use crate::parse_condition;
-use crate::{ExecutionPlan, LlmProvider, SemanticDiagnostic, SemanticDiagnosticKind};
+use crate::{ExecutionPlan, ProviderAlias, SemanticDiagnostic, SemanticDiagnosticKind};
 
 // ---------------------------------------------------------------------------
 // Diagnostic types
@@ -183,7 +183,7 @@ pub fn validate(graph: &PipelineGraph) -> Vec<Diagnostic> {
         Err(error) => {
             let mut diagnostics = validate_nonsemantic_structure(graph);
             if let Ok(compilation) =
-                ExecutionPlan::compile_for_generation(graph.clone(), LlmProvider::Claude)
+                ExecutionPlan::compile_for_generation(graph.clone(), ProviderAlias::CLAUDE)
             {
                 diagnostics.extend(validate_plan_structure(&compilation.plan));
                 diagnostics.extend(validate_beads_available(&compilation.plan));

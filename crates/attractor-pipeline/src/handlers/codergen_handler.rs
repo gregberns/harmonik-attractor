@@ -16,7 +16,7 @@ use attractor_quality::{
 use attractor_types::{AttractorError, Context, Outcome, Result, StageStatus};
 
 use crate::events::PipelineEvent;
-use crate::execution_plan::{HandlerIdentity, LlmProvider, ResolvedNode, ResolvedNodeKind};
+use crate::execution_plan::{HandlerIdentity, ProviderAlias, ResolvedNode, ResolvedNodeKind};
 use crate::graph::{PipelineGraph, PipelineNode};
 use crate::handler::{EventSink, HandlerExecutionContext, NodeHandler, ProviderNodeHandler};
 
@@ -207,8 +207,8 @@ impl NodeHandler for CodergenHandler {
         let provider = node
             .llm_provider
             .as_deref()
-            .and_then(LlmProvider::parse)
-            .unwrap_or(LlmProvider::Claude);
+            .and_then(ProviderAlias::parse)
+            .unwrap_or(ProviderAlias::CLAUDE);
         let resolved = ResolvedNode {
             node_id: node.id.clone(),
             kind: if node.shape == "diamond" || node.node_type.as_deref() == Some("conditional") {
@@ -217,9 +217,8 @@ impl NodeHandler for CodergenHandler {
                 ResolvedNodeKind::Task
             },
             handler: HandlerIdentity::Codergen,
-            provider: Some(provider),
-            agent: (provider == LlmProvider::Claude).then(|| Selection {
-                profile: CLAUDE_PROFILE.to_string(),
+            agent: Some(Selection {
+                profile: provider.as_str().to_string(),
                 model: node.llm_model.clone(),
                 reasoning: None,
             }),
@@ -492,7 +491,7 @@ impl CodergenHandler {
 /// The agent selection the compiler gives a node with `provider`: the
 /// built-in profile of that name (tests building `ResolvedNode`s).
 #[cfg(test)]
-pub(crate) fn test_agent<P: Into<Option<LlmProvider>>>(
+pub(crate) fn test_agent<P: Into<Option<ProviderAlias>>>(
     provider: P,
     model: Option<String>,
 ) -> Option<Selection> {

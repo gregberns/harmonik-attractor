@@ -4,13 +4,13 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use attractor_pipeline::{
     preflight_run_plan, validate_plan, ExecutionPlan, ExitHandler, HandlerIdentity,
-    HandlerRegistry, LlmProvider, NodeHandler, PipelineExecutor, PipelineGraph, PipelineNode,
+    HandlerRegistry, NodeHandler, PipelineExecutor, PipelineGraph, PipelineNode, ProviderAlias,
     ProviderNodeHandler, ResolvedNode, ResolvedNodeHandler, ResolvedNodeKind, StartHandler,
 };
 use attractor_types::{Context, Outcome, Result};
 
 struct RecordingCodergen {
-    calls: Arc<Mutex<Vec<(String, LlmProvider)>>>,
+    calls: Arc<Mutex<Vec<(String, ProviderAlias)>>>,
 }
 
 #[async_trait]
@@ -42,10 +42,10 @@ impl ProviderNodeHandler for RecordingCodergen {
         _context: &Context,
         _graph: &PipelineGraph,
     ) -> Result<Outcome> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push((node.id.clone(), resolved.provider.unwrap()));
+        self.calls.lock().unwrap().push((
+            node.id.clone(),
+            ProviderAlias::parse(resolved.profile().unwrap()).unwrap(),
+        ));
         Ok(Outcome::success("recorded"))
     }
 }
@@ -303,10 +303,7 @@ fn custom_handler_capability_controls_provider_requirement_and_normalization() {
         &registry,
     )
     .unwrap();
-    assert_eq!(
-        plan.node("review").unwrap().provider,
-        Some(LlmProvider::Codex)
-    );
+    assert_eq!(plan.node("review").unwrap().profile(), Some("codex"));
 }
 
 fn graph(dot: &str) -> PipelineGraph {
@@ -325,7 +322,7 @@ async fn supported_matrix_agrees_across_all_semantic_consumers() {
         consumes_provider: bool,
     }
 
-    type RecordedCall = (String, HandlerIdentity, Option<LlmProvider>);
+    type RecordedCall = (String, HandlerIdentity, Option<ProviderAlias>);
 
     struct RecordingHandler {
         name: &'static str,
@@ -370,7 +367,7 @@ async fn supported_matrix_agrees_across_all_semantic_consumers() {
             self.calls.lock().unwrap().push((
                 node.id.clone(),
                 resolved.handler.clone(),
-                resolved.provider,
+                resolved.profile().and_then(ProviderAlias::parse),
             ));
             Ok(Outcome::success("recorded"))
         }
@@ -546,7 +543,7 @@ async fn supported_matrix_agrees_across_all_semantic_consumers() {
         let compilation = ExecutionPlan::compile_for_generation_with_registry(
             graph(&source),
             &registry,
-            LlmProvider::Codex,
+            ProviderAlias::CODEX,
         )
         .unwrap_or_else(|error| panic!("{} did not compile: {error}", row.name));
         let expected_defaulted = if row.consumes_provider {
@@ -564,9 +561,10 @@ async fn supported_matrix_agrees_across_all_semantic_consumers() {
         let subject = plan.node("subject").unwrap();
         assert_eq!(subject.kind, row.kind, "kind for {}", row.name);
         assert_eq!(subject.handler, row.handler, "handler for {}", row.name);
-        let expected_provider = row.consumes_provider.then_some(LlmProvider::Codex);
+        let expected_provider = row.consumes_provider.then_some(ProviderAlias::CODEX);
         assert_eq!(
-            subject.provider, expected_provider,
+            subject.profile().and_then(ProviderAlias::parse),
+            expected_provider,
             "provider for {}",
             row.name
         );
@@ -618,7 +616,7 @@ fn fan_in_spellings_are_recognized_but_rejected_by_all_compilers_and_validation(
 
         for error in [
             ExecutionPlan::compile(pipeline.clone()).unwrap_err(),
-            ExecutionPlan::compile_for_generation(pipeline.clone(), LlmProvider::Codex)
+            ExecutionPlan::compile_for_generation(pipeline.clone(), ProviderAlias::CODEX)
                 .unwrap_err(),
         ] {
             assert!(
@@ -678,13 +676,10 @@ async fn one_compiled_plan_drives_validation_preflight_dispatch_and_execution() 
 
     assert_eq!(
         *calls.lock().unwrap(),
-        vec![("work".to_string(), LlmProvider::Codex)]
+        vec![("work".to_string(), ProviderAlias::CODEX)]
     );
     assert_eq!(result.completed_nodes, vec!["start", "work", "done"]);
-    assert_eq!(
-        plan.node("work").unwrap().provider.unwrap().as_str(),
-        "codex"
-    );
+    assert_eq!(plan.node("work").unwrap().profile().unwrap(), "codex");
 }
 
 #[tokio::test]
@@ -740,7 +735,7 @@ async fn validation_and_execution_share_case_insensitive_magic_membership() {
 
 #[tokio::test]
 async fn provider_consuming_custom_handler_receives_normalized_provider() {
-    struct RecordingCustomProvider(Arc<Mutex<Vec<LlmProvider>>>);
+    struct RecordingCustomProvider(Arc<Mutex<Vec<ProviderAlias>>>);
 
     #[async_trait]
     impl NodeHandler for RecordingCustomProvider {
@@ -771,7 +766,10 @@ async fn provider_consuming_custom_handler_receives_normalized_provider() {
             _context: &Context,
             _graph: &PipelineGraph,
         ) -> Result<Outcome> {
-            self.0.lock().unwrap().push(resolved.provider.unwrap());
+            self.0
+                .lock()
+                .unwrap()
+                .push(ProviderAlias::parse(resolved.profile().unwrap()).unwrap());
             Ok(Outcome::success("custom provider"))
         }
     }
@@ -799,7 +797,7 @@ async fn provider_consuming_custom_handler_receives_normalized_provider() {
         .await
         .unwrap();
 
-    assert_eq!(*providers.lock().unwrap(), vec![LlmProvider::Codex]);
+    assert_eq!(*providers.lock().unwrap(), vec![ProviderAlias::CODEX]);
 }
 
 #[tokio::test]

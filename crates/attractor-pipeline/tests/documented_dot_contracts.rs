@@ -831,7 +831,7 @@ fn cli_dry_run_docs_are_provider_neutral() {
 
 #[test]
 fn documented_unprompted_diamond_exception_matches_compiled_semantics() {
-    use attractor_pipeline::{HandlerIdentity, LlmProvider, ResolvedNodeKind};
+    use attractor_pipeline::{HandlerIdentity, ProviderAlias, ResolvedNodeKind};
 
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -866,14 +866,14 @@ fn documented_unprompted_diamond_exception_matches_compiled_semantics() {
             r#"subject [shape="diamond", type="codergen", llm_provider="codex"]"#,
             ResolvedNodeKind::Conditional { llm_backed: true },
             HandlerIdentity::Codergen,
-            Some(LlmProvider::Codex),
+            Some(ProviderAlias::CODEX),
         ),
         (
             "prompted diamond",
             r#"subject [shape="diamond", prompt="choose", llm_provider="codex"]"#,
             ResolvedNodeKind::Conditional { llm_backed: true },
             HandlerIdentity::Codergen,
-            Some(LlmProvider::Codex),
+            Some(ProviderAlias::CODEX),
         ),
     ];
 
@@ -889,7 +889,11 @@ fn documented_unprompted_diamond_exception_matches_compiled_semantics() {
         let resolved = plan.node("subject").unwrap();
         assert_eq!(resolved.kind, kind, "kind for {name}");
         assert_eq!(resolved.handler, handler, "handler for {name}");
-        assert_eq!(resolved.provider, provider, "provider for {name}");
+        assert_eq!(
+            resolved.profile(),
+            provider.map(ProviderAlias::as_str),
+            "provider for {name}"
+        );
     }
 }
 

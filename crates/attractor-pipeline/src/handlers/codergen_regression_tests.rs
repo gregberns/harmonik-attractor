@@ -30,9 +30,19 @@ mod legacy {
     use attractor_types::{AttractorError, Outcome, Result, StageStatus};
     use serde::Deserialize;
 
-    use crate::execution_plan::LlmProvider as LlmCliProvider;
+    use crate::execution_plan::ProviderAlias as LlmCliProvider;
     use crate::execution_plan::{ResolvedNode, ResolvedNodeKind};
     use crate::graph::{PipelineGraph, PipelineNode};
+
+    /// The provider names the legacy handler printed (the closed provider
+    /// enum's display names, before ticket 04 removed it).
+    pub(super) fn display_name(provider: LlmCliProvider) -> &'static str {
+        match provider.as_str() {
+            "claude" => "Claude Code",
+            "codex" => "Codex CLI",
+            _ => "Gemini CLI",
+        }
+    }
 
     /// Result shape from `claude -p --output-format json`
     #[derive(Deserialize)]
@@ -149,16 +159,16 @@ mod legacy {
                 node: node_id.into(),
                 message: format!(
                     "{} produced no output. stderr: {}",
-                    provider.display_name(),
+                    display_name(provider),
                     head(stderr, 500)
                 ),
             });
         }
 
         match provider {
-            LlmCliProvider::Claude => parse_claude_output(stdout, node_id),
-            LlmCliProvider::Codex => parse_codex_output(stdout, node_id),
-            LlmCliProvider::Gemini => parse_gemini_output(stdout, node_id),
+            LlmCliProvider::CLAUDE => parse_claude_output(stdout, node_id),
+            LlmCliProvider::CODEX => parse_codex_output(stdout, node_id),
+            _ => parse_gemini_output(stdout, node_id),
         }
     }
 
@@ -271,7 +281,7 @@ mod legacy {
                 node: node.id.clone(),
                 message: format!(
                     "{} exited with {}: {}",
-                    provider.display_name(),
+                    display_name(provider),
                     exit,
                     stderr.trim()
                 ),
@@ -312,7 +322,7 @@ mod legacy {
         );
         updates.insert(
             format!("{}.provider", node.id),
-            serde_json::Value::String(provider.display_name().into()),
+            serde_json::Value::String(display_name(provider).into()),
         );
         if let Some(cost) = cli_result.cost_usd {
             updates.insert(format!("{}.cost_usd", node.id), serde_json::json!(cost));
@@ -334,7 +344,7 @@ mod legacy {
             context_updates: updates,
             notes: cli_result.text,
             failure_reason: if status == StageStatus::Fail {
-                Some(format!("{} returned an error", provider.display_name()))
+                Some(format!("{} returned an error", display_name(provider)))
             } else {
                 None
             },
@@ -383,7 +393,7 @@ fn fixture(name: &str) -> String {
 /// One provider response in both output modes.
 struct Response {
     case: &'static str,
-    provider: LlmProvider,
+    provider: ProviderAlias,
     /// Gemini only: whether the stub's `--help` advertises `stream-json`.
     gemini_stream: bool,
     /// Stdout of the streaming handler's command.
@@ -419,7 +429,7 @@ fn claude(edit: impl Fn(&mut serde_json::Value)) -> Response {
     let result = result.to_string();
     Response {
         case: "claude",
-        provider: LlmProvider::Claude,
+        provider: ProviderAlias::CLAUDE,
         gemini_stream: false,
         streamed: with_last_line(&stream, &result),
         legacy: result,
@@ -430,7 +440,7 @@ fn codex(extra: &str) -> Response {
     let stream = fixture("codex-0.151.0.jsonl") + extra;
     Response {
         case: "codex",
-        provider: LlmProvider::Codex,
+        provider: ProviderAlias::CODEX,
         gemini_stream: false,
         streamed: stream.clone(),
         legacy: stream,
@@ -440,7 +450,7 @@ fn codex(extra: &str) -> Response {
 fn gemini_stream(stream: String, json: String) -> Response {
     Response {
         case: "gemini stream-json",
-        provider: LlmProvider::Gemini,
+        provider: ProviderAlias::GEMINI,
         gemini_stream: true,
         streamed: stream,
         legacy: json,
@@ -450,7 +460,7 @@ fn gemini_stream(stream: String, json: String) -> Response {
 fn gemini_json(json: String) -> Response {
     Response {
         case: "gemini json fallback",
-        provider: LlmProvider::Gemini,
+        provider: ProviderAlias::GEMINI,
         gemini_stream: false,
         streamed: json.clone(),
         legacy: json,
@@ -540,7 +550,7 @@ struct Stage {
     graph: PipelineGraph,
 }
 
-fn stage(provider: LlmProvider, labels: Option<[&str; 2]>) -> Stage {
+fn stage(provider: ProviderAlias, labels: Option<[&str; 2]>) -> Stage {
     let (shape, kind, dot) = match labels {
         None => (
             "box",
@@ -560,7 +570,6 @@ fn stage(provider: LlmProvider, labels: Option<[&str; 2]>) -> Stage {
         node_id: node.id.clone(),
         kind,
         handler: crate::HandlerIdentity::Codergen,
-        provider: Some(provider),
         agent: crate::handlers::codergen_handler::test_agent(
             Some(provider),
             node.llm_model.clone(),
@@ -619,7 +628,7 @@ async fn run_both(
         )
         .await;
 
-    if response.provider == LlmProvider::Gemini {
+    if response.provider == ProviderAlias::GEMINI {
         let format = if response.gemini_stream {
             "stream-json"
         } else {
@@ -819,7 +828,7 @@ async fn error_responses_give_pre_streaming_fail_outcomes() {
                 new.failure_reason,
                 Some(format!(
                     "{} returned an error",
-                    response.provider.display_name()
+                    legacy::display_name(response.provider)
                 )),
                 "{}",
                 response.case
@@ -868,9 +877,13 @@ fn crash_error(agent: &str, node: &str, code: i32, run_dir: &Path) -> String {
 /// Codex and Gemini since they run through `Agents`, ticket 04).
 #[tokio::test]
 async fn empty_stdout_is_the_same_error_on_both_sides() {
-    for provider in [LlmProvider::Claude, LlmProvider::Codex, LlmProvider::Gemini] {
+    for provider in [
+        ProviderAlias::CLAUDE,
+        ProviderAlias::CODEX,
+        ProviderAlias::GEMINI,
+    ] {
         for gemini_stream in [false, true] {
-            if gemini_stream && provider != LlmProvider::Gemini {
+            if gemini_stream && provider != ProviderAlias::GEMINI {
                 continue;
             }
             let response = Response {
@@ -886,11 +899,7 @@ async fn empty_stdout_is_the_same_error_on_both_sides() {
                 let case = format!("{} exit {code} stream={gemini_stream}", response.case);
                 match (&both.new, &both.old) {
                     (Err(new), Err(_)) if code != 0 => {
-                        let agent = match provider {
-                            LlmProvider::Claude => "Claude Code",
-                            LlmProvider::Codex => "Codex CLI",
-                            LlmProvider::Gemini => "Gemini CLI",
-                        };
+                        let agent = legacy::display_name(provider);
                         let expected =
                             crash_error(agent, &stage.node.id, code, &dir.path().join("run"));
                         assert_eq!(new.to_string(), expected, "{case}")

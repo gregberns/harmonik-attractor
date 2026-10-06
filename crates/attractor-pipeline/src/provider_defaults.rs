@@ -10,7 +10,7 @@
 
 use attractor_dot::{AttributeValue, DotGraph};
 
-use crate::execution_plan::{ExecutionPlan, LlmProvider};
+use crate::execution_plan::{ExecutionPlan, ProviderAlias};
 use crate::graph::PipelineGraph;
 
 /// Insert `llm_provider="<default_provider>"` on every node whose canonically
@@ -32,7 +32,7 @@ pub fn fill_missing_llm_providers(dot_graph: &mut DotGraph, default_provider: &s
         Err(_) => return Vec::new(),
     };
 
-    let Some(provider) = LlmProvider::parse(default_provider) else {
+    let Some(provider) = ProviderAlias::parse(default_provider) else {
         return Vec::new();
     };
     let Ok(compilation) = ExecutionPlan::compile_for_generation(pipeline_graph, provider) else {
@@ -229,7 +229,7 @@ mod tests {
             ExecutionPlan::compile(PipelineGraph::from_dot(graph.clone()).unwrap()).unwrap();
         let before_semantics = ["first", "second"].map(|id| {
             let node = before.node(id).unwrap();
-            (node.kind.clone(), node.handler.clone(), node.provider)
+            (node.kind.clone(), node.handler.clone(), node.profile())
         });
 
         let defaulted = fill_missing_llm_providers(&mut graph, "gemini");
@@ -241,18 +241,12 @@ mod tests {
         .unwrap();
         let after_semantics = ["first", "second"].map(|id| {
             let node = after.node(id).unwrap();
-            (node.kind.clone(), node.handler.clone(), node.provider)
+            (node.kind.clone(), node.handler.clone(), node.profile())
         });
 
         assert_eq!(before_semantics, after_semantics, "{normalized}");
-        assert_eq!(
-            after.node("first").unwrap().provider,
-            Some(LlmProvider::Claude)
-        );
-        assert_eq!(
-            after.node("second").unwrap().provider,
-            Some(LlmProvider::Codex)
-        );
+        assert_eq!(after.node("first").unwrap().profile(), Some("claude"));
+        assert_eq!(after.node("second").unwrap().profile(), Some("codex"));
     }
 
     #[test]
@@ -293,9 +287,6 @@ mod tests {
         let reparsed = attractor_dot::parse(&serialized).unwrap();
         let pipeline = PipelineGraph::from_dot(reparsed).unwrap();
         let plan = ExecutionPlan::compile(pipeline).unwrap();
-        assert_eq!(
-            plan.node("work").unwrap().provider,
-            Some(LlmProvider::Claude)
-        );
+        assert_eq!(plan.node("work").unwrap().profile(), Some("claude"));
     }
 }

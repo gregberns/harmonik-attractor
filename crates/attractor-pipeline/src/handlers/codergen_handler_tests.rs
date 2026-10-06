@@ -6,37 +6,33 @@ use super::claude::fold_codergen_claude;
 use super::*;
 use crate::handlers::tests::{make_minimal_graph, make_node};
 
-// --- LlmProvider ---
+// --- ProviderAlias ---
 
 #[test]
 fn provider_from_str_claude_variants() {
-    assert_eq!("claude".parse::<LlmProvider>(), Ok(LlmProvider::Claude));
-    assert_eq!("anthropic".parse::<LlmProvider>(), Ok(LlmProvider::Claude));
-    assert_eq!("CLAUDE".parse::<LlmProvider>(), Ok(LlmProvider::Claude));
+    assert_eq!("claude".parse::<ProviderAlias>(), Ok(ProviderAlias::CLAUDE));
+    assert_eq!(
+        "anthropic".parse::<ProviderAlias>(),
+        Ok(ProviderAlias::CLAUDE)
+    );
+    assert_eq!("CLAUDE".parse::<ProviderAlias>(), Ok(ProviderAlias::CLAUDE));
 }
 
 #[test]
 fn provider_from_str_codex_variants() {
-    assert_eq!("codex".parse::<LlmProvider>(), Ok(LlmProvider::Codex));
-    assert_eq!("openai".parse::<LlmProvider>(), Ok(LlmProvider::Codex));
+    assert_eq!("codex".parse::<ProviderAlias>(), Ok(ProviderAlias::CODEX));
+    assert_eq!("openai".parse::<ProviderAlias>(), Ok(ProviderAlias::CODEX));
 }
 
 #[test]
 fn provider_from_str_gemini_variants() {
-    assert_eq!("gemini".parse::<LlmProvider>(), Ok(LlmProvider::Gemini));
-    assert_eq!("google".parse::<LlmProvider>(), Ok(LlmProvider::Gemini));
+    assert_eq!("gemini".parse::<ProviderAlias>(), Ok(ProviderAlias::GEMINI));
+    assert_eq!("google".parse::<ProviderAlias>(), Ok(ProviderAlias::GEMINI));
 }
 
 #[test]
 fn provider_parse_unknown_is_rejected() {
-    assert!("llama".parse::<LlmProvider>().is_err());
-}
-
-#[test]
-fn provider_binary_names() {
-    assert_eq!(LlmProvider::Claude.binary_name(), "claude");
-    assert_eq!(LlmProvider::Codex.binary_name(), "codex");
-    assert_eq!(LlmProvider::Gemini.binary_name(), "gemini");
+    assert!("llama".parse::<ProviderAlias>().is_err());
 }
 
 // --- Output parsers ---
@@ -337,9 +333,8 @@ async fn codergen_dry_run_includes_provider() {
         node_id: node.id.clone(),
         kind: ResolvedNodeKind::Task,
         handler: crate::HandlerIdentity::Codergen,
-        provider: Some(LlmProvider::Gemini),
         agent: crate::handlers::codergen_handler::test_agent(
-            Some(LlmProvider::Gemini),
+            Some(ProviderAlias::GEMINI),
             node.llm_model.clone(),
         ),
         invocation: Default::default(),
@@ -369,7 +364,6 @@ async fn codergen_rejects_missing_provider_even_in_dry_run() {
         node_id: node.id.clone(),
         kind: ResolvedNodeKind::Task,
         handler: crate::HandlerIdentity::Codergen,
-        provider: None,
         agent: crate::handlers::codergen_handler::test_agent(None, node.llm_model.clone()),
         invocation: Default::default(),
     };
@@ -465,7 +459,7 @@ mod transcripts {
     }
 
     async fn run(
-        provider: LlmProvider,
+        provider: ProviderAlias,
         program: PathBuf,
         run_dir: Option<&Path>,
         dry_run: bool,
@@ -477,7 +471,6 @@ mod transcripts {
             node_id: node.id.clone(),
             kind: ResolvedNodeKind::Task,
             handler: crate::HandlerIdentity::Codergen,
-            provider: Some(provider),
             agent: crate::handlers::codergen_handler::test_agent(
                 Some(provider),
                 node.llm_model.clone(),
@@ -506,7 +499,7 @@ mod transcripts {
     }
 
     async fn run_claude(program: PathBuf, run_dir: Option<&Path>) -> Result<Outcome> {
-        run(LlmProvider::Claude, program, run_dir, false, None).await
+        run(ProviderAlias::CLAUDE, program, run_dir, false, None).await
     }
 
     fn handler_error(message: &str) -> String {
@@ -575,7 +568,7 @@ mod transcripts {
         let tmp = tempfile::tempdir().unwrap();
         let run_dir = tmp.path().join("run");
         let program = stub(tmp.path(), &format!("echo '{CLAUDE_RESULT_LINE}'"));
-        let outcome = run(LlmProvider::Claude, program, Some(&run_dir), true, None)
+        let outcome = run(ProviderAlias::CLAUDE, program, Some(&run_dir), true, None)
             .await
             .unwrap();
         assert_eq!(
@@ -692,7 +685,7 @@ mod transcripts {
             {\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"codex done\"}}\n\
             {\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}\n";
         let program = stub(tmp.path(), &format!("printf '%s' '{codex_out}'"));
-        let outcome = run(LlmProvider::Codex, program, Some(&codex_dir), false, None)
+        let outcome = run(ProviderAlias::CODEX, program, Some(&codex_dir), false, None)
             .await
             .unwrap();
         assert_eq!(outcome.notes, "codex done");
@@ -704,9 +697,15 @@ mod transcripts {
         let gemini_dir = tmp.path().join("gemini-run");
         let gemini_out = "{\n  \"response\": \"gemini done\"\n}";
         let program = stub(tmp.path(), &format!("printf '%s' '{gemini_out}'"));
-        let outcome = run(LlmProvider::Gemini, program, Some(&gemini_dir), false, None)
-            .await
-            .unwrap();
+        let outcome = run(
+            ProviderAlias::GEMINI,
+            program,
+            Some(&gemini_dir),
+            false,
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(outcome.notes, "gemini done");
         assert_eq!(
             std::fs::read_to_string(only_transcript(&gemini_dir)).unwrap(),
@@ -773,7 +772,7 @@ mod transcripts {
         let program = stub(tmp.path(), "echo '{\"type\":\"system\"}'; sleep 10");
 
         let error = run(
-            LlmProvider::Claude,
+            ProviderAlias::CLAUDE,
             program,
             Some(&run_dir),
             false,
@@ -906,7 +905,7 @@ mod transcripts {
 
     #[allow(clippy::too_many_arguments)]
     async fn run_observed(
-        provider: LlmProvider,
+        provider: ProviderAlias,
         program: PathBuf,
         run_dir: Option<&Path>,
         node: &PipelineNode,
@@ -918,7 +917,6 @@ mod transcripts {
             node_id: node.id.clone(),
             kind: ResolvedNodeKind::Task,
             handler: crate::HandlerIdentity::Codergen,
-            provider: Some(provider),
             agent: crate::handlers::codergen_handler::test_agent(
                 Some(provider),
                 node.llm_model.clone(),
@@ -953,7 +951,7 @@ mod transcripts {
         events: &EventLog,
     ) -> Result<Outcome> {
         run_observed(
-            LlmProvider::Claude,
+            ProviderAlias::CLAUDE,
             program,
             Some(run_dir),
             &step_node(timeout),
@@ -1040,8 +1038,8 @@ mod transcripts {
             {\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2}}\n";
         let gemini_out = "{\"response\":\"gemini done\",\"stats\":{\"models\":{\"gemini-2.5-pro\":{\"tokens\":{\"prompt\":8,\"candidates\":3}}}}}";
         for (provider, out, name) in [
-            (LlmProvider::Codex, codex_out, "codex"),
-            (LlmProvider::Gemini, gemini_out, "gemini"),
+            (ProviderAlias::CODEX, codex_out, "codex"),
+            (ProviderAlias::GEMINI, gemini_out, "gemini"),
         ] {
             let run_dir = tmp.path().join(name);
             let program = stub(tmp.path(), &format!("printf '%s' '{out}'"));
@@ -1082,7 +1080,7 @@ mod transcripts {
         let node = step_node(None);
 
         let dry = EventLog::default();
-        let provider = LlmProvider::Claude;
+        let provider = ProviderAlias::CLAUDE;
         run_observed(
             provider,
             program.clone(),
@@ -1145,7 +1143,7 @@ mod transcripts {
             let run_dir = tmp.path().join(format!("run-{i}"));
             let events = EventLog::default();
             run_observed(
-                LlmProvider::Claude,
+                ProviderAlias::CLAUDE,
                 program.clone(),
                 Some(&run_dir),
                 node,
@@ -1410,13 +1408,12 @@ mod stream_formats {
         path
     }
 
-    async fn run(provider: LlmProvider, program: PathBuf) -> Result<Outcome> {
+    async fn run(provider: ProviderAlias, program: PathBuf) -> Result<Outcome> {
         let node = make_node("step", "box", Some("do work"), HashMap::new());
         let resolved = ResolvedNode {
             node_id: node.id.clone(),
             kind: ResolvedNodeKind::Task,
             handler: crate::HandlerIdentity::Codergen,
-            provider: Some(provider),
             agent: crate::handlers::codergen_handler::test_agent(
                 Some(provider),
                 node.llm_model.clone(),
@@ -1453,7 +1450,7 @@ mod stream_formats {
             tmp.path(),
             "echo '{\"type\":\"result\",\"result\":\"done\",\"is_error\":false}'",
         );
-        let outcome = run(LlmProvider::Claude, program).await.unwrap();
+        let outcome = run(ProviderAlias::CLAUDE, program).await.unwrap();
         assert_eq!(outcome.status, StageStatus::Success);
         assert_eq!(outcome.notes, "done");
         assert_eq!(
@@ -1470,7 +1467,7 @@ mod stream_formats {
             tmp.path(),
             "echo '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"codex done\"}}'",
         );
-        let outcome = run(LlmProvider::Codex, program).await.unwrap();
+        let outcome = run(ProviderAlias::CODEX, program).await.unwrap();
         assert_eq!(outcome.status, StageStatus::Success);
         assert_eq!(outcome.notes, "codex done");
         assert!(!outcome.context_updates.contains_key("step.cost_usd"));
@@ -1520,9 +1517,8 @@ mod claude_outcomes {
             node_id: node.id.clone(),
             kind: ResolvedNodeKind::Task,
             handler: crate::HandlerIdentity::Codergen,
-            provider: Some(LlmProvider::Claude),
             agent: crate::handlers::codergen_handler::test_agent(
-                Some(LlmProvider::Claude),
+                Some(ProviderAlias::CLAUDE),
                 node.llm_model.clone(),
             ),
             invocation: Default::default(),

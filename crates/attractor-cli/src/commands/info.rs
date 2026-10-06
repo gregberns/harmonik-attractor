@@ -32,9 +32,11 @@ pub fn cmd_info(path: &std::path::Path) -> anyhow::Result<()> {
         let node = plan
             .source_node(&resolved.node_id)
             .expect("compiled source node");
+        // The agent profile (for `llm_provider` nodes, the provider's name).
         let provider = resolved
-            .provider
-            .map(|provider| provider.as_str())
+            .agent
+            .as_ref()
+            .map(|agent| agent.profile.as_str())
             .unwrap_or("-");
         println!(
             "  {} [{}] kind={:?} handler={} provider={}",
