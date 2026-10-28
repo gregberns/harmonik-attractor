@@ -306,7 +306,7 @@ fn maintained_docs_do_not_advertise_stale_claude_only_or_validation_contracts() 
             "docs/cli-reference.md",
             "[ERROR] provider_valid (node: analyze):",
         ),
-        ("docs/cli-reference.md", "Unselected provider binaries are"),
+        ("docs/cli-reference.md", "Unselected ones are not required."),
         (
             "docs/dot-dialect.md",
             "`prompt` is optional | CodergenHandler | `llm_provider`",
