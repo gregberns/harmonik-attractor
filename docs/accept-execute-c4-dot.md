@@ -1,5 +1,11 @@
 # Accept & Execute — C4 Diagrams (Graphviz DOT)
 
+> **Historical design.** These diagrams describe the earlier PAS Web app
+> (Leptos + Axum); its files (`server/execute.rs`, `server/stream.rs`,
+> `components/*`) no longer exist. The Monitor (`crates/attractor-monitor`)
+> replaced it and spawns its own binary (`std::env::current_exe()`,
+> `crates/attractor-monitor/src/spawn.rs`); there is no `PAS_CLI_PATH`.
+
 ## Level 1: System Context
 
 ```graphviz
@@ -132,7 +138,7 @@ digraph C4_Component {
 | ExecutionPanel | `components/execution_panel.rs` | Subscribes to SSE, renders node list with live status |
 | ExecutionNode | `components/execution_node.rs` | Single node: status badge, cost, notes |
 | start_execution() | `server/execute.rs` | Orchestrates decompose, scaffold, parse, spawn |
-| pas_cli_path() | `server/execute.rs` | Resolves CLI binary from `PAS_CLI_PATH` env var |
+| pas_cli_path() | `server/execute.rs` (gone) | Resolved the CLI binary from `PAS_CLI_PATH` (gone: the Monitor uses `current_exe()`) |
 | PipelineRunner | `server/execute.rs` | Walks graph, executes handlers, publishes events |
 | stream_events() | `server/stream.rs` | SSE endpoint, bridges broadcast to EventSource |
 | publish_event() | `server/stream.rs` | Writes to broadcast channel + replay buffer |

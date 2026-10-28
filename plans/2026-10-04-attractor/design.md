@@ -178,7 +178,7 @@ how an agent is driven are enforced once, outside the handlers:
 | `<id>.prompt.txt` written before the handler is called; file paths fixed | `Agents` |
 | `Finished` sent exactly once and equal to the return value | `Agents` sends it from the return value; handlers never send it |
 | `Started` once per spawn; a handler spawns more than once only inside the rate-limit window (Q48), each spawn with its own pid, transcript and stderr file | `Agents` journals each as its own `LlmStarted` |
-| A handler that panics returns `Failed(Crash)` with "handler panicked" | `Agents` (catch-unwind around the future) |
+| A handler that panics returns `Failed(Crash)` with "handler panicked" | Not built: deferred (open question 9 in [the operational plan](../2026-10-27-operational/README.md)). Today a panic exits `pas` with 101 and a resume sees an interrupted attempt |
 | A hard deadline (timeout plus grace plus a margin) in case a handler ignores its timeout: `Failed(Timeout)` | `Agents` |
 | cwd = workdir, stdin never inherited, own process group, transcript and stderr written live, `Started` after spawn and before the first output, TERM-grace-KILL on timeout or cancel, drop guard | The handler; `attractor-agent-process` gives all of them to handlers that run a local process |
 | Classify every end into a status and failure class; record the agent's session id; continue, or fail if it can't (Q50) | The handler (its own failure table) |

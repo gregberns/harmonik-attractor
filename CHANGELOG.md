@@ -2,6 +2,61 @@
 
 All notable changes to PAS are documented here.
 
+## Unreleased
+
+### Added
+
+- **A worktree and branch per Run.** `pas run` works in its own git worktree
+  (default `.pas/worktrees/<run-id>`, or `--worktree-root`) on branch
+  `pas/run/<run-id>` from `--base` (default `HEAD`). A resume reuses it.
+  Success removes the worktree and keeps the branch; failure keeps both.
+- **Attempt commits.** PAS commits the worktree after every attempt
+  (`pas(<run-id>): <node> attempt <n> (<status>)`, with `Pas-*` trailers).
+  An attempt `pas` never finished is committed as `interrupted` on resume,
+  and the node's next prompt says so. `final.json` and `pas run --json`
+  report the branch, base, final commit and status.
+- **Agent profiles.** `[agents.<name>]` in `pas.toml` defines how an agent
+  runs: command, args, model and reasoning flags, session forms,
+  environment (`env.remove`, `env.set`), timeout, kill grace and rate-limit
+  window. Nodes pick one with `agent=`; `llm_provider` names a built-in
+  (`claude`, `codex`, `gemini`). `reasoning_effort` fills the profile's
+  `reasoning_args`. Test-only profiles need `--allow-test-agents`.
+- **Sessions.** A node that runs again (a retry or a loop back) continues
+  its agent's session (`fidelity="full"`, the default where the profile can
+  resume; `fresh` starts a new one). Nodes with one `thread_id` share it.
+- **Pi.** The `pi` handler runs the Pi coding agent against
+  OpenAI-compatible providers (DeepSeek, GLM, hosted Qwen).
+- **Rate-limit window.** A rate-limited Claude attempt waits and re-spawns
+  within the profile's `rate_limit_window` (default 2 minutes) before it
+  fails, journalling `LlmRateLimited`.
+- **Prompt file and run folder.** Each invocation writes
+  `transcripts/<inv>.prompt.txt` (prompt, argv, environment names) before
+  the agent starts. Agent stderr goes live to `<inv>.stderr.log`.
+  `LlmStarted` is journalled per spawn. `docs/run-folder.md` lists every
+  file and event.
+- The retry prompt names the previous attempt's failure.
+- `pas validate --workdir` reads the same `pas.toml` as `pas run`.
+
+### Changed
+
+- **Stripped environment.** Agents never inherit API keys that would bill
+  outside your subscription (the default `env.remove` list), nor the calling
+  Claude Code session's identity variables.
+- Codex and Gemini run through handler crates and profiles; the old
+  `LlmProvider` path is gone.
+- A timeout's error names the node, the attempt and the transcript and
+  stderr paths; a crash's error adds the last stderr lines.
+
+### Fixed
+
+- A node whose outgoing edges match nothing stops the Run with an error
+  instead of following the first edge (a deliberate difference from the
+  spec for non-`fail` outcomes).
+- A node that returns Retry on its last attempt stops the Run ("still
+  retrying after N attempts").
+- A Codex run with no agent message, or with a non-zero exit, is no longer
+  a success.
+
 ## [0.11.0] — 2026-09-27
 
 ### Added

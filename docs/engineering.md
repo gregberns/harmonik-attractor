@@ -49,6 +49,9 @@ functional programming to it.
 - **Fakes, never real agents.** Shell-script fakes of `claude -p` and `pi`
   print scripted output for a named scenario. No test may need a real
   agent, an API key or a subscription.
+- **`bd`.** Tests that need a real Beads workspace skip with a notice
+  when `bd` is not on `PATH`; set `PAS_REQUIRE_BD=1` to make them fail
+  instead (so a machine that has `bd` can't skip them silently).
 - **Bug fixes start red.** Write the failing test that shows the bug, then
   fix it.
 - **Deterministic.** Each test makes its own temp dir and temp git repo.

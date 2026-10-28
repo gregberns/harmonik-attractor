@@ -57,8 +57,7 @@ pub use claude::{agent_profiles, CLAUDE_PROFILE};
 // ---------------------------------------------------------------------------
 
 pub struct CodergenHandler {
-    /// Runs Claude nodes (the `claude` profile); Codex and Gemini nodes
-    /// still run through this module's own process code.
+    /// Runs every agent node through its profile.
     agents: Arc<Agents>,
 }
 

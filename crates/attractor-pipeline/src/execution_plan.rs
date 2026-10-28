@@ -115,9 +115,8 @@ pub struct ResolvedNode {
     pub kind: ResolvedNodeKind,
     pub handler: HandlerIdentity,
     /// The agent profile the node runs with, and the node's own model and
-    /// reasoning level: from `agent=`, or profile `claude` for
-    /// `llm_provider="claude"`. `None` for every other node, including
-    /// Codex and Gemini nodes, which keep today's path.
+    /// reasoning level: from `agent=`, or the built-in profile `llm_provider`
+    /// names. `None` for a node that runs no agent.
     pub agent: Option<Selection>,
     pub invocation: NodeInvocationPolicy,
     /// The node's own `fidelity`, if it sets one (agent nodes only).
@@ -670,9 +669,8 @@ fn validate_supported_execution_capabilities(
             ));
         }
 
-        // An agent profile takes a reasoning level; Codex and Gemini nodes
-        // stay on today's path until they get profiles, so it is rejected
-        // there rather than ignored.
+        // Only an agent profile takes a reasoning level: on a node that runs
+        // no agent it is rejected rather than ignored.
         if resolved.agent.is_none() {
             for attribute in ["agent", "reasoning_effort"] {
                 if source.raw_attrs.contains_key(attribute) {

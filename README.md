@@ -58,34 +58,40 @@ digraph CodeReview {
 
 ## Codergen Provider Integration
 
-PAS's `codergen` handler executes pipeline nodes through the explicitly selected local Claude Code, Codex, or Gemini CLI. A Claude-backed node can use your existing Claude subscription with no separate API key.
+PAS's `codergen` handler runs each agent node as a local agent CLI process,
+chosen by an **agent profile**: Claude Code, Codex, Gemini, or the Pi coding
+agent (for OpenAI-compatible providers). A Claude-backed node can use your
+existing Claude subscription with no separate API key.
 
-Each `codergen` node invokes the explicitly selected provider binary. The handler
-normalizes Claude Code, Codex, and Gemini output into one outcome and feeds that
+The built-in profiles `claude`, `codex` and `gemini` need no setup; define
+your own (or override a built-in) under `[agents.<name>]` in `pas.toml`:
+command, args, model and reasoning flags, session forms, environment, timeout
+and rate-limit window. See [Agent profiles](docs/cli-reference.md#agent-profiles-agentsname-in-pastoml).
+Each handler normalizes its agent's output into one outcome and feeds that
 context forward to downstream nodes. Dollar cost and turn counts are recorded
-when the selected CLI reports them.
+when the agent reports them.
 
 ### Node attributes for codergen nodes
 
 | Attribute | Description |
 |-----------|-------------|
-| `prompt` | Optional task prompt sent to the selected provider; validation warns when both it and a descriptive label are absent |
-| `llm_provider` (required) | `"claude"`, `"codex"`, or `"gemini"` for provider-backed nodes |
+| `prompt` | Optional task prompt sent to the agent; validation warns when both it and a descriptive label are absent |
+| `agent` | The agent profile to run (built-in or from `pas.toml`) |
+| `llm_provider` | `"claude"`, `"codex"`, or `"gemini"`: shorthand for that built-in profile. An agent node needs `agent` or `llm_provider` |
 | `llm_model` | Model override (e.g. `"sonnet"`, `"haiku"`, `"opus"`) |
+| `reasoning_effort` | Reasoning level, filled into the profile's `reasoning_args` |
 | `allowed_tools` | Comma-separated list of tools Claude Code may use |
 | `max_budget_usd` | Spending cap for this node |
 
-Prompted conditional nodes (`shape=diamond`) ask the selected provider to choose
+Prompted conditional nodes (`shape=diamond`) ask the agent to choose
 an outgoing edge label. By default, a diamond without a prompt is a pass-through
-conditional and starts no provider process. Setting `type="codergen"` explicitly
-is the exception: it makes the diamond provider-backed even without a prompt and
-therefore requires `llm_provider`.
-
-For nodes that only need a single LLM completion without tool use, PAS also provides direct API handlers for OpenAI, Anthropic, and Gemini via the `attractor-llm` crate.
+conditional and starts no agent process. Setting `type="codergen"` explicitly
+is the exception: it makes the diamond agent-backed even without a prompt and
+therefore requires `agent` or `llm_provider`.
 
 ## Features
 
-- **Explicit local provider execution** -- Each `codergen` node selects the local Claude Code, Codex, or Gemini CLI it runs
+- **Explicit local agent execution** -- Each `codergen` node selects the agent profile it runs: Claude Code, Codex, Gemini or Pi, as built in or defined in `pas.toml`
 - **DOT pipeline definitions** -- Standard Graphviz digraph syntax with typed attributes (strings, integers, floats, booleans, durations)
 - **Direct pipeline generation** -- Pass a PRD and/or spec file to generate a self-contained .dot pipeline (no external issue tracker required)
 - **End-to-end launch** -- `pas launch <docs/>` discovers spec+PRD pairs, generates pipelines, validates, and runs them sequentially in one command
@@ -258,7 +264,7 @@ Set `PAS_STATE_DIR` to relocate the Run Index and Monitor Plan workspaces (defau
 | `attractor-handler-gemini` | The `gemini` handler: Gemini CLI with `json`/`stream-json` output (probed with `--help`) and its failure table |
 | `attractor-handler-pi` | The `pi` handler: the Pi coding agent in JSON mode for OpenAI-compatible providers, its per-invocation `models.json` and its failure table |
 | `attractor-pipeline` | Pipeline graph, engine, handlers, validation, stylesheets |
-| `attractor-cli` | CLI binary — `pas` (`run`, `validate`, `info`, `plan`, `decompose`, `scaffold`, `generate`, `launch`, `runs`, `answer`, `stop`, `kill`, `monitor`) |
+| `attractor-cli` | CLI binary — `pas` (`run`, `validate`, `info`, `plan`, `decompose`, `scaffold`, `generate`, `init`, `trust`, `launch`, `runs`, `answer`, `stop`, `kill`, `monitor`) |
 | `attractor-journal` | Run Journal, Run folder layout and Run Index |
 | `attractor-monitor` | The Monitor web UI (`pas monitor`); reads journals and spawns `pas` |
 

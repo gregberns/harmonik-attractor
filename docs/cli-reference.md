@@ -901,9 +901,10 @@ Reads a technical specification file and uses Claude to generate beads CLI comma
 pas decompose <SPEC_PATH> [OPTIONS]
 pas decompose --plan <FILE> [--plan <FILE> ...] [OPTIONS]
 pas decompose --from-proposal <FILE> [--json]
+pas decompose <SPEC_PATH> --validate <EPIC_ID>
 ```
 
-Exactly one source is required: `SPEC_PATH`, one or more `--plan`, or `--from-proposal`. Combining them is a usage error (exit 2).
+Exactly one source is required: `SPEC_PATH`, one or more `--plan`, or `--from-proposal`. Combining them is a usage error (exit 2). `--validate` needs `SPEC_PATH` as its source.
 
 #### Arguments
 
@@ -918,6 +919,7 @@ Exactly one source is required: `SPEC_PATH`, one or more `--plan`, or `--from-pr
 | `--plan <FILE>` | | A Plan document (`.md` or `.txt`); repeat for a multi-file Plan (max 20 files, 1 MiB each). Conflicts with `SPEC_PATH` |
 | `--from-proposal <FILE>` | | Create exactly the Proposal in this JSON file, with no LLM call. Conflicts with `SPEC_PATH`, `--plan`, `--dry-run` |
 | `--dry-run` | false | Print the generated Proposal without creating anything |
+| `--validate <EPIC_ID>` | | Check the beads epic's existing tasks against `SPEC_PATH` (fields filled, spec identifiers covered), with no LLM call and nothing created; `--json` has no effect. Needs `SPEC_PATH`; conflicts with `--plan`, `--from-proposal`, `--dry-run` |
 | `--json` | false | Print one JSON object on stdout (C6); progress goes to stderr |
 
 #### JSON payloads
@@ -1490,13 +1492,18 @@ Quick way to compare node counts and structure between pipeline revisions.
 
 ### Required
 
-- Every provider binary selected by an executable `codergen` node must be in
-  `PATH`: `claude`, `codex`, and/or `gemini`. Unselected provider binaries are
-  not required. Verify a selected binary with `command -v <provider>`.
+- Every agent CLI selected by an executable `codergen` node must be in
+  `PATH`: `claude`, `codex` and/or `gemini` for the built-in profiles,
+  else the `command` the node's profile names (such as `pi` for a Pi
+  profile). Unselected ones are not required. Verify a selected one with
+  `command -v <name>`.
 
 ### Optional
 
 - **`PAS_STATE_DIR`** — Folder for machine-wide PAS state: the Run Index (`runs.jsonl`) and Monitor Plan workspaces (`plans/<plan-id>/`). Default `$XDG_STATE_HOME/pas`, else `~/.local/state/pas`.
+- **`GEMINI_API_KEY`** — Not read by `pas`. Agents inherit it like any
+  variable not on their profile's `env.remove` list, so a Gemini node's
+  `gemini` can use it.
 - **`RUST_LOG`** — Override log level (e.g. `RUST_LOG=debug pas run ...`). The `-v` flag sets this to `debug` automatically.
 
 ### What a Claude agent process gets

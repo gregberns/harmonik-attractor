@@ -211,7 +211,7 @@ These failures use the node-scoped `unsupported_execution_topology` rule and occ
 | `agent` | string | -- | The [agent profile](cli-reference.md#agent-profiles-agentsname-in-pastoml) the node runs with, e.g. `"claude"` or a profile from `pas.toml`. Satisfies the provider requirement. With `llm_provider` too, `agent` wins. Node attribute only (not a stylesheet property). |
 | `llm_model` | string | profile `model`, else graph `model` | Model override: `"haiku"`, `"sonnet"`, `"opus"`, or full model ID. For an agent node the order is node `llm_model`, the profile's `model`, the graph's `model`. |
 | `llm_provider` | string | -- | Required whenever the resolved handler consumes a provider. Not needed when `agent` is set. Values: `"claude"`, `"codex"`, `"gemini"`; aliases: `anthropic`, `openai`, `google` (case-insensitive). `claude` runs the agent profile `claude`. |
-| `reasoning_effort` | string | profile `reasoning` | Reasoning level, filled into the profile's `reasoning_args` (built-in `claude`: `--effort <level>`). An error on a profile without `reasoning_args`, and on Codex and Gemini nodes, which have no profile yet. Also accepted in a stylesheet. |
+| `reasoning_effort` | string | profile `reasoning` | Reasoning level, filled into the profile's `reasoning_args` (built-in `claude`: `--effort <level>`). An error on a profile without `reasoning_args` (the built-in `codex` and `gemini` have none). Also accepted in a stylesheet. |
 | `allowed_tools` | string | all | Claude-only tool list, e.g. `"Read,Grep,Glob"` or `"Bash(git:*)"`; rejected outside Claude-backed codergen nodes |
 | `max_budget_usd` | string | unlimited | Claude-only spend cap for this node's session; rejected outside Claude-backed codergen nodes |
 | `goal_gate` | boolean | false | Must succeed for pipeline completion |
@@ -240,7 +240,7 @@ cap; it is distinct from the reserved top-level global budget control.
 
 ### Unsupported execution capabilities
 
-Node attributes `auto_status` and `allow_partial`, a node `fidelity` other than `full` or `fresh` (`truncate`, `compact`, `summary:*`), `fidelity` or `thread_id` on a node that runs no agent, and the edge attributes `fidelity` and `thread_id` are recognized only so canonical compilation can reject them with `unsupported_execution_capability`. They have no runtime semantics. `reasoning_effort` and `agent` are rejected the same way on a node that has no agent profile (Codex and Gemini nodes, and nodes that run no agent). Manager-loop shapes/types are likewise rejected. See [Execution capability contract](execution-capabilities.md).
+Node attributes `auto_status` and `allow_partial`, a node `fidelity` other than `full` or `fresh` (`truncate`, `compact`, `summary:*`), `fidelity` or `thread_id` on a node that runs no agent, and the edge attributes `fidelity` and `thread_id` are recognized only so canonical compilation can reject them with `unsupported_execution_capability`. They have no runtime semantics. `reasoning_effort` and `agent` are rejected the same way on a node that runs no agent. On a Codex or Gemini node, `reasoning_effort` fails the profile check instead: the built-in `codex` and `gemini` profiles have no `reasoning_args`. Manager-loop shapes/types are likewise rejected. See [Execution capability contract](execution-capabilities.md).
 
 Compatibility aliases are accepted at the semantic compilation boundary: `node_type` or
 `handler` for `type`, `stylesheet` for `model_stylesheet`, and `classes` for `class`.

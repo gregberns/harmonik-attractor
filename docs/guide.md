@@ -14,6 +14,7 @@ PAS (Pascal's Discrete Attractor) is a pipeline runner for AI workflows. You def
 - [Variable Expansion](#variable-expansion)
 - [Validation Rules](#validation-rules)
 - [Edge Selection Algorithm](#edge-selection-algorithm)
+- [Differences from the Attractor spec](#differences-from-the-attractor-spec)
 - [Pipeline Patterns](#pipeline-patterns)
 - [Planning Workflow](#planning-workflow)
 - [Integrating with Beads](#integrating-with-beads)
@@ -465,6 +466,23 @@ When a node completes, the engine selects the next edge using a 5-step priority 
 To route on an LLM-extracted label, write the label into the condition and keep it as the edge's label: `[label="PASS", condition="preferred_label=PASS"]` (as in the examples below). The label is extracted from the agent's text only among the node's edge `label`s, so an edge with the condition but no `label` never matches. A label on a conditional edge whose condition is false is never followed, so an agent that failed but ended its text with `PASS` does not take `[label="PASS", condition="outcome=success"]`.
 
 If the node has outgoing edges and none applies, the run stops with `node '<id>' outcome <status> matched no outgoing edge (conditions: ...)`, whatever the status; there is no fallback to the first edge (this differs on purpose from the upstream spec, which ends the run normally for a non-fail outcome). If the node has no outgoing edges, a `Fail` errors and any other status ends the run normally. A resume after the error reports "Max retries exhausted" for the node; use `--fresh` to start over.
+
+---
+
+## Differences from the Attractor spec
+
+PAS follows the upstream [Attractor spec](https://github.com/strongdm/attractor)
+except where routing would hide a graph mistake:
+
+- **No matching edge stops the run, whatever the outcome.** When a node has
+  outgoing edges and none applies, the run stops with an error. The spec
+  ends the run normally for a non-`fail` outcome. See
+  [Edge Selection Algorithm](#edge-selection-algorithm) and
+  [task-verification.md](task-verification.md#edge-selection-algorithm).
+- **A preferred label or suggested next id picks only among unconditional
+  edges.** A conditional edge is taken only when its condition holds, so an
+  agent's label can't send it down an edge whose condition is false. To
+  route on a label, put it in the condition (`condition="preferred_label=PASS"`).
 
 ---
 
