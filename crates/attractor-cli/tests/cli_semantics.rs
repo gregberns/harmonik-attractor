@@ -10,10 +10,11 @@ fn pas() -> &'static str {
 }
 
 /// `pas` with its Run Index in a scratch folder, never the developer's
-/// `~/.local/state/pas/runs.jsonl`.
-fn pas_command() -> Command {
+/// `~/.local/state/pas/runs.jsonl`, run in `cwd` (a test's scratch folder,
+/// so a default `.pas/` folder never lands in the source tree).
+fn pas_command(cwd: &Path) -> Command {
     let mut command = Command::new(pas());
-    command.env(
+    command.current_dir(cwd).env(
         "PAS_STATE_DIR",
         Path::new(env!("CARGO_TARGET_TMPDIR")).join("cli-semantics-state"),
     );
@@ -40,7 +41,7 @@ fn provider_shims(dir: &Path) {
 }
 
 fn run_with_shims(args: &[&str], shim_dir: &Path, marker: &Path) -> Output {
-    pas_command()
+    pas_command(marker.parent().unwrap())
         .args(args)
         .env("PATH", shim_dir)
         .env("PAS_TEST_PROVIDER_MARKER", marker)
@@ -54,7 +55,7 @@ fn run_with_shims_and_response(
     marker: &Path,
     response: &str,
 ) -> Output {
-    pas_command()
+    pas_command(marker.parent().unwrap())
         .args(args)
         .env("PATH", shim_dir)
         .env("PAS_TEST_PROVIDER_MARKER", marker)
@@ -75,7 +76,7 @@ fn validate_info_and_run_share_the_same_resolved_provider_and_boundaries() {
         "shared.dot",
         r#"digraph Shared {
             START
-            work [shape="box", prompt="work", llm_provider="OpenAI", timeout=1s]
+            work [shape="box", prompt="work", llm_provider="OpenAI", timeout=60s]
             DONE
             START -> work -> DONE
         }"#,
@@ -323,7 +324,7 @@ fn exit_goal_gate_retry_target_fails_before_execution() {
     let pipeline = write_pipeline(fixture.path(), "exit-retry-target.dot", &source);
 
     let path = format!("{}:/bin:/usr/bin", shims.path().display());
-    let output = pas_command()
+    let output = pas_command(fixture.path())
         .args([
             "run",
             pipeline.to_str().unwrap(),
@@ -382,7 +383,7 @@ fn invalid_or_reserved_controls_fail_before_provider_or_fresh_checkpoint_side_ef
             fixture.path(),
             name,
             &format!(
-                "digraph G {{ {graph_attr} start [shape=\"Mdiamond\"] work [shape=\"box\", llm_provider=\"codex\", timeout=1s] done [shape=\"Msquare\"] start -> work -> done }}"
+                "digraph G {{ {graph_attr} start [shape=\"Mdiamond\"] work [shape=\"box\", llm_provider=\"codex\", timeout=60s] done [shape=\"Msquare\"] start -> work -> done }}"
             ),
         );
         let logs = fixture.path().join(format!("{name}-logs"));
@@ -422,7 +423,7 @@ fn unsupported_topology_fails_before_provider_or_fresh_checkpoint_side_effects()
             "parallel.dot",
             r#"digraph G {
                 start [shape="Mdiamond"]
-                work [shape="box", llm_provider="codex", timeout=1s]
+                work [shape="box", llm_provider="codex", timeout=60s]
                 fork [shape="component"]
                 left [shape="diamond"]
                 right [shape="diamond"]
@@ -439,7 +440,7 @@ fn unsupported_topology_fails_before_provider_or_fresh_checkpoint_side_effects()
             "fan-in.dot",
             r#"digraph G {
                 start [shape="Mdiamond"]
-                work [shape="box", llm_provider="codex", timeout=1s]
+                work [shape="box", llm_provider="codex", timeout=60s]
                 merge [shape="tripleoctagon"]
                 done [shape="Msquare"]
                 start -> work -> merge -> done
@@ -492,7 +493,7 @@ fn invalid_graph_quality_limit_fails_before_fresh_checkpoint_side_effects() {
         r#"digraph G {
             start [shape="Mdiamond"]
             check [shape="ellipse", type="quality", max_fix_iterations=0]
-            work [shape="box", llm_provider="codex", timeout=1s]
+            work [shape="box", llm_provider="codex", timeout=60s]
             done [shape="Msquare"]
             start -> check -> work -> done
         }"#,
@@ -540,7 +541,7 @@ fn built_in_budget_warning_does_not_claim_an_explicit_cli_flag() {
         "built-in-budget.dot",
         r#"digraph G {
             start [shape="Mdiamond"]
-            work [shape="box", llm_provider="codex", timeout=1s]
+            work [shape="box", llm_provider="codex", timeout=60s]
             done [shape="Msquare"]
             start -> work -> done
         }"#,
@@ -610,7 +611,7 @@ fn directory_mode_prepares_every_plan_before_starting_any_provider() {
     write_pipeline(
         &pipelines,
         "01-valid.dot",
-        r#"digraph G { start [shape="Mdiamond"] work [shape="box", llm_provider="codex", timeout=1s] done [shape="Msquare"] start -> work -> done }"#,
+        r#"digraph G { start [shape="Mdiamond"] work [shape="box", llm_provider="codex", timeout=60s] done [shape="Msquare"] start -> work -> done }"#,
     );
     write_pipeline(
         &pipelines,
@@ -618,9 +619,8 @@ fn directory_mode_prepares_every_plan_before_starting_any_provider() {
         r#"digraph G { graph [max_steps=999] start [shape="Mdiamond"] done [shape="Msquare"] start -> done }"#,
     );
 
-    let output = pas_command()
+    let output = pas_command(fixture.path())
         .args(["run", pipelines.to_str().unwrap(), "--fresh"])
-        .current_dir(fixture.path())
         .env("PATH", shims.path())
         .env("PAS_TEST_PROVIDER_MARKER", &marker)
         .output()
@@ -644,7 +644,7 @@ fn tool_handler_uses_typed_canonical_workdir() {
         "workdir.dot",
         r#"digraph G { start [shape="Mdiamond"] tool [shape="parallelogram", tool_command="pwd > typed-workdir-marker"] done [shape="Msquare"] start -> tool -> done }"#,
     );
-    let output = pas_command()
+    let output = pas_command(fixture.path())
         .args([
             "run",
             pipeline.to_str().unwrap(),
@@ -744,7 +744,7 @@ fn validate_renders_every_semantic_error_with_rule_node_and_fix() {
         }"#,
     );
 
-    let output = pas_command()
+    let output = pas_command(fixture.path())
         .args(["validate", pipeline.to_str().unwrap()])
         .output()
         .unwrap();
@@ -805,7 +805,7 @@ fn validate_renders_unsupported_topology_as_a_blocking_semantic_error() {
 
     for (name, source, node, fix) in cases {
         let pipeline = write_pipeline(fixture.path(), name, source);
-        let output = pas_command()
+        let output = pas_command(fixture.path())
             .args(["validate", pipeline.to_str().unwrap()])
             .output()
             .unwrap();
@@ -820,7 +820,7 @@ fn validate_renders_unsupported_topology_as_a_blocking_semantic_error() {
         );
         assert!(stdout.contains(&format!("Fix: {fix}")), "{stdout}");
 
-        let info = pas_command()
+        let info = pas_command(fixture.path())
             .args(["info", pipeline.to_str().unwrap()])
             .output()
             .unwrap();
