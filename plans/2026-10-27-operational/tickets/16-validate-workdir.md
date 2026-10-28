@@ -14,7 +14,7 @@ thing as the run it checks. Document it in docs/cli-reference.md.
 
 **Blocked by:** 13
 
-**Status:** ready
+**Status:** done
 
 - [ ] Seam 2: from dir A (broken pas.toml), `pas validate --workdir B` passes and `pas run --workdir B` runs; from B, `validate --workdir A` fails with the same error `run --workdir A` gives
 - [ ] Without `--workdir`, behaviour is unchanged
