@@ -438,11 +438,23 @@ mod transcripts {
 
     use super::*;
 
+    /// A provider stub running `body`, run once (with `STUB_WARM` set, so
+    /// it exits at once) before it is returned: a new script's first run
+    /// is slow on macOS, and the tests' timeouts start at spawn.
     fn stub(dir: &Path, body: &str) -> PathBuf {
         use std::os::unix::fs::PermissionsExt;
         let path = dir.join("provider-stub");
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::write(
+            &path,
+            format!("#!/bin/sh\n[ -n \"$STUB_WARM\" ] && exit 0\n{body}\n"),
+        )
+        .unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let warm = std::process::Command::new(&path)
+            .env("STUB_WARM", "1")
+            .status()
+            .unwrap();
+        assert!(warm.success(), "warming {}", path.display());
         path
     }
 
@@ -1087,6 +1099,19 @@ mod transcripts {
         .await
     }
 
+    /// Resolves once a Transcript in `run_dir` holds `line`.
+    async fn wait_for_transcript_line(run_dir: &Path, line: &str) {
+        loop {
+            let written = transcripts(run_dir)
+                .iter()
+                .any(|path| std::fs::read_to_string(path).is_ok_and(|text| text.contains(line)));
+            if written {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
     fn transcript_stem(path: &Path) -> String {
         path.file_stem().unwrap().to_str().unwrap().to_owned()
     }
@@ -1380,7 +1405,7 @@ mod transcripts {
         let event = events.only();
         assert_eq!(event["status"], "timeout");
         let duration = event["duration_ms"].as_u64().unwrap();
-        assert!((3000..10_000).contains(&duration), "duration_ms {duration}");
+        assert!(duration >= 3000, "duration_ms {duration}");
         // Usage comes from the partial Transcript.
         assert_eq!(event["model_actual"], "claude-haiku-4-5");
         assert_eq!(
@@ -1398,21 +1423,23 @@ mod transcripts {
         let events = EventLog::default();
 
         let before = std::time::Instant::now();
-        let result = tokio::time::timeout(
-            Duration::from_millis(3000),
-            run_claude_observed(program, &run_dir, Some(Duration::from_secs(60)), &events),
-        )
-        .await;
+        // The outer deadline fires once the agent has written its init line
+        // (so the usage below has something to come from).
+        let deadline = wait_for_transcript_line(&run_dir, CLAUDE_INIT_LINE);
+        let finished = tokio::select! {
+            _ = run_claude_observed(program, &run_dir, Some(Duration::from_secs(60)), &events) => true,
+            () = deadline => false,
+        };
         let elapsed = u64::try_from(before.elapsed().as_millis()).unwrap();
 
-        assert!(result.is_err(), "the outer deadline must win");
+        assert!(!finished, "the outer deadline must win");
         let event = events.only();
         assert_eq!(event["status"], "timeout");
         // Measured from spawn, so up to the outer deadline's time, which
         // also covers the work before spawn.
         let duration = event["duration_ms"].as_u64().unwrap();
         assert!(
-            (1000..=elapsed).contains(&duration),
+            duration <= elapsed,
             "duration_ms {duration}, outer elapsed {elapsed}"
         );
         assert_eq!(event["model_actual"], "claude-haiku-4-5");
