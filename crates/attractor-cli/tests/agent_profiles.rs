@@ -126,6 +126,51 @@ fn llm_model_overrides_the_profiles_model() {
     }
 }
 
+/// `pas validate` and `pas run` output (stdout then stderr) for `dot`, with
+/// a fake profile that takes `--model`.
+fn validate_and_run_output(dot: &str) -> [String; 2] {
+    let fake = FakeAgent::new();
+    fake.commit_pas_toml("model_args = [\"--model\", \"{model}\"]");
+    let both = |output: std::process::Output| {
+        assert_success(&output);
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    };
+    [
+        both(fake.validate(dot, &["--allow-test-agents"])),
+        both(fake.run(dot)),
+    ]
+}
+
+#[test]
+fn a_node_that_sets_model_is_warned_to_use_llm_model() {
+    let dot = one_node(r#"agent="fake", model="haiku", prompt="scenario=success""#);
+    for output in validate_and_run_output(&dot) {
+        assert!(
+            output.contains("[WARN] node_model (node: work)"),
+            "{output}"
+        );
+        assert!(output.contains("llm_model"), "{output}");
+    }
+}
+
+#[test]
+fn llm_model_on_a_node_and_model_on_the_graph_are_not_warned() {
+    let dot = r#"digraph G {
+        model="g"
+        start [shape="Mdiamond"]
+        work [shape="box", timeout="30s", agent="fake", llm_model="m1", prompt="scenario=success"]
+        done [shape="Msquare"]
+        start -> work -> done
+    }"#;
+    for output in validate_and_run_output(dot) {
+        assert!(!output.contains("node_model"), "{output}");
+    }
+}
+
 #[test]
 fn env_set_reaches_the_agent_even_when_in_the_remove_list() {
     let fake = FakeAgent::new();

@@ -18,5 +18,5 @@ Don't start accepting `model` on nodes; that would change the dialect.
 
 **Status:** open
 
-- [ ] A node with `model="haiku"` gets the warning in validate and run
-- [ ] A node with `llm_model` and a graph with `model` get no warning
+- [x] A node with `model="haiku"` gets the warning in validate and run
+- [x] A node with `llm_model` and a graph with `model` get no warning

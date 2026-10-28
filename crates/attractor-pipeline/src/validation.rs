@@ -165,6 +165,36 @@ impl LintRule for GoalGateHasRetryRule {
     }
 }
 
+/// `model` is a graph attribute; on a node it does nothing, and the author
+/// almost certainly meant `llm_model`.
+struct NodeModelRule;
+impl LintRule for NodeModelRule {
+    fn name(&self) -> &str {
+        "node_model"
+    }
+    fn apply(&self, graph: &PipelineGraph) -> Vec<Diagnostic> {
+        let mut nodes: Vec<_> = graph
+            .all_nodes()
+            .filter(|n| n.raw_attrs.contains_key("model"))
+            .collect();
+        nodes.sort_by(|left, right| left.id.cmp(&right.id));
+        nodes
+            .into_iter()
+            .map(|n| Diagnostic {
+                rule: self.name().into(),
+                severity: Severity::Warning,
+                message: format!(
+                    "Node '{}' sets model, which is a graph attribute and has no effect on a node",
+                    n.id
+                ),
+                node_id: Some(n.id.clone()),
+                edge: None,
+                fix: Some("Use llm_model to set this node's model".into()),
+            })
+            .collect()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -423,6 +453,7 @@ fn validate_nonsemantic_structure(graph: &PipelineGraph) -> Vec<Diagnostic> {
         Box::new(ConditionSyntaxRule),
         Box::new(RetryTargetExistsRule),
         Box::new(GoalGateHasRetryRule),
+        Box::new(NodeModelRule),
     ];
 
     let mut diagnostics = Vec::new();

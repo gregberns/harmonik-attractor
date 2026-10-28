@@ -36,6 +36,9 @@ All notable changes to PAS are documented here.
   file and event.
 - The retry prompt names the previous attempt's failure.
 - `pas validate --workdir` reads the same `pas.toml` as `pas run`.
+- `pas validate` and `pas run` warn (`node_model`) when a node sets `model`,
+  a graph attribute that does nothing there; the node attribute is
+  `llm_model`.
 
 ### Changed
 

@@ -209,7 +209,7 @@ These failures use the node-scoped `unsupported_execution_topology` rule and occ
 | `shape` | string | -- | Node shape (see table above) |
 | `type` | string | auto | Handler override: `"codergen"`, `"conditional"`, `"tool"`, `"parallel"`, `"fan_in"`, `"quality"`, `"wait.human"`, `"beads.select"`, `"beads.close"` (see [Beads handlers](#beads-handlers)); fan-in and manager roles are recognized but rejected |
 | `agent` | string | -- | The [agent profile](cli-reference.md#agent-profiles-agentsname-in-pastoml) the node runs with, e.g. `"claude"` or a profile from `pas.toml`. Satisfies the provider requirement. With `llm_provider` too, `agent` wins. Node attribute only (not a stylesheet property). |
-| `llm_model` | string | profile `model`, else graph `model` | Model override: `"haiku"`, `"sonnet"`, `"opus"`, or full model ID. For an agent node the order is node `llm_model`, the profile's `model`, the graph's `model`. |
+| `llm_model` | string | profile `model`, else graph `model` | Model override: `"haiku"`, `"sonnet"`, `"opus"`, or full model ID. For an agent node the order is node `llm_model`, the profile's `model`, the graph's `model`. On a node, write `llm_model`, not `model`: `model` is a graph attribute and does nothing on a node, so `pas validate` and `pas run` warn (`node_model`). |
 | `llm_provider` | string | -- | Required whenever the resolved handler consumes a provider. Not needed when `agent` is set. Values: `"claude"`, `"codex"`, `"gemini"`; aliases: `anthropic`, `openai`, `google` (case-insensitive). `claude` runs the agent profile `claude`. |
 | `reasoning_effort` | string | profile `reasoning` | Reasoning level, filled into the profile's `reasoning_args` (built-in `claude`: `--effort <level>`). An error on a profile without `reasoning_args` (the built-in `codex` and `gemini` have none). Also accepted in a stylesheet. |
 | `allowed_tools` | string | all | Claude-only tool list, e.g. `"Read,Grep,Glob"` or `"Bash(git:*)"`; rejected outside Claude-backed codergen nodes |
@@ -308,7 +308,7 @@ before it starts. Pipelines without Beads nodes never look at `PATH`.
 |-----------|------|-------------|
 | `label` | string | Pipeline display name |
 | `goal` | string | Pipeline goal description (used by goal gates) |
-| `model` | string | Default LLM model for all nodes |
+| `model` | string | Default LLM model for all nodes. Graph only; a node sets `llm_model` |
 
 ## Common Pipeline Patterns
 
