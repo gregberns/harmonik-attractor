@@ -19,7 +19,7 @@ Restore that:
 
 **Blocked by:** none
 
-**Status:** open
+**Status:** done
 
 - [x] Phase 2's worktree has phase 1's committed edit (seam 2, fakes)
 - [x] Phase 1 starts from `--base`
