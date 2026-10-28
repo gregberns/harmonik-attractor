@@ -82,5 +82,5 @@ These change how the product behaves, so they are not tickets yet. Each
     tools, plugin dirs) or by rewriting a profile's whole `args`.
     Operator: wants it. Proposed: `settings`, `plugin_dirs`, `tools` and
     `disallowed_tools` as `claude` profile fields, so a `reviewer` profile
-    (`inherit_from = "claude"`) carries its own skills. Needs a short design
-    before a ticket; after 23.
+    (`inherit_from = "claude"`) carries its own skills. Design proposal:
+    [agent-setup.md](agent-setup.md).
