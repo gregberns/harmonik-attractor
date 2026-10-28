@@ -19,10 +19,11 @@ Add an engine-owned list, stripped always and not configurable, next to the
 the session-identity `CLAUDE_CODE_*` names (`CHILD_SESSION`,
 `SESSION_ID`, `MESSAGING_SOCKET`, `MESSAGING_TOKEN`, `ENTRYPOINT`,
 `EXECPATH`, `ENABLE_FUNCTION_HOOKS`, `SESSION_ATTENDED`), every `HK3_*`,
-every `KEEPER_*`, and `HARMONIK_AGENT`. Match hk3's `SCRUB_RE`; read it
-first and use the same set. Other `CLAUDE_CODE_*` user settings (e.g.
-`CLAUDE_CODE_USE_BEDROCK`, output limits) are untouched. `env.set` can
-still set any of them on purpose. The meaning of `env.remove` doesn't
+every `KEEPER_*`, and `HARMONIK_AGENT`. hk3's `SCRUB_RE` strips every
+`CLAUDE_CODE_*`; PAS strips only the session-identity names above, since
+other `CLAUDE_CODE_*` names are user settings (e.g.
+`CLAUDE_CODE_MAX_OUTPUT_TOKENS`) and pass as before. `env.set` can still
+set any of them on purpose. The meaning of `env.remove` doesn't
 change. Document the list in docs/cli-reference.md (agent environment) and
 docs/run-folder.md if it lists env names.
 
@@ -30,7 +31,7 @@ docs/run-folder.md if it lists env names.
 
 **Status:** ready
 
-- [ ] Seam 1 (`Agents::run` with a fake): with `CLAUDECODE`, `CLAUDE_CODE_MESSAGING_TOKEN`, `HK3_AGENT_ID` and `KEEPER_X` in the parent env, none reach the agent; `CLAUDE_CODE_USE_BEDROCK` and an unrelated `FOO` do
+- [ ] Seam 1 (`Agents::run` with a fake): with `CLAUDECODE`, `CLAUDE_CODE_MESSAGING_TOKEN`, `HK3_AGENT_ID` and `KEEPER_X` in the parent env, none reach the agent; `CLAUDE_CODE_MAX_OUTPUT_TOKENS` and an unrelated `FOO` do (`CLAUDE_CODE_USE_BEDROCK` is on the default strip list already)
 - [ ] The same with a profile that sets its own `env.remove`
 - [ ] `env.set` of a stripped name reaches the agent
 - [ ] Seam 2 (`pas run` with the fake): the agent's recorded env has none of the identity names
