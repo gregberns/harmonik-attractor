@@ -525,6 +525,16 @@ mod transcripts {
     /// The prompt a stub Claude got for node `step` (`do work`) with the
     /// given notes: the stub saves its `-p` value to `prompt.txt`.
     async fn prompt_with_notes(failure_note: Option<&str>, resume_note: Option<&str>) -> String {
+        prompt_for(&Context::default(), failure_note, resume_note).await
+    }
+
+    /// The prompt a stub Claude got for node `step` (`do work`) with
+    /// `context` and the given notes.
+    async fn prompt_for(
+        context: &Context,
+        failure_note: Option<&str>,
+        resume_note: Option<&str>,
+    ) -> String {
         let tmp = tempfile::tempdir().unwrap();
         let saved = tmp.path().join("prompt.txt");
         let program = stub(
@@ -548,7 +558,7 @@ mod transcripts {
             .execute_with_controls(
                 &node,
                 &resolved,
-                &Context::default(),
+                context,
                 &make_minimal_graph(),
                 CodergenExecutionControls {
                     dry_run: false,
@@ -586,6 +596,27 @@ mod transcripts {
             .await,
             "Task (step): do work\n\nThe previous attempt failed (reported): tests failed\n\nThe previous attempt was interrupted."
         );
+    }
+
+    // Ticket 19: prior steps' outputs are listed in key order, so the same
+    // context gives the same prompt on every run.
+    #[tokio::test]
+    async fn prior_step_outputs_are_listed_in_key_order() {
+        let context = Context::default();
+        for node in ["h", "c", "f", "a", "g", "d", "b", "e"] {
+            context
+                .set(format!("{node}.output"), serde_json::json!(node))
+                .await;
+        }
+        context.set("b.result", serde_json::json!(7)).await;
+        context.set("b.status", serde_json::json!("ignored")).await;
+        let expected = "Context from prior pipeline steps:\n\
+            - a.output: a\n- b.output: b\n- b.result: 7\n- c.output: c\n\
+            - d.output: d\n- e.output: e\n- f.output: f\n- g.output: g\n\
+            - h.output: h\n\nTask (step): do work";
+        for _ in 0..2 {
+            assert_eq!(prompt_for(&context, None, None).await, expected);
+        }
     }
 
     async fn run_claude(program: PathBuf, run_dir: Option<&Path>) -> Result<Outcome> {

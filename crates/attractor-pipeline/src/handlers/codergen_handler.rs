@@ -401,12 +401,14 @@ impl CodergenHandler {
             full_prompt.push_str(&format!("Pipeline goal: {}\n\n", goal));
         }
 
-        // Inject relevant context from prior nodes
+        // Inject relevant context from prior nodes, in key order so the
+        // same context always gives the same prompt.
         let snapshot = context.snapshot().await;
-        let context_keys: Vec<_> = snapshot
+        let mut context_keys: Vec<_> = snapshot
             .iter()
             .filter(|(k, _)| k.ends_with(".result") || k.ends_with(".output"))
             .collect();
+        context_keys.sort_by_key(|(k, _)| *k);
         if !context_keys.is_empty() {
             full_prompt.push_str("Context from prior pipeline steps:\n");
             for (k, v) in &context_keys {
