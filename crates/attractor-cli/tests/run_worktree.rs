@@ -660,3 +660,170 @@ fn resume_recreates_a_deleted_worktree_from_its_branch() {
     assert!(!wt.exists());
     assert_eq!(fake.attempts("edit_commit"), 1);
 }
+
+// Directory mode (ticket 24): each phase is its own Run, and phase N+1's
+// branch starts at phase N's final commit; phase 1 starts at `--base`.
+
+/// Writes `phases` (file name, DOT) into a fresh `phases/` folder.
+fn write_phases(fake: &FakeAgent, phases: &[(&str, String)]) -> PathBuf {
+    let dir = fake.root().join("phases");
+    fs::create_dir_all(&dir).unwrap();
+    for (name, dot) in phases {
+        fs::write(dir.join(name), dot).unwrap();
+    }
+    dir
+}
+
+/// `pas run <dir>` on the repo with test agents allowed.
+fn run_phases_command(fake: &FakeAgent, dir: &Path, extra: &[&str]) -> std::process::Command {
+    let mut command = fake.pas_cli_command(&["run", dir.to_str().unwrap(), "--allow-test-agents"]);
+    command.arg("--workdir").arg(fake.repo()).args(extra);
+    command
+}
+
+/// The Run Index's entries, in order.
+fn index_entries(fake: &FakeAgent) -> Vec<serde_json::Value> {
+    fs::read_to_string(fake.root().join("state/runs.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+/// The Run folder of the one Run of phase file `name`, if it has started.
+fn phase_run_dir(fake: &FakeAgent, name: &str) -> Option<PathBuf> {
+    let runs: Vec<PathBuf> = index_entries(fake)
+        .iter()
+        .filter(|e| {
+            Path::new(e["pipeline_path"].as_str().unwrap())
+                .file_name()
+                .is_some_and(|f| f == name)
+        })
+        .map(|e| PathBuf::from(e["run_dir"].as_str().unwrap()))
+        .collect();
+    assert!(runs.len() <= 1, "{name} has several Runs: {runs:?}");
+    runs.into_iter().next()
+}
+
+/// The `run.json` of phase file `name`'s Run.
+fn phase_meta(fake: &FakeAgent, name: &str) -> serde_json::Value {
+    let run = phase_run_dir(fake, name).unwrap_or_else(|| panic!("no Run for {name}"));
+    serde_json::from_str(&fs::read_to_string(run.join("run.json")).unwrap()).unwrap()
+}
+
+/// The final commit of phase file `name`'s branch.
+fn phase_head(fake: &FakeAgent, name: &str) -> String {
+    fake.git(&[
+        "rev-parse",
+        phase_meta(fake, name)["branch"].as_str().unwrap(),
+    ])
+}
+
+#[test]
+fn each_phase_starts_from_the_previous_phase_result() {
+    let fake = FakeAgent::new();
+    let older = fake.git(&["rev-parse", "HEAD"]);
+    fake.git(&["commit", "-q", "--allow-empty", "-m", "newer"]);
+    let dir = write_phases(
+        &fake,
+        &[
+            ("01-one.dot", tool_node("echo one > one.txt")),
+            (
+                "02-two.dot",
+                tool_node("test -f one.txt && echo two > two.txt"),
+            ),
+        ],
+    );
+
+    let output = run_phases_command(&fake, &dir, &["--base", &older])
+        .output()
+        .unwrap();
+    assert_success(&output);
+
+    let one = phase_meta(&fake, "01-one.dot");
+    assert_eq!(one["base"], older.as_str());
+    assert_eq!(one["base_sha"], older.as_str(), "phase 1 starts at --base");
+    let two = phase_meta(&fake, "02-two.dot");
+    assert_eq!(
+        two["base_sha"],
+        phase_head(&fake, "01-one.dot").as_str(),
+        "phase 2 starts at phase 1's final commit"
+    );
+    let branch = two["branch"].as_str().unwrap();
+    assert_eq!(fake.git(&["show", &format!("{branch}:two.txt")]), "two");
+    assert_eq!(fake.git(&["show", &format!("{branch}:one.txt")]), "one");
+}
+
+#[test]
+fn a_stopped_phase_resumes_and_the_next_phase_chains_from_it() {
+    let fake = FakeAgent::new();
+    let gated = format!(
+        r#"digraph G {{
+            start [shape="Mdiamond"]
+            gate [shape="parallelogram", tool_command="touch at-gate; {wait}"]
+            step [shape="parallelogram", tool_command="test -f one.txt && echo two > two.txt"]
+            done [shape="Msquare"]
+            start -> gate -> step -> done
+        }}"#,
+        wait = wait_for_go!()
+    );
+    let dir = write_phases(
+        &fake,
+        &[
+            ("01-one.dot", tool_node("echo one > one.txt")),
+            ("02-two.dot", gated),
+            (
+                "03-three.dot",
+                tool_node("test -f one.txt && test -f two.txt && echo ok > seen"),
+            ),
+        ],
+    );
+
+    // Stop phase 2 at its gate.
+    let mut run = Spawned(run_phases_command(&fake, &dir, &[]).spawn().unwrap());
+    let wt = wait_until("phase 2 at its gate", || {
+        let run = phase_run_dir(&fake, "02-two.dot")?;
+        let meta: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(run.join("run.json")).ok()?).ok()?;
+        let wt = PathBuf::from(meta["worktree"].as_str()?);
+        wt.join("at-gate").exists().then_some(wt)
+    });
+    let run_id = phase_meta(&fake, "02-two.dot")["run_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let stop = fake.pas_cli(&["stop", &run_id]);
+    assert!(stop.status.success(), "{}", stderr(&stop));
+    fs::write(wt.join("go"), "").unwrap();
+    assert_eq!(run.wait().code(), Some(0), "a stopped batch exits 0");
+    assert!(phase_run_dir(&fake, "03-three.dot").is_none());
+
+    let output = run_phases_command(&fake, &dir, &[]).output().unwrap();
+    assert_success(&output);
+    assert!(
+        !stderr(&output).contains("warning"),
+        "the resume asks for phase 2's own base: {}",
+        stderr(&output)
+    );
+
+    // Phase 2 resumed its own Run, still chained from phase 1.
+    let two = phase_meta(&fake, "02-two.dot");
+    assert_eq!(two["run_id"], run_id.as_str());
+    assert_eq!(two["base_sha"], phase_head(&fake, "01-one.dot").as_str());
+    let two_events = fs::read_to_string(
+        phase_run_dir(&fake, "02-two.dot")
+            .unwrap()
+            .join("events.jsonl"),
+    )
+    .unwrap();
+    assert_eq!(two_events.matches(r#""type":"RunStarted""#).count(), 1);
+    // Phase 3 starts where the resumed phase 2 ended.
+    let three = phase_meta(&fake, "03-three.dot");
+    assert_eq!(
+        three["base_sha"],
+        phase_head(&fake, "02-two.dot").as_str(),
+        "phase 3 starts at phase 2's final commit"
+    );
+    let branch = three["branch"].as_str().unwrap();
+    assert_eq!(fake.git(&["show", &format!("{branch}:seen")]), "ok");
+}

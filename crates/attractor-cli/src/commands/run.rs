@@ -724,9 +724,10 @@ struct PreparedRun {
 }
 
 /// How a `pas run` that did not fail ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunEnd {
-    Completed,
+    /// `branch` is the Run's branch, `None` for a Run outside a worktree.
+    Completed { branch: Option<String> },
     /// A stop request ended the Attempt between stages; the Run can resume.
     Stopped,
 }
@@ -923,7 +924,9 @@ pub async fn cmd_run(
         say!(json, "Total cost: ${:.4}", result.total_cost);
     }
 
-    Ok(RunEnd::Completed)
+    Ok(RunEnd::Completed {
+        branch: worktree.map(|wt| wt.branch),
+    })
 }
 
 /// Validate the invocation and the plan, decide the Run, create its folder,
@@ -1272,6 +1275,9 @@ pub async fn cmd_run_dir(
     }
 
     let mut manifest = load_manifest(&manifest_path)?;
+    // Phase 1 starts at --base; each later phase at the previous phase's
+    // branch, which the manifest keeps for a resumed batch.
+    let mut phase_invocation = invocation.clone();
 
     println!(
         "Running {} pipeline(s) from {} (lexical order)",
@@ -1305,6 +1311,9 @@ pub async fn cmd_run_dir(
         println!("\n[{}/{}] {}", i + 1, dot_files.len(), name);
         manifest.current = Some(name.clone());
         save_manifest(&manifest, &manifest_path)?;
+        if let Some(base) = &manifest.base {
+            phase_invocation.base = Some(base.clone());
+        }
 
         let end = cmd_run(
             dot_file,
@@ -1315,15 +1324,21 @@ pub async fn cmd_run_dir(
             max_steps,
             fresh, // propagate --fresh to clear per-pipeline checkpoints
             codergen_claude,
-            invocation, // each pipeline gets its own Run
+            &phase_invocation, // each pipeline gets its own Run
         )
         .await?;
 
-        if end == RunEnd::Stopped {
-            println!("\nStopped; rerun to resume");
-            return Ok(());
-        }
+        let branch = match end {
+            RunEnd::Stopped => {
+                println!("\nStopped; rerun to resume");
+                return Ok(());
+            }
+            RunEnd::Completed { branch } => branch,
+        };
 
+        if branch.is_some() {
+            manifest.base = branch;
+        }
         manifest.completed.push(name);
         manifest.current = None;
         save_manifest(&manifest, &manifest_path)?;
@@ -1346,6 +1361,9 @@ pub async fn cmd_run_dir(
 struct RunManifest {
     completed: Vec<String>,
     current: Option<String>,
+    /// The branch of the last completed phase: the next phase's base.
+    #[serde(default)]
+    base: Option<String>,
 }
 
 fn stable_manifest_dir(dir: &std::path::Path) -> PathBuf {

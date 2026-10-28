@@ -21,6 +21,6 @@ Restore that:
 
 **Status:** open
 
-- [ ] Phase 2's worktree has phase 1's committed edit (seam 2, fakes)
-- [ ] Phase 1 starts from `--base`
-- [ ] Stop during phase 2, rerun: phase 2 resumes, phase 3 chains from it
+- [x] Phase 2's worktree has phase 1's committed edit (seam 2, fakes)
+- [x] Phase 1 starts from `--base`
+- [x] Stop during phase 2, rerun: phase 2 resumes, phase 3 chains from it

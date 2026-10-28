@@ -90,7 +90,7 @@ When `--workdir` is inside a git repository, each Run works in its own git workt
 - **Interrupted attempts:** if `pas` ended during an attempt (killed, crashed, or stopped with SIGTERM), a resume first commits what that attempt left (`Pas-Status: interrupted`), when the worktree has changes or the agent committed during it, even if the node has no attempts left. The node's next attempt is told so in its prompt: `Your previous attempt was interrupted; its changes since <start> are recorded in commit <sha>. Review git diff <start> before continuing.`, where `<start>` is the worktree's commit when the interrupted attempt began. An interrupted attempt still counts toward `max_retries`, except one ended by a stop (SIGTERM), which does not. Attempt numbers (`Pas-Attempt`, `PAS_ATTEMPT`) never repeat within a visit of a node: the attempt after an interrupted attempt 1 is attempt 2, whether or not attempt 1 counted.
 - **The previous failure in the prompt:** when an agent node runs again after its last finished attempt failed, its prompt gets one note after the `Task (...)` line naming that failure's class and reason: `The previous attempt timed out after 600 s.`, `The previous attempt failed (reported): <the agent's own error text>`, `The previous attempt failed (crash): <the crash message>`, or `The previous attempt asked to be retried: <notes>`. The reason keeps its last 2000 bytes. The note applies to whichever attempt of the node comes next: a retry, a loop back through an edge (a reported failure is never retried, so it re-runs only through an edge such as `work -> work [condition="outcome=fail"]`), or the first attempt after a resume. A run after a success gets none, a stopped attempt changes nothing, and no other node's prompt sees it. With 07's interrupted note too, the failure note comes first. Retry rules don't change.
 - **End of run:** when the Run succeeds, its worktree is removed (`git worktree remove`) and its branch stays, so the result is `git log pas/run/<run-id>`. A worktree with uncommitted changes outside `.pas/`, or one another process is working in (`--allow-shared-workdir`), is kept instead, with a warning in `final.json`. A failed or stopped Run keeps both the worktree and the branch, for a resume or a look. The branch is never deleted.
-- **Directory mode:** each `.dot` file is its own Run, so each phase gets its own worktree from `--base`, and a phase does not see an earlier phase's edits.
+- **Directory mode:** each `.dot` file (a phase) is its own Run with its own worktree and branch. Phase 1's branch starts at `--base`; each later phase's branch starts at the previous phase's final commit (its branch, recorded as the phase's `base`), so a phase sees every earlier phase's committed edits. See [Directory mode](#directory-mode).
 - **Not a git repository** (or `git` not on `PATH`), or **`--dry-run`:** the Run works in `--workdir` itself, as before; outside git it prints a `not a git repository` warning.
 
 `run.json` records `worktree`, `branch`, `base` (the ref as given) and `base_sha` for a Run in a worktree, and `warnings`. Its `workdir` stays the source directory.
@@ -159,6 +159,8 @@ Every end the `pas run` process lives through writes `runs/<run-id>/final.json` 
 #### Directory mode
 
 When `PIPELINE` is a directory, `run` collects all `*.dot` files and executes them sequentially in lexical order. Use zero-padded names to control execution order (`phase-01.dot`, `phase-02.dot`, `phase-11.dot`). Checkpoints apply per-pipeline within the run. Each Pipeline takes and releases its own locks.
+
+Each phase is its own Run (own journal, locks, worktree and branch), chained: phase 1 starts at `--base`, and phase N+1 starts at phase N's final commit, so it builds on phase N's result. A batch stopped in a phase resumes on a rerun: completed phases are skipped, the stopped phase resumes on its own branch, and the phases after it chain from where it ends. `--fresh` starts the whole batch again from `--base`. Outside a git repository, or with `--dry-run`, all phases work in `--workdir` itself.
 
 #### Output
 
@@ -1157,7 +1159,7 @@ pas launch <DOCS_DIR> [OPTIONS]
 
 1. **Generate** — discovers `*-spec.md` files in `DOCS_DIR`, pairs each with a `*-prd.md` if one exists (matched by replacing `-spec` with `-prd`), and generates one `.dot` pipeline per spec. Files are sorted lexically — use zero-padded prefixes to control order (`phase-01-spec.md`, `phase-02-spec.md`).
 2. **Validate** — runs all lint rules against every generated pipeline. Stops if any pipeline has errors.
-3. **Run** — executes each validated pipeline sequentially with checkpoint/resume.
+3. **Run** — executes each validated pipeline sequentially with checkpoint/resume, each phase starting from the previous phase's result, as in `pas run`'s [Directory mode](#directory-mode).
 
 #### Exit codes
 

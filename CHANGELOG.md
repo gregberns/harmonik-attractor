@@ -53,6 +53,10 @@ All notable changes to PAS are documented here.
   Claude Code session's identity variables.
 - The default `env.remove` list also strips `GEMINI_API_KEY` and
   `GOOGLE_API_KEY`, like the Anthropic and OpenAI keys.
+- **Chained phases.** In directory mode (`pas run <dir>`, `pas launch`)
+  each phase is still its own Run, but phase N+1's branch starts at phase
+  N's final commit instead of `--base`, so it sees phase N's edits. Phase 1
+  starts at `--base`; a resumed batch keeps the chain.
 - Codex and Gemini run through handler crates and profiles; the old
   `LlmProvider` path is gone.
 - A timeout's error names the node, the attempt and the transcript and
