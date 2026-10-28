@@ -13,7 +13,7 @@ has no line over 80 characters.
 
 **Blocked by:** none
 
-**Status:** in review
+**Status:** done
 
 - [ ] `plans/README.md` lists both plans; the new plan has its ticket table
 - [ ] 2026-10-04-attractor README: 03 shows its deferred step 8; links the follow-up plan
