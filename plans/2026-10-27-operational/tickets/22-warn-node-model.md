@@ -16,7 +16,7 @@ Don't start accepting `model` on nodes; that would change the dialect.
 
 **Blocked by:** none
 
-**Status:** open
+**Status:** done
 
 - [x] A node with `model="haiku"` gets the warning in validate and run
 - [x] A node with `llm_model` and a graph with `model` get no warning

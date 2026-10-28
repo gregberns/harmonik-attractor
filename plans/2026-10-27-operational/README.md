@@ -26,7 +26,7 @@ In priority order. The integrator marks a ticket done here when merging it.
 | 19 | [Small fixes: context order, cost warning, profile cycles](tickets/19-small-fixes.md) | 13 | done |
 | 20 | [Flaky tests and test hygiene](tickets/20-flaky-tests.md) | 13 | done |
 | 21 | [Strip the Gemini API keys like the others](tickets/21-strip-gemini-keys.md) | none | done |
-| 22 | [Warn when a node sets `model` instead of `llm_model`](tickets/22-warn-node-model.md) | none | open |
+| 22 | [Warn when a node sets `model` instead of `llm_model`](tickets/22-warn-node-model.md) | none | done |
 
 ## Waiting on the operator
 
