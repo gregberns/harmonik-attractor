@@ -40,7 +40,7 @@ and dropping upper time bounds:
 
 **Blocked by:** 13
 
-**Status:** backlog (operator: not an immediate priority)
+**Status:** done
 
 - [x] Each listed test passes 20x under load (a busy-loop load script)
 - [x] No test writes into the source tree

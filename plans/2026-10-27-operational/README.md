@@ -24,7 +24,7 @@ In priority order. The integrator marks a ticket done here when merging it.
 | 17 | [Docs match the code](tickets/17-docs-drift.md) | 14, 15, 16 | done |
 | 18 | [Keep the session id when pas is killed mid-attempt](tickets/18-session-id-at-start.md) | 13 | done |
 | 19 | [Small fixes: context order, cost warning, profile cycles](tickets/19-small-fixes.md) | 13 | done |
-| 20 | [Flaky tests and test hygiene](tickets/20-flaky-tests.md) | 13 | backlog |
+| 20 | [Flaky tests and test hygiene](tickets/20-flaky-tests.md) | 13 | done |
 
 ## Waiting on the operator
 
