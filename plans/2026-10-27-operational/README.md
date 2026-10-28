@@ -27,18 +27,16 @@ In priority order. The integrator marks a ticket done here when merging it.
 | 20 | [Flaky tests and test hygiene](tickets/20-flaky-tests.md) | 13 | done |
 | 21 | [Strip the Gemini API keys like the others](tickets/21-strip-gemini-keys.md) | none | done |
 | 22 | [Warn when a node sets `model` instead of `llm_model`](tickets/22-warn-node-model.md) | none | done |
+| 23 | [Claude agents can't reach the operator's other sessions](tickets/23-no-cross-session-tools.md) | none | open |
+| 24 | [Directory mode: each phase starts from the previous phase's result](tickets/24-chain-phases.md) | none | open |
 
 ## Waiting on the operator
 
 These change how the product behaves, so they are not tickets yet. Each
 "yes" becomes a ticket here.
 
-1. **Directory mode chains phases?** Since ticket 06 each phase of
-   `pas run <dir>` (and so `pas launch`) starts from `--base`, and a phase
-   doesn't see the previous one's edits (docs/cli-reference.md:93). Before,
-   phases shared one workdir. Recommended: start phase N+1's branch at
-   phase N's final commit. A phase is a whole `.dot` file; nodes inside
-   one `.dot` already share one branch.
+1. **Directory mode chains phases?** Decided: yes (captain, 2026-10-28; it
+   restores the pre-06 behaviour `pas launch` relies on). Ticket 24.
 2. **A first real run.** Done 2026-10-27 at bd0592d: claude haiku, a tool
    check, one loop-back (the claude session resumed), codex, a final check;
    one commit per node, $0.003. Findings: ticket 22 and item 14. Not yet
@@ -74,11 +72,15 @@ These change how the product behaves, so they are not tickets yet. Each
     lives in harmonik-v3.
 13. **Strip the Gemini API keys?** Operator: yes, keep the providers in
     sync; Google isn't supported yet, so no `gemini-api` recipe. Ticket 21.
-14. **Agents see the operator's Claude setup.** A `claude` node loads the
-    operator's `~/.claude` plugins and hooks and gets every tool the
-    operator's session has, including `SendMessage`, `ListAgents` and
-    `Workflow`: a pipeline agent can message the operator's other live
-    sessions (the hk3 crew). Options: a default `--disallowedTools` list in
-    the `claude` profile, or isolate user settings with
-    `--setting-sources project`. Recommended: isolate, since a
-    pipeline should run the same on every machine.
+14. **Agents see the operator's Claude setup.** Checked with a wrapper:
+    `--safe-mode` is passed and drops the operator's skills, but Claude's
+    built-in session tools (`SendMessage`, `ListAgents`, `Workflow`) stay.
+    Operator: blocking messaging is right. Ticket 23.
+15. **Configure what each agent starts with, like hk3 roles.** hk3 gives
+    each role a `--settings` file and a `--plugin-dir` of its skills.
+    PAS can do this today only globally (`[codergen.claude]`: settings,
+    tools, plugin dirs) or by rewriting a profile's whole `args`.
+    Operator: wants it. Proposed: `settings`, `plugin_dirs`, `tools` and
+    `disallowed_tools` as `claude` profile fields, so a `reviewer` profile
+    (`inherit_from = "claude"`) carries its own skills. Needs a short design
+    before a ticket; after 23.
