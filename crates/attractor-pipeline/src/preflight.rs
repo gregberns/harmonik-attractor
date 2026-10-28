@@ -11,6 +11,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use attractor_agent_handler::Agents;
 use attractor_quality::resolution::{resolve, ResolutionError};
 
 use crate::execution_plan::{ExecutionPlan, HandlerIdentity, ResolvedNodeKind};
@@ -44,13 +45,14 @@ pub struct PreflightFinding {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Run all preflight checks for `graph` against the given `workdir`.
+/// Run all preflight checks for `graph` against the given `workdir`, with
+/// `agents` to say which nodes' agents report no cost.
 ///
 /// Returns a list of findings (empty = all clear).  Resolution of the quality
 /// manifest is performed at most once regardless of how many quality nodes the
 /// graph contains.
-pub fn run(graph: &PipelineGraph, workdir: &Path) -> Vec<PreflightFinding> {
-    run_with_budget(graph, workdir, None)
+pub fn run(graph: &PipelineGraph, workdir: &Path, agents: &Agents) -> Vec<PreflightFinding> {
+    run_with_budget(graph, workdir, None, agents)
 }
 
 /// Run preflight checks with the optional budget supplied by the caller.
@@ -58,9 +60,10 @@ pub fn run_with_budget(
     graph: &PipelineGraph,
     workdir: &Path,
     max_budget_usd: Option<f64>,
+    agents: &Agents,
 ) -> Vec<PreflightFinding> {
     match ExecutionPlan::compile(graph.clone()) {
-        Ok(plan) => run_plan_with_budget(&plan, workdir, max_budget_usd),
+        Ok(plan) => run_plan_with_budget(&plan, workdir, max_budget_usd, agents),
         Err(error) => vec![PreflightFinding {
             severity: Severity::Error,
             code: "SEMANTIC_COMPILATION_FAILED".into(),
@@ -71,30 +74,32 @@ pub fn run_with_budget(
     }
 }
 
-pub fn run_plan(plan: &ExecutionPlan, workdir: &Path) -> Vec<PreflightFinding> {
-    run_plan_with_budget(plan, workdir, None)
+pub fn run_plan(plan: &ExecutionPlan, workdir: &Path, agents: &Agents) -> Vec<PreflightFinding> {
+    run_plan_with_budget(plan, workdir, None, agents)
 }
 
 pub fn run_plan_with_budget(
     plan: &ExecutionPlan,
     workdir: &Path,
     max_budget_usd: Option<f64>,
+    agents: &Agents,
 ) -> Vec<PreflightFinding> {
     let (budget, source) = match max_budget_usd {
         Some(budget) => (budget, ConfigurationSource::Caller),
         None => (DEFAULT_MAX_BUDGET_USD, ConfigurationSource::BuiltIn),
     };
-    run_plan_inner(plan, workdir, budget, source, None)
+    run_plan_inner(plan, workdir, budget, source, None, agents)
 }
 
 /// Run preflight against the exact immutable configuration used by execution.
-pub fn run_configuration(configured: &RunConfiguration) -> Vec<PreflightFinding> {
+pub fn run_configuration(configured: &RunConfiguration, agents: &Agents) -> Vec<PreflightFinding> {
     run_plan_inner(
         configured.plan(),
         configured.controls().workdir().value(),
         *configured.controls().max_budget_usd().value(),
         configured.controls().max_budget_usd().source(),
         Some(configured.controls().manifest().is_some()),
+        agents,
     )
 }
 
@@ -104,6 +109,7 @@ fn run_plan_inner(
     max_budget_usd: f64,
     budget_source: ConfigurationSource,
     prepared_manifest_present: Option<bool>,
+    agents: &Agents,
 ) -> Vec<PreflightFinding> {
     let mut findings = Vec::new();
 
@@ -123,11 +129,10 @@ fn run_plan_inner(
         });
     }
 
-    // Codex CLI and Gemini CLI JSON output does not report a dollar cost, so
-    // these nodes always contribute $0 to the pipeline's cost total and
-    // budget check, even though real spend occurred. Warn once per provider.
-    for (provider_name, node_count) in uncosted_provider_counts(plan) {
-        let display_name = provider_display_name(&provider_name);
+    // Some agents (Codex CLI, Gemini CLI) report no dollar cost, so their
+    // nodes always contribute $0 to the pipeline's cost total and budget
+    // check, even though real spend occurred. Warn once per handler.
+    for (display_name, node_count) in uncosted_handler_counts(plan, agents) {
         let node_label = if node_count == 1 { "node" } else { "nodes" };
         let budget_description = match budget_source {
             ConfigurationSource::Caller => {
@@ -239,30 +244,21 @@ fn nodes_missing_timeout(plan: &ExecutionPlan) -> Vec<String> {
         .collect()
 }
 
-/// The built-in agent profiles whose agents never report a per-call dollar
-/// cost.
-const UNCOSTED_PROFILES: [&str; 2] = ["codex", "gemini"];
-
-/// Counts nodes by agent profile when that profile is one of
-/// [`UNCOSTED_PROFILES`].
-fn uncosted_provider_counts(plan: &ExecutionPlan) -> BTreeMap<String, usize> {
+/// Counts nodes by their handler's display name when the handler of their
+/// agent profile reports no per-call dollar cost. An unknown profile is not
+/// counted (`check_agents` reports it).
+fn uncosted_handler_counts(plan: &ExecutionPlan, agents: &Agents) -> BTreeMap<&'static str, usize> {
     plan.all_nodes().fold(BTreeMap::new(), |mut counts, node| {
         let Some(agent) = &node.agent else {
             return counts;
         };
-        if UNCOSTED_PROFILES.contains(&agent.profile.as_str()) {
-            *counts.entry(agent.profile.clone()).or_default() += 1;
+        if agents.reports_cost(&agent.profile) == Some(false) {
+            if let Some(name) = agents.display_name(&agent.profile) {
+                *counts.entry(name).or_default() += 1;
+            }
         }
         counts
     })
-}
-
-fn provider_display_name(provider: &str) -> &str {
-    match provider {
-        "codex" => "Codex",
-        "gemini" => "Gemini",
-        _ => provider,
-    }
 }
 
 /// Returns `true` if any node in `graph` is dispatched to the `quality` handler.
@@ -339,7 +335,7 @@ mod tests {
         workdir_with_git_and_manifest(&tmp);
 
         let graph = make_graph_with_quality_node();
-        let findings = run(&graph, tmp.path());
+        let findings = run(&graph, tmp.path(), &agents());
         assert!(
             findings.is_empty(),
             "expected no findings, got: {:?}",
@@ -354,7 +350,7 @@ mod tests {
         workdir_with_git_no_manifest(&tmp);
 
         let graph = make_graph_with_quality_node();
-        let findings = run(&graph, tmp.path());
+        let findings = run(&graph, tmp.path(), &agents());
 
         assert_eq!(
             findings.len(),
@@ -374,7 +370,7 @@ mod tests {
         workdir_with_git_no_manifest(&tmp);
 
         let graph = make_graph_without_quality_node();
-        let findings = run(&graph, tmp.path());
+        let findings = run(&graph, tmp.path(), &agents());
         assert!(
             findings.is_empty(),
             "expected no findings when no quality node, got: {:?}",
@@ -398,7 +394,7 @@ mod tests {
         )
         .unwrap();
 
-        let findings = run(&graph, tmp.path());
+        let findings = run(&graph, tmp.path(), &agents());
 
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, Severity::Error);
@@ -418,7 +414,7 @@ mod tests {
 
         let graph = make_graph_with_quality_node();
         for i in 0..10 {
-            let findings = run(&graph, tmp.path());
+            let findings = run(&graph, tmp.path(), &agents());
             assert_eq!(
                 findings.len(),
                 1,
@@ -457,10 +453,15 @@ mod tests {
 
     // ---- CODERGEN_NO_TIMEOUT tests ----
 
+    /// The built-in profiles on the shipped handlers (never run here).
+    fn agents() -> std::sync::Arc<Agents> {
+        crate::handlers::tests::stub_agents(Path::new("/bin/false"))
+    }
+
     fn run_no_manifest(graph: &PipelineGraph) -> Vec<PreflightFinding> {
         let tmp = TempDir::new().unwrap();
         workdir_with_git_no_manifest(&tmp);
-        run(graph, tmp.path())
+        run(graph, tmp.path(), &agents())
     }
 
     /// A box-shaped (codergen) node with no timeout and no graph-level default
@@ -627,7 +628,7 @@ mod tests {
         );
         assert_eq!(findings[0].code, "PROVIDER_COST_UNTRACKED");
         assert_eq!(findings[0].severity, Severity::Warn);
-        assert!(findings[0].message.contains("2 Codex nodes"));
+        assert!(findings[0].message.contains("2 Codex CLI nodes"));
         assert!(findings[0].message.contains("implicit $200"));
         assert!(!findings[0].message.contains("--max-budget-usd"));
     }
@@ -644,7 +645,7 @@ mod tests {
         let graph = PipelineGraph::from_dot(parsed).unwrap();
         let tmp = TempDir::new().unwrap();
 
-        let findings = run_with_budget(&graph, tmp.path(), Some(42.5));
+        let findings = run_with_budget(&graph, tmp.path(), Some(42.5), &agents());
 
         assert_eq!(findings.len(), 1);
         assert!(findings[0].message.contains("explicit $42.50 budget"));
@@ -669,10 +670,10 @@ mod tests {
         assert_eq!(findings.len(), 2);
         assert!(findings
             .iter()
-            .any(|finding| finding.message.contains("1 Codex node")));
+            .any(|finding| finding.message.contains("1 Codex CLI node")));
         assert!(findings
             .iter()
-            .any(|finding| finding.message.contains("1 Gemini node")));
+            .any(|finding| finding.message.contains("1 Gemini CLI node")));
         assert!(findings
             .iter()
             .all(|finding| !finding.message.contains("Claude")));
@@ -735,7 +736,7 @@ mod tests {
         let parsed = attractor_dot::parse(dot).unwrap();
         let graph = PipelineGraph::from_dot(parsed).unwrap();
 
-        let findings = run(&graph, tmp.path());
+        let findings = run(&graph, tmp.path(), &agents());
         assert_eq!(findings.len(), 2, "expected 2 findings: {findings:?}");
         let codes: Vec<&str> = findings.iter().map(|f| f.code.as_str()).collect();
         assert!(codes.contains(&"CODERGEN_NO_TIMEOUT"));

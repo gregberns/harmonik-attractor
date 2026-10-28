@@ -306,6 +306,22 @@ fn custom_handler_capability_controls_provider_requirement_and_normalization() {
     assert_eq!(plan.node("review").unwrap().profile(), Some("codex"));
 }
 
+/// The built-in agent profiles on the shipped handlers, for preflight's
+/// cost check (no agent runs).
+fn builtin_agents() -> attractor_agent_handler::Agents {
+    attractor_agent_handler::Agents::new(
+        vec![
+            std::sync::Arc::new(attractor_handler_claude_p::ClaudeP::default()),
+            std::sync::Arc::new(attractor_handler_codex_exec::CodexExec),
+            std::sync::Arc::new(attractor_handler_gemini::Gemini::default()),
+        ],
+        attractor_agent_handler::builtin_profiles().unwrap(),
+        Default::default(),
+        false,
+    )
+    .unwrap()
+}
+
 fn graph(dot: &str) -> PipelineGraph {
     PipelineGraph::from_dot(attractor_dot::parse(dot).unwrap()).unwrap()
 }
@@ -577,7 +593,7 @@ async fn supported_matrix_agrees_across_all_semantic_consumers() {
         );
 
         let workdir = tempfile::tempdir().unwrap();
-        let preflight = preflight_run_plan(&plan, workdir.path());
+        let preflight = preflight_run_plan(&plan, workdir.path(), &builtin_agents());
         assert_eq!(
             preflight
                 .iter()
@@ -657,10 +673,10 @@ async fn one_compiled_plan_drives_validation_preflight_dispatch_and_execution() 
 
     assert!(validate_plan(&plan).is_empty());
     let workdir = tempfile::tempdir().unwrap();
-    let findings = preflight_run_plan(&plan, workdir.path());
+    let findings = preflight_run_plan(&plan, workdir.path(), &builtin_agents());
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].code, "PROVIDER_COST_UNTRACKED");
-    assert!(findings[0].message.contains("Codex"));
+    assert!(findings[0].message.contains("Codex CLI"));
 
     let calls = Arc::new(Mutex::new(Vec::new()));
     let mut registry = HandlerRegistry::new();

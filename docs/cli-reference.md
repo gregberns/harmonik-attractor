@@ -41,7 +41,7 @@ pas run <PIPELINE> [OPTIONS]
 | `--base <REF>` | — | `HEAD` | Commit, branch or tag a new Run's branch starts at. Ignored on resume. |
 | `--worktree-root <DIR>` | — | `[run] worktree_root` in `pas.toml`, else `<project-root>/.pas/worktrees` | Folder for the Runs' worktrees; each Run's is `<DIR>/<run-id>`. Relative to the current directory. Ignored on resume. |
 | `--dry-run` | — | false | Parse and validate the pipeline without executing provider processes or tools; no cost is incurred. |
-| `--max-budget-usd <AMOUNT>` | — | $200 | Maximum tracked spend across all nodes. Pipeline aborts with an error if exceeded. Codex and Gemini CLI calls report no dollar cost and therefore do not count toward this limit; use `--max-steps` to bound them. |
+| `--max-budget-usd <AMOUNT>` | — | $200 | Maximum tracked spend across all nodes. Pipeline aborts with an error if exceeded. Codex and Gemini CLI calls report no dollar cost and therefore do not count toward this limit; use `--max-steps` to bound them. Before it starts, `pas run` warns (`PROVIDER_COST_UNTRACKED`) once per such handler, counting every node whose profile uses it, whatever the profile's name (a `codex-api` profile that inherits `codex` counts). |
 | `--max-steps <COUNT>` | — | 200 | Maximum number of node executions before aborting. Prevents runaway loops. A 6-node pipeline that loops 3 times = 18 steps. |
 | `--fresh` | — | false | Discard any saved checkpoint and start from the beginning. By default, re-running the same command resumes from the last completed node. |
 | `--codergen-claude-settings-mode <MODE>` | — | `subscription-bare` | Claude settings mode for `codergen` nodes: `subscription-bare`, `strict-bare`, or `inherit`. |

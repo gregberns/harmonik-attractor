@@ -8,6 +8,22 @@ use attractor_pipeline::{
 use attractor_types::{Context, Outcome, Result};
 use std::collections::HashMap;
 
+/// The built-in agent profiles on the shipped handlers, for preflight's
+/// cost check (no agent runs).
+fn builtin_agents() -> attractor_agent_handler::Agents {
+    attractor_agent_handler::Agents::new(
+        vec![
+            std::sync::Arc::new(attractor_handler_claude_p::ClaudeP::default()),
+            std::sync::Arc::new(attractor_handler_codex_exec::CodexExec),
+            std::sync::Arc::new(attractor_handler_gemini::Gemini::default()),
+        ],
+        attractor_agent_handler::builtin_profiles().unwrap(),
+        Default::default(),
+        false,
+    )
+    .unwrap()
+}
+
 fn plan(source: &str) -> ExecutionPlan {
     ExecutionPlan::compile(graph(source)).unwrap()
 }
@@ -444,7 +460,7 @@ async fn legacy_checkpoint_restores_workflow_but_cannot_restore_controls() {
     let checkpoint = attractor_pipeline::PipelineCheckpoint::new(
         "inspect".into(),
         vec!["start".into()],
-        HashMap::new(),
+        Default::default(),
         checkpoint_context,
     );
     attractor_pipeline::save_checkpoint(&checkpoint, logs.path())
@@ -801,7 +817,7 @@ fn prepared_preflight_preserves_built_in_and_caller_budget_provenance() {
     );
 
     let built_in = RunConfiguration::prepare(plan.clone(), ExecutionOptions::default()).unwrap();
-    let built_in_warning = preflight_run_configuration(&built_in)
+    let built_in_warning = preflight_run_configuration(&built_in, &builtin_agents())
         .into_iter()
         .find(|finding| finding.code == "PROVIDER_COST_UNTRACKED")
         .unwrap();
@@ -824,7 +840,7 @@ fn prepared_preflight_preserves_built_in_and_caller_budget_provenance() {
         },
     )
     .unwrap();
-    let caller_warning = preflight_run_configuration(&caller)
+    let caller_warning = preflight_run_configuration(&caller, &builtin_agents())
         .into_iter()
         .find(|finding| finding.code == "PROVIDER_COST_UNTRACKED")
         .unwrap();

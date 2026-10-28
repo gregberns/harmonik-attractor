@@ -216,3 +216,39 @@ fn the_codex_api_key_is_stripped_from_the_agent() {
     assert_success(&output);
     assert!(!fake.env_logs()[0].contains_key("OPENAI_API_KEY"));
 }
+
+// Ticket 19: the no-cost warning follows the profile's handler, not its
+// name: `codex-api` (inherits codex) warns, and a profile named `codex`
+// that uses claude-p doesn't.
+#[test]
+fn the_cost_warning_follows_the_handler_not_the_profile_name() {
+    let inherits_codex = cost_warnings(
+        "[agents.codex-api]\ninherit_from = \"fake-codex\"\n",
+        "codex-api",
+    );
+    assert_eq!(inherits_codex.len(), 1, "{inherits_codex:?}");
+    assert!(
+        inherits_codex[0].contains("cannot track 1 Codex CLI node."),
+        "{inherits_codex:?}"
+    );
+
+    let named_codex = cost_warnings("[agents.codex]\ninherit_from = \"fake-claude\"\n", "codex");
+    assert!(named_codex.is_empty(), "{named_codex:?}");
+}
+
+/// The PROVIDER_COST_UNTRACKED lines of a dry run of one node on
+/// `profile`, with `agents` added to the harness's `pas.toml`.
+fn cost_warnings(agents: &str, profile: &str) -> Vec<String> {
+    let fake = FakeAgent::new();
+    fake.write_pas_toml(agents);
+    let output = fake.run_with(
+        &one_node(&format!("agent=\"{profile}\", prompt=\"p\"")),
+        &["--dry-run"],
+    );
+    assert_success(&output);
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| line.contains("PROVIDER_COST_UNTRACKED"))
+        .map(str::to_owned)
+        .collect()
+}

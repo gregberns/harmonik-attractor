@@ -968,7 +968,7 @@ async fn prepare_run(
     // Preflight checks: environment-level warnings that don't fail validation
     // but can cause silent problems at runtime (e.g. a codergen node with no
     // timeout falling back to the hardcoded 600s kill).
-    for finding in attractor_pipeline::preflight_run_configuration(&configured) {
+    for finding in attractor_pipeline::preflight_run_configuration(&configured, &agents) {
         let severity = match finding.severity {
             attractor_pipeline::PreflightSeverity::Warn => "WARN",
             attractor_pipeline::PreflightSeverity::Error => "ERROR",
