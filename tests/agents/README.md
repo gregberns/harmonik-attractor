@@ -70,7 +70,7 @@ In `$FAKE_AGENT_SCENARIOS`:
 |---|---|
 | `attempts.<scenario>` | how many times this scenario started |
 | `starts.<PAS_NODE_ID>` | how many times this node started (the start counter above) |
-| `env.log` | per start: a `--- start` line, a `FAKE_PID=<pid>` line (the fake's own pid: PAS execs it directly, so this is the agent's pid), then the sorted `PAS_*`, `ANTHROPIC_*`, `OPENAI_*` and `CLAUDE_CODE_USE_*` environment variables |
+| `env.log` | per start: a `--- start` line, a `FAKE_PID=<pid>` line (the fake's own pid: PAS execs it directly, so this is the agent's pid), then the sorted `PAS_*`, `ANTHROPIC_*`, `OPENAI_*` and `CLAUDE_CODE_*` environment variables, and (fake-claude only) the session identity ones PAS strips: `CLAUDECODE`, `CLAUDE_PID`, `CLAUDE_EFFORT`, `HK3_*`, `KEEPER_*`, `HARMONIK_AGENT` |
 | `invocations.log` | per start: a `--- start` line, then each argument on its own line, without the `-p` value |
 | `prompts.log` | per start: a `--- start` line, then the full `-p` prompt |
 | `prompt.<PAS_NODE_ID>.<PAS_ATTEMPT>` | per start when both variables are set: the full `-p` prompt and a newline, overwritten on each start of that attempt |

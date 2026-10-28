@@ -398,7 +398,7 @@ test_only = true
 | `timeout` | How long an invocation may run when the node sets no `timeout` (built-in `10m`). |
 | `kill_grace` | How long to wait after TERM before KILL, on timeout or stop (built-in `10s`). |
 | `rate_limit_window` | How long a rate-limited invocation may keep waiting and re-spawning, from its first rate limit, on top of its timeout (built-in `2m`; `"0s"` turns waiting off). See [Rate limits](#rate-limits). |
-| `env.remove` | Variables removed from the agent's environment. |
+| `env.remove` | Variables removed from the agent's environment, on top of the calling session's identity, which is always removed (below). |
 | `env.set` | Variables set in the agent's environment, after `env.remove`; the `PAS_*` ids are set last. Values are literal and committed with `pas.toml`: never secrets. |
 | `test_only` | Refused unless `pas run` / `pas validate` get `--allow-test-agents`. |
 | `inherit_from` | Another profile to take every field this one leaves unset from. |
@@ -420,6 +420,20 @@ bad duration fails `pas run` and `pas validate`, naming the profile.
 > env.remove = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
 >               "OPENAI_API_KEY", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]
 > ```
+
+**The calling session's identity.** Whatever a profile's `env.remove`
+says, PAS always strips the identity of the Claude Code or hk3 session that
+ran `pas`, so an agent's `hk3 crew` command doesn't act as that session and
+a child `claude` stays messageable: `CLAUDECODE`, `CLAUDE_PID`,
+`CLAUDE_EFFORT`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_SESSION_ID`,
+`CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN`,
+`CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_EXECPATH`,
+`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`, `CLAUDE_CODE_SESSION_ATTENDED`,
+`HARMONIK_AGENT`, and every `HK3_*` and `KEEPER_*` variable. This is the set
+hk3 strips for its own agents, except that other `CLAUDE_CODE_*` variables
+(user settings such as `CLAUDE_CODE_MAX_OUTPUT_TOKENS`) pass as before. The
+list isn't configurable; a profile's `env.set` can still set any of these
+names on purpose. The prompt file's env names show what the agent got.
 
 On a node, `llm_model` beats the profile's `model`, which beats the graph's
 `model`; `reasoning_effort` beats the profile's `reasoning`; `timeout` beats

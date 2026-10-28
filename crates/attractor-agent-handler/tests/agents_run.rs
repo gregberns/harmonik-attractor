@@ -952,3 +952,80 @@ async fn the_hard_deadline_leaves_room_for_the_rate_limit_window() {
     // timeout 100 + window 200 + kill_grace 50 + margin 50.
     assert_eq!(result.detail, "handler did not return within 400ms");
 }
+
+/// The parent session's identity, two user settings that pass, and one name
+/// the test profile removes.
+fn parent_with_session_identity() -> BTreeMap<String, String> {
+    env(&[
+        ("CLAUDECODE", "1"),
+        ("CLAUDE_CODE_MESSAGING_TOKEN", "tok"),
+        ("HK3_AGENT_ID", "hka-dev--builder"),
+        ("KEEPER_X", "x"),
+        ("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "64000"),
+        ("FOO", "bar"),
+    ])
+}
+
+const IDENTITY: [&str; 4] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "HK3_AGENT_ID",
+    "KEEPER_X",
+];
+
+#[tokio::test]
+async fn the_parent_sessions_identity_never_reaches_the_agent() {
+    for remove in [vec!["ANTHROPIC_API_KEY"], vec![], vec!["OTHER"]] {
+        let recorder = Recorder::new("fake");
+        let mut p = profile("p", "fake");
+        p.env.remove = remove.iter().map(|k| k.to_string()).collect();
+        let agents = Agents::new(
+            vec![recorder.clone()],
+            vec![p],
+            parent_with_session_identity(),
+            false,
+        )
+        .unwrap();
+
+        agents.run(request("p", None)).await;
+
+        let seen = recorder.seen.lock().unwrap();
+        let child_env = &seen[0].1;
+        for key in IDENTITY {
+            assert!(!child_env.contains_key(key), "{key} passed with {remove:?}");
+        }
+        assert_eq!(
+            child_env
+                .get("CLAUDE_CODE_MAX_OUTPUT_TOKENS")
+                .map(String::as_str),
+            Some("64000"),
+            "{remove:?}"
+        );
+        assert_eq!(child_env.get("FOO").map(String::as_str), Some("bar"));
+    }
+}
+
+#[tokio::test]
+async fn env_set_of_a_session_identity_name_reaches_the_agent() {
+    let recorder = Recorder::new("fake");
+    let mut p = profile("p", "fake");
+    p.env.set.insert("HK3_AGENT_ID".into(), "chosen".into());
+    p.env.set.insert("CLAUDECODE".into(), "1".into());
+    let agents = Agents::new(
+        vec![recorder.clone()],
+        vec![p],
+        parent_with_session_identity(),
+        false,
+    )
+    .unwrap();
+
+    agents.run(request("p", None)).await;
+
+    let seen = recorder.seen.lock().unwrap();
+    assert_eq!(
+        seen[0].1.get("HK3_AGENT_ID").map(String::as_str),
+        Some("chosen")
+    );
+    assert_eq!(seen[0].1.get("CLAUDECODE").map(String::as_str), Some("1"));
+    assert!(!seen[0].1.contains_key("KEEPER_X"));
+}

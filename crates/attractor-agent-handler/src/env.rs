@@ -14,10 +14,42 @@ const PAS_VARS: &[&str] = &[
     "PAS_SESSION_ID",
 ];
 
-/// The parent environment minus the profile's `env.remove` and any `PAS_*`
-/// variable above, plus the profile's `env.set`, then `PAS_NODE_ID`,
-/// `PAS_ATTEMPT`, `PAS_INVOCATION_ID`, and `PAS_RUN_ID` when the record has
-/// a run id. So `env.set` beats `env.remove`, and `PAS_*` beat both.
+/// The calling session's identity: Claude Code's and hk3's. Stripped always,
+/// whatever the profile's `env.remove`, so an agent never acts as (or is
+/// messaged as) the session that ran `pas`. hk3 strips the same set for its
+/// own agents (its `SCRUB_RE`), except that PAS keeps the other
+/// `CLAUDE_CODE_*` names: they are user settings.
+const SESSION_IDENTITY_VARS: &[&str] = &[
+    "CLAUDECODE",
+    "CLAUDE_PID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "HARMONIK_AGENT",
+];
+
+/// Every variable with one of these prefixes is session identity too.
+const SESSION_IDENTITY_PREFIXES: &[&str] = &["HK3_", "KEEPER_"];
+
+/// Whether `key` names the calling session's identity.
+fn is_session_identity(key: &str) -> bool {
+    SESSION_IDENTITY_VARS.contains(&key)
+        || SESSION_IDENTITY_PREFIXES
+            .iter()
+            .any(|prefix| key.starts_with(prefix))
+}
+
+/// The parent environment minus the profile's `env.remove`, the session
+/// identity variables and any `PAS_*` variable above, plus the profile's
+/// `env.set`, then `PAS_NODE_ID`, `PAS_ATTEMPT`, `PAS_INVOCATION_ID`, and
+/// `PAS_RUN_ID` when the record has a run id. So `env.set` beats `env.remove` and the session identity
+/// variables, and `PAS_*` beat all three.
 pub fn child_env(
     parent: &BTreeMap<String, String>,
     profile_env: &ProfileEnv,
@@ -27,7 +59,7 @@ pub fn child_env(
     let removed = |key: &str| profile_env.remove.iter().any(|r| r == key);
     let mut env: BTreeMap<String, String> = parent
         .iter()
-        .filter(|(k, _)| !removed(k) && !PAS_VARS.contains(&k.as_str()))
+        .filter(|(k, _)| !removed(k) && !is_session_identity(k) && !PAS_VARS.contains(&k.as_str()))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     env.extend(profile_env.set.iter().map(|(k, v)| (k.clone(), v.clone())));

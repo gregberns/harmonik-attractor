@@ -17,7 +17,7 @@ log="$FAKE_AGENT_SCENARIOS/invocations.log"
 # is exec'd directly, so $$ is the agent's pid). grep finding nothing is fine.
 {
     printf '%s\n' '--- start' "FAKE_PID=$$"
-    env | grep -E '^(PAS_|ANTHROPIC_|OPENAI_|CLAUDE_CODE_USE_)' | sort
+    env | grep -E '^(PAS_|ANTHROPIC_|OPENAI_|CLAUDE_CODE_|CLAUDECODE=|CLAUDE_PID=|CLAUDE_EFFORT=|HK3_|KEEPER_|HARMONIK_AGENT=)' | sort
 } >>"$FAKE_AGENT_SCENARIOS/env.log"
 
 # Log argv, one argument per line, leaving out the multi-line -p value.
