@@ -20,6 +20,6 @@ yet; this only keeps the three providers consistent.
 
 **Status:** open
 
-- [ ] A fake agent run with both keys set sees neither (seam 2)
-- [ ] A profile with its own `env.remove` still replaces the list (unchanged)
-- [ ] The `codex-api` recipe matches the default list minus `OPENAI_API_KEY`
+- [x] A fake agent run with both keys set sees neither (seam 2)
+- [x] A profile with its own `env.remove` still replaces the list (unchanged)
+- [x] The `codex-api` recipe matches the default list minus `OPENAI_API_KEY`

@@ -280,6 +280,7 @@ output that isn't Codex JSONL) it fails as no result.
 > inherit_from = "codex"
 > # the default list minus OPENAI_API_KEY, so the caller's key reaches Codex
 > env.remove = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+>               "GEMINI_API_KEY", "GOOGLE_API_KEY",
 >               "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]
 > ```
 >
@@ -433,7 +434,8 @@ bad duration fails `pas run` and `pas validate`, naming the profile.
 >
 > ```toml
 > env.remove = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
->               "OPENAI_API_KEY", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]
+>               "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY",
+>               "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]
 > ```
 
 **The calling session's identity.** Whatever a profile's `env.remove`
@@ -1514,9 +1516,9 @@ with stdin from `/dev/null` (it never reads `pas`'s stdin). Its environment is
 
 - **Removed**, so the agent runs on your Claude subscription and never on a key
   it happened to inherit: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
-  `ANTHROPIC_BASE_URL`, `OPENAI_API_KEY`, `CLAUDE_CODE_USE_BEDROCK`,
-  `CLAUDE_CODE_USE_VERTEX`. Variables whose name or value is not UTF-8 are not
-  passed either.
+  `ANTHROPIC_BASE_URL`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`,
+  `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`. Variables whose name or
+  value is not UTF-8 are not passed either.
 - **Set** by PAS (any value `pas` itself had is replaced):
   - `PAS_RUN_ID`: the Run's id (as in `run.json`); unset outside a Run.
   - `PAS_NODE_ID`: the node's id.

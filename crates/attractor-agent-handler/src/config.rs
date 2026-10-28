@@ -364,12 +364,48 @@ mod tests {
                 "ANTHROPIC_AUTH_TOKEN",
                 "ANTHROPIC_BASE_URL",
                 "OPENAI_API_KEY",
+                "GEMINI_API_KEY",
+                "GOOGLE_API_KEY",
                 "CLAUDE_CODE_USE_BEDROCK",
                 "CLAUDE_CODE_USE_VERTEX",
             ]
         );
         assert!(claude.env.set.is_empty());
         assert!(!claude.test_only);
+    }
+
+    /// The quoted names of the first `env.remove = [...]` in
+    /// docs/cli-reference.md after `marker`.
+    fn documented_env_remove(marker: &str) -> Vec<String> {
+        let doc = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/cli-reference.md"),
+        )
+        .unwrap();
+        let after = &doc[doc.find(marker).unwrap()..];
+        let list = &after[after.find("env.remove = [").unwrap()..];
+        let list = &list[..list.find(']').unwrap()];
+        list.split('"')
+            .skip(1)
+            .step_by(2)
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn the_documented_lists_match_the_default_env_remove() {
+        let profiles = builtin_profiles().unwrap();
+        let default = &profile(&profiles, "claude").env.remove;
+        assert_eq!(&documented_env_remove("The default list is:"), default);
+        let without_openai: Vec<String> = default
+            .iter()
+            .filter(|name| *name != "OPENAI_API_KEY")
+            .cloned()
+            .collect();
+        assert_eq!(
+            documented_env_remove("[agents.codex-api]"),
+            without_openai,
+            "the codex-api recipe is the default list minus OPENAI_API_KEY"
+        );
     }
 
     #[test]

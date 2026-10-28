@@ -42,6 +42,8 @@ All notable changes to PAS are documented here.
 - **Stripped environment.** Agents never inherit API keys that would bill
   outside your subscription (the default `env.remove` list), nor the calling
   Claude Code session's identity variables.
+- The default `env.remove` list also strips `GEMINI_API_KEY` and
+  `GOOGLE_API_KEY`, like the Anthropic and OpenAI keys.
 - Codex and Gemini run through handler crates and profiles; the old
   `LlmProvider` path is gone.
 - A timeout's error names the node, the attempt and the transcript and

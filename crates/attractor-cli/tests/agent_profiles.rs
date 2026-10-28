@@ -147,6 +147,35 @@ fn env_set_reaches_the_agent_even_when_in_the_remove_list() {
     assert!(!env.contains_key("ANTHROPIC_AUTH_TOKEN"), "{env:?}");
 }
 
+/// The Gemini keys `pas` inherits, as the agent sees them.
+fn gemini_keys_seen(fake: &FakeAgent) -> (Option<String>, Option<String>) {
+    let output = fake
+        .command(&one_node(r#"agent="fake", prompt="scenario=success""#))
+        .env("GEMINI_API_KEY", "inherited")
+        .env("GOOGLE_API_KEY", "inherited")
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let env = &fake.env_logs()[0];
+    (
+        env.get("GEMINI_API_KEY").cloned(),
+        env.get("GOOGLE_API_KEY").cloned(),
+    )
+}
+
+#[test]
+fn the_default_env_remove_strips_the_gemini_keys() {
+    let fake = FakeAgent::new();
+    assert_eq!(gemini_keys_seen(&fake), (None, None));
+}
+
+#[test]
+fn a_profiles_own_env_remove_still_replaces_the_default_list() {
+    let fake = FakeAgent::new();
+    fake.commit_pas_toml(r#"env.remove = ["GOOGLE_API_KEY"]"#);
+    assert_eq!(gemini_keys_seen(&fake), (Some("inherited".into()), None));
+}
+
 #[test]
 fn a_node_with_only_agent_validates_and_runs() {
     let fake = FakeAgent::new();
