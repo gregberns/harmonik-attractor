@@ -18,7 +18,7 @@
 
 **Blocked by:** 13
 
-**Status:** ready
+**Status:** done
 
 - [ ] Two prior-step outputs give the same prompt text on every run
 - [ ] The warning follows the handler, both ways
