@@ -157,8 +157,10 @@ fn resolve_one(
     let mut next = merged.inherit_from.clone();
     while let Some(parent_name) = next {
         if chain.contains(&parent_name) {
+            chain.push(parent_name);
             return Err(ConfigError::InheritCycle {
                 profile: name.to_string(),
+                chain,
             });
         }
         let parent = profiles
@@ -621,14 +623,26 @@ mod tests {
     }
 
     #[test]
-    fn an_inherit_cycle_is_an_error() {
+    fn an_inherit_cycle_names_the_chain() {
         let err = config(BASE)
             .with_overrides(&overrides(
                 "[a]\ninherit_from = \"b\"\n[b]\ninherit_from = \"a\"\n",
             ))
             .resolve()
             .unwrap_err();
-        assert!(matches!(err, ConfigError::InheritCycle { .. }), "{err}");
+        assert_eq!(
+            err.to_string(),
+            "agent profile a: inherit_from cycle a → b → a"
+        );
+    }
+
+    #[test]
+    fn a_profile_inheriting_from_itself_names_the_cycle() {
+        let err = config(BASE)
+            .with_overrides(&overrides("[a]\ninherit_from = \"a\"\n"))
+            .resolve()
+            .unwrap_err();
+        assert_eq!(err.to_string(), "agent profile a: inherit_from cycle a → a");
     }
 
     #[test]

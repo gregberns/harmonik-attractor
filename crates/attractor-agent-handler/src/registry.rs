@@ -107,6 +107,9 @@ pub enum ConfigError {
     },
     InheritCycle {
         profile: String,
+        /// The `inherit_from` chain from `profile`, ending with the name
+        /// that repeats.
+        chain: Vec<String>,
     },
     MissingField {
         profile: String,
@@ -166,9 +169,11 @@ impl fmt::Display for ConfigError {
                 f,
                 "agent profile {profile} inherits from {parent}, which is not defined"
             ),
-            Self::InheritCycle { profile } => {
-                write!(f, "agent profile {profile} inherits from itself")
-            }
+            Self::InheritCycle { profile, chain } => write!(
+                f,
+                "agent profile {profile}: inherit_from cycle {}",
+                chain.join(" → ")
+            ),
             Self::MissingField {
                 profile,
                 field,
