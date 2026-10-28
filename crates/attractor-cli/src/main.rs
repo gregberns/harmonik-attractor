@@ -210,6 +210,12 @@ enum Commands {
     Validate {
         /// Path to the pipeline .dot file
         pipeline: PathBuf,
+
+        /// The working directory whose pas.toml is checked, as for `run`
+        /// (default: the current directory)
+        #[arg(short, long)]
+        workdir: Option<PathBuf>,
+
         /// Print one JSON object `{"v":1,"ok":true,"valid":...,"diagnostics":[...]}`
         #[arg(long)]
         json: bool,
@@ -599,10 +605,11 @@ async fn run_cli() -> anyhow::Result<()> {
         Commands::Monitor { port, open } => commands::monitor::cmd_monitor(port, open).await?,
         Commands::Validate {
             pipeline,
+            workdir,
             json,
             allow_test_agents,
         } => {
-            cmd_validate(&pipeline, allow_test_agents, json)?;
+            cmd_validate(&pipeline, workdir.as_deref(), allow_test_agents, json)?;
         }
         Commands::Info { pipeline } => {
             cmd_info(&pipeline)?;

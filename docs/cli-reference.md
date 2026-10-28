@@ -752,11 +752,13 @@ without it, each such node gets a `beads_available` error. A `beads.select` node
 without `epic` gets an `attribute_required` error.
 
 ```
-pas validate <PIPELINE> [--allow-test-agents] [--json]
+pas validate <PIPELINE> [--workdir <DIR>] [--allow-test-agents] [--json]
 ```
 
-It also checks every agent profile the pipeline uses against the current
-directory's project (`pas.toml` and the built-in profiles); see
+It also checks every agent profile the pipeline uses against the project of
+`--workdir` (`pas.toml` and the built-in profiles), the current directory
+by default, so it reads the same `pas.toml` as `pas run` with the same
+`--workdir`; see
 [Agent profiles](#agent-profiles-agentsname-in-pastoml). A `test_only`
 profile is an error unless `--allow-test-agents` is given.
 
@@ -765,6 +767,7 @@ profile is an error unless `--allow-test-agents` is given.
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `PIPELINE` | Yes | Path to the `.dot` pipeline file |
+| `--workdir <DIR>`, `-w` | No | The directory whose `pas.toml` is checked, as for `pas run` (default: the current directory) |
 | `--allow-test-agents` | No | Allow agent profiles marked `test_only` |
 | `--json` | No | Print one JSON object on stdout instead of the human report |
 

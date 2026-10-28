@@ -35,7 +35,11 @@ struct Checked {
     sessions: Vec<attractor_pipeline::AgentSession>,
 }
 
-fn check(path: &std::path::Path, allow_test_agents: bool) -> Result<Checked, ValidateError> {
+fn check(
+    path: &std::path::Path,
+    workdir: Option<&std::path::Path>,
+    allow_test_agents: bool,
+) -> Result<Checked, ValidateError> {
     let source = std::fs::read_to_string(path).map_err(|e| ValidateError {
         code: "io",
         message: e.to_string(),
@@ -50,7 +54,7 @@ fn check(path: &std::path::Path, allow_test_agents: bool) -> Result<Checked, Val
     let mut diagnostics = attractor_pipeline::validate(&graph);
     let mut sessions = Vec::new();
     if diagnostics.iter().all(|d| d.severity != Severity::Error) {
-        let (agent_diagnostics, agent_sessions) = check_agents(graph, allow_test_agents)?;
+        let (agent_diagnostics, agent_sessions) = check_agents(graph, workdir, allow_test_agents)?;
         diagnostics.extend(agent_diagnostics);
         sessions = agent_sessions;
     }
@@ -61,9 +65,11 @@ fn check(path: &std::path::Path, allow_test_agents: bool) -> Result<Checked, Val
 }
 
 /// Every agent profile the pipeline uses, checked against the profiles of
-/// the current directory's project (built-in, `pas.toml`).
+/// `workdir`'s project (built-in, `pas.toml`), the current directory's when
+/// `None`, as `pas run` resolves them.
 fn check_agents(
     graph: attractor_pipeline::PipelineGraph,
+    workdir: Option<&std::path::Path>,
     allow_test_agents: bool,
 ) -> Result<(Vec<Diagnostic>, Vec<attractor_pipeline::AgentSession>), ValidateError> {
     let invalid_config = |message: String| ValidateError {
@@ -72,7 +78,11 @@ fn check_agents(
     };
     let plan = attractor_pipeline::ExecutionPlan::compile(graph)
         .map_err(|e| invalid_config(e.to_string()))?;
-    let configured = attractor_pipeline::RunConfiguration::prepare(plan, Default::default())
+    let options = attractor_pipeline::ExecutionOptions {
+        workdir: workdir.map(std::path::Path::to_path_buf),
+        ..Default::default()
+    };
+    let configured = attractor_pipeline::RunConfiguration::prepare(plan, options)
         .map_err(|e| invalid_config(e.to_string()))?;
     let profiles = attractor_pipeline::agent_profiles(configured.controls())
         .map_err(|e| invalid_config(e.to_string()))?;
@@ -174,10 +184,11 @@ fn print_json(result: Result<Checked, ValidateError>) -> anyhow::Result<()> {
 
 pub fn cmd_validate(
     path: &std::path::Path,
+    workdir: Option<&std::path::Path>,
     allow_test_agents: bool,
     json: bool,
 ) -> anyhow::Result<()> {
-    let result = check(path, allow_test_agents);
+    let result = check(path, workdir, allow_test_agents);
     if json {
         print_json(result)
     } else {
@@ -232,7 +243,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = cmd_validate(&path, false, false);
+        let result = cmd_validate(&path, None, false, false);
         let err = result.expect_err("validation must fail for a missing llm_provider");
         assert!(err.to_string().contains("Validation failed"));
 
@@ -266,7 +277,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = cmd_validate(&path, false, false);
+        let result = cmd_validate(&path, None, false, false);
         assert!(result.is_ok());
     }
 }

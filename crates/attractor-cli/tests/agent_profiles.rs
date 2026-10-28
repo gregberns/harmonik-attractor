@@ -431,3 +431,77 @@ fn pas_kill_without_grace_waits_for_a_profile_grace_over_15s() {
     assert_eq!(ended.len(), 1, "{ended:?}");
     assert_eq!(ended[0]["reason"], "stopped");
 }
+
+// --- `pas validate --workdir` reads the workdir's pas.toml, as `run` does ---
+
+/// A git repo beside the fake's whose `pas.toml` has a profile with an
+/// unknown field, and the pipeline file `dot`.
+fn broken_project(fake: &FakeAgent, dot: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let broken = fake.root().join("broken");
+    fs::create_dir(&broken).unwrap();
+    fs::write(
+        broken.join("pas.toml"),
+        "[project]\nname = \"broken\"\n\n[agents.fake]\nmechanism = \"claude-p\"\ncommand = \"x\"\nbogus_field = 1\n",
+    )
+    .unwrap();
+    let pipeline = fake.root().join("workdir.dot");
+    fs::write(&pipeline, dot).unwrap();
+    (broken, pipeline)
+}
+
+fn validate_in(
+    fake: &FakeAgent,
+    cwd: &std::path::Path,
+    pipeline: &std::path::Path,
+    workdir: Option<&std::path::Path>,
+) -> std::process::Output {
+    let mut command = fake.pas_cli_command(&["validate", "--allow-test-agents"]);
+    command.arg(pipeline).current_dir(cwd);
+    if let Some(workdir) = workdir {
+        command.arg("--workdir").arg(workdir);
+    }
+    command.output().unwrap()
+}
+
+/// `pas`'s error for the broken `pas.toml`: from "failed to resolve
+/// pas.toml" to the end of its "unknown field" line.
+fn bogus_field_error(output: &std::process::Output) -> String {
+    let err = stderr(output);
+    assert!(!output.status.success(), "{err}");
+    let start = err
+        .find("failed to resolve pas.toml")
+        .unwrap_or_else(|| panic!("{err}"));
+    let field = err
+        .find("unknown field `bogus_field`")
+        .unwrap_or_else(|| panic!("{err}"));
+    let end = err[field..].find('\n').map_or(err.len(), |n| field + n);
+    err[start..end].to_string()
+}
+
+#[test]
+fn validate_with_workdir_reads_that_projects_pas_toml_like_run() {
+    let fake = FakeAgent::new();
+    let dot = one_node(r#"agent="fake", prompt="scenario=success""#);
+    let (broken, pipeline) = broken_project(&fake, &dot);
+
+    // From the broken project, --workdir names the good one.
+    let validated = validate_in(&fake, &broken, &pipeline, Some(&fake.repo()));
+    assert_success(&validated);
+    let mut run = fake.command_in(&dot, &fake.repo(), &[]);
+    assert_success(&run.current_dir(&broken).output().unwrap());
+
+    // From the good project, --workdir names the broken one: the same error.
+    let validated = validate_in(&fake, &fake.repo(), &pipeline, Some(&broken));
+    let mut run = fake.command_in(&dot, &broken, &[]);
+    let ran = run.current_dir(fake.repo()).output().unwrap();
+    assert_eq!(bogus_field_error(&validated), bogus_field_error(&ran));
+}
+
+#[test]
+fn validate_without_workdir_still_reads_the_current_directorys_pas_toml() {
+    let fake = FakeAgent::new();
+    let dot = one_node(r#"agent="fake", prompt="scenario=success""#);
+    let (broken, pipeline) = broken_project(&fake, &dot);
+    bogus_field_error(&validate_in(&fake, &broken, &pipeline, None));
+    assert_success(&validate_in(&fake, &fake.repo(), &pipeline, None));
+}
