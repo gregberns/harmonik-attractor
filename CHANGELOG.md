@@ -42,6 +42,12 @@ All notable changes to PAS are documented here.
 
 ### Changed
 
+- **No cross-session tools.** The built-in `claude` profile passes
+  `--disallowedTools` for Claude's session tools that reach outside the Run
+  (`SendMessage`, `ListAgents`, `Workflow`, `RemoteTrigger`,
+  `PushNotification`, `CronCreate`, `CronDelete`, `ScheduleWakeup`), so a
+  pipeline agent can't message or start the operator's other sessions. A
+  profile with its own `args` replaces the list.
 - **Stripped environment.** Agents never inherit API keys that would bill
   outside your subscription (the default `env.remove` list), nor the calling
   Claude Code session's identity variables.

@@ -26,5 +26,5 @@ operator's live sessions (the hk3 crew). The env is already clean (14).
 
 **Status:** open
 
-- [ ] A fake claude run's argv has `--disallowedTools` with the whole list (seam 2)
-- [ ] A `pas.toml` profile with its own `args` gets exactly those args
+- [x] A fake claude run's argv has `--disallowedTools` with the whole list (seam 2)
+- [x] A `pas.toml` profile with its own `args` gets exactly those args

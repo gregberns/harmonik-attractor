@@ -27,6 +27,12 @@ remove = [
 # A node that runs again continues its session (design §1): the first run
 # gets `--session-id`, a retry or loop-back `--resume` with the same id.
 # Session files persist under `~/.claude`.
+#
+# `--disallowedTools` turns off Claude's session tools that reach outside
+# the Run: they message, schedule or start the operator's other sessions
+# (the hk3 crew, say). One comma-separated value, since the flag is
+# variadic and would swallow the words after it. A profile that sets its
+# own `args` replaces this list whole.
 [profiles.claude]
 mechanism = "claude-p"
 command = ["claude"]
@@ -34,6 +40,8 @@ args = [
     "--dangerously-skip-permissions",
     "--strict-mcp-config",
     "--disable-slash-commands",
+    "--disallowedTools",
+    "SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup",
 ]
 session_args = ["--session-id", "{session_id}"]
 resume_args = ["--resume", "{session_id}"]

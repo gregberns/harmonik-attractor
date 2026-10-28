@@ -291,6 +291,11 @@ fn validate_refuses_a_test_only_profile_without_the_flag() {
     assert!(stdout(&output).contains("--allow-test-agents"));
 }
 
+/// The tools the built-in `claude` profile disallows: one value, since
+/// `--disallowedTools` is variadic.
+const CROSS_SESSION_TOOLS: &str =
+    "SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup";
+
 /// The `llm_provider="claude"` alias with every `[codergen.claude]` setting
 /// gives exactly the argv ticket 02a gave: the `claude` profile's args, the
 /// `[codergen.claude]` flags, the node's flags, the model, then the
@@ -330,6 +335,8 @@ mcp_config_json = "{\"mcpServers\":{}}"
         "--dangerously-skip-permissions",
         "--strict-mcp-config",
         "--disable-slash-commands",
+        "--disallowedTools",
+        CROSS_SESSION_TOOLS,
         "--setting-sources",
         "user,project",
         "--mcp-config",
@@ -350,6 +357,33 @@ mcp_config_json = "{\"mcpServers\":{}}"
         "1.5",
         "--model",
         "sonnet",
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+    ];
+    assert_eq!(
+        fake.invocations(),
+        vec![expected.map(String::from).to_vec()]
+    );
+}
+
+/// A profile that sets its own `args` replaces the built-in list whole,
+/// `--disallowedTools` included.
+#[test]
+fn a_profile_with_its_own_args_gets_exactly_those_args() {
+    let fake = FakeAgent::new();
+    fake.commit_pas_toml(
+        "[agents.own-args]\ninherit_from = \"fake-claude\"\nargs = [\"--strict-mcp-config\"]",
+    );
+
+    assert_success(&fake.run(&one_node(r#"agent="own-args", prompt="scenario=success""#)));
+
+    let session = fake.env_logs()[0]["PAS_SESSION_ID"].clone();
+    let expected = [
+        "--strict-mcp-config",
+        "--session-id",
+        session.as_str(),
         "-p",
         "--output-format",
         "stream-json",

@@ -343,6 +343,8 @@ mod tests {
                 "--dangerously-skip-permissions",
                 "--strict-mcp-config",
                 "--disable-slash-commands",
+                "--disallowedTools",
+                "SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup",
             ]
         );
         // Ticket 08: sessions persist; a retry resumes.
@@ -406,6 +408,34 @@ mod tests {
             without_openai,
             "the codex-api recipe is the default list minus OPENAI_API_KEY"
         );
+    }
+
+    /// The quoted strings of the first `args = [...]` in
+    /// docs/cli-reference.md after `marker`.
+    fn documented_args(marker: &str) -> Vec<String> {
+        let doc = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/cli-reference.md"),
+        )
+        .unwrap();
+        let after = &doc[doc.find(marker).unwrap()..];
+        let list = &after[after.find("args = [").unwrap()..];
+        let list = &list[..list.find(']').unwrap()];
+        list.split('"')
+            .skip(1)
+            .step_by(2)
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn the_documented_claude_crew_recipe_is_the_claude_args_minus_send_message() {
+        let profiles = builtin_profiles().unwrap();
+        let expected: Vec<String> = profile(&profiles, "claude")
+            .args
+            .iter()
+            .map(|arg| arg.replace("SendMessage,", ""))
+            .collect();
+        assert_eq!(documented_args("[agents.claude-crew]"), expected);
     }
 
     #[test]

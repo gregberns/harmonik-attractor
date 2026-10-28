@@ -251,9 +251,28 @@ on the node, or `llm_provider`, which names a built-in profile:
 
 | Profile | Mechanism (handler) | Command and args | The handler adds |
 |---------|---------------------|------------------|------------------|
-| `claude` | `claude-p` | `claude --dangerously-skip-permissions --strict-mcp-config --disable-slash-commands` (+ `[codergen.claude]` flags), then `--session-id <id>` (new) or `--resume <id>` (continue) | `-p <prompt> --output-format stream-json --verbose` |
+| `claude` | `claude-p` | `claude --dangerously-skip-permissions --strict-mcp-config --disable-slash-commands --disallowedTools SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup` (+ `[codergen.claude]` flags), then `--session-id <id>` (new) or `--resume <id>` (continue) | `-p <prompt> --output-format stream-json --verbose` |
 | `codex` | `codex-exec` | `codex exec --json --yolo --skip-git-repo-check`; to continue, `codex exec resume <thread-id> --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox` | `--cd <workdir>` (new sessions only) and `<prompt>` |
 | `gemini` | `gemini` | `gemini --approval-mode yolo` | `--output-format <json\|stream-json>` right after the command, and `<prompt>` last |
+
+**Session tools.** `--disallowedTools` turns off Claude's session tools
+that reach outside the Run (`SendMessage`, `ListAgents`, `Workflow`,
+`RemoteTrigger`, `PushNotification`, `CronCreate`, `CronDelete`,
+`ScheduleWakeup`), so a pipeline agent can't message, schedule or start
+the operator's other sessions. The list is one comma-separated value: the
+flag is variadic and would swallow separate words after it. A profile
+that sets its own `args` replaces the built-in list whole, this flag
+included. To allow one tool back, copy the `claude` args and drop it from
+the list:
+
+```toml
+[agents.claude-crew]
+inherit_from = "claude"
+# the built-in args, with SendMessage allowed again
+args = ["--dangerously-skip-permissions", "--strict-mcp-config",
+        "--disable-slash-commands", "--disallowedTools",
+        "ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup"]
+```
 
 A model is added as `--model <model>` for all three; only `claude` takes a
 reasoning level (`--effort <level>`). Every agent node runs the same way:
@@ -1570,6 +1589,7 @@ Every node also gets:
 - `--session-id <id>`, or `--resume <id>` when the node continues its session (see [Agent sessions](#agent-sessions))
 - `--dangerously-skip-permissions` — allows file edits and bash execution
 - `--strict-mcp-config --disable-slash-commands` — only the MCP config PAS passes; no slash commands
+- `--disallowedTools <list>` — no session tools that reach outside the Run (see [the `claude` profile](#agent-profiles-agentsname-in-pastoml))
 
 A final `result` event with `is_error` or a `subtype` starting `error` (such as
 `error_max_turns`) makes the node fail.
