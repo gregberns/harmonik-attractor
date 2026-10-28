@@ -18,7 +18,7 @@ yet; this only keeps the three providers consistent.
 
 **Blocked by:** none
 
-**Status:** open
+**Status:** done
 
 - [x] A fake agent run with both keys set sees neither (seam 2)
 - [x] A profile with its own `env.remove` still replaces the list (unchanged)
