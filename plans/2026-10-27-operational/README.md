@@ -27,7 +27,7 @@ In priority order. The integrator marks a ticket done here when merging it.
 | 20 | [Flaky tests and test hygiene](tickets/20-flaky-tests.md) | 13 | done |
 | 21 | [Strip the Gemini API keys like the others](tickets/21-strip-gemini-keys.md) | none | done |
 | 22 | [Warn when a node sets `model` instead of `llm_model`](tickets/22-warn-node-model.md) | none | done |
-| 23 | [Claude agents can't reach the operator's other sessions](tickets/23-no-cross-session-tools.md) | none | open |
+| 23 | [Claude agents can't reach the operator's other sessions](tickets/23-no-cross-session-tools.md) | none | done |
 | 24 | [Directory mode: each phase starts from the previous phase's result](tickets/24-chain-phases.md) | none | open |
 
 ## Waiting on the operator
