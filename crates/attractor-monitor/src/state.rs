@@ -21,6 +21,7 @@ struct Inner {
     capacity: usize,
     csrf: CsrfToken,
     pas_exe: RwLock<Option<PathBuf>>,
+    startup_window: RwLock<Option<std::time::Duration>>,
     /// (run id, question id) -> choice, for answers our own `pas answer` accepted.
     answers_sent: Mutex<HashMap<(String, String), String>>,
     runs: RwLock<HashMap<String, RunSlot>>,
@@ -69,6 +70,27 @@ impl AppState {
         *self.0.pas_exe.write().unwrap_or_else(|e| e.into_inner()) = Some(exe.into());
     }
 
+    /// How long a started `pas run` has to fail before the controls report
+    /// it as started, if a test replaced the default.
+    pub fn startup_window(&self) -> Option<std::time::Duration> {
+        *self
+            .0
+            .startup_window
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Replace the startup window of the controls (tests only: a loaded
+    /// machine can take longer than the default to start a fake `pas`).
+    #[doc(hidden)]
+    pub fn set_startup_window(&self, window: std::time::Duration) {
+        *self
+            .0
+            .startup_window
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = Some(window);
+    }
+
     /// Like [`AppState::new`] with a custom broadcast capacity (for tests).
     pub fn with_capacity(index_path: impl Into<PathBuf>, capacity: usize) -> Self {
         Self(Arc::new(Inner {
@@ -76,6 +98,7 @@ impl AppState {
             capacity,
             csrf: CsrfToken::generate(),
             pas_exe: RwLock::default(),
+            startup_window: RwLock::default(),
             answers_sent: Mutex::default(),
             runs: RwLock::default(),
         }))

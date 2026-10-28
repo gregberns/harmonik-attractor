@@ -21,7 +21,8 @@ use crate::state::AppState;
 use crate::views::run::current_status;
 
 /// How long a freshly started `pas run` has to fail (lock held, bad argv)
-/// before the Monitor reports it as started.
+/// before the Monitor reports it as started, unless a test replaced it
+/// ([`AppState::set_startup_window`]).
 const STARTUP_WINDOW: Duration = Duration::from_secs(2);
 /// Bytes of `console.log` shown when a start fails.
 const TAIL_BYTES: u64 = 4096;
@@ -302,7 +303,8 @@ async fn start(
         Ok(v) => v,
         Err(e) => return failed(&format!("Cannot start pas: {e}")),
     };
-    match tokio::time::timeout(STARTUP_WINDOW, exited).await {
+    let window = state.startup_window().unwrap_or(STARTUP_WINDOW);
+    match tokio::time::timeout(window, exited).await {
         Ok(Ok(Some(0))) | Err(_) | Ok(Err(_)) => reply(StatusCode::OK, "notice", done),
         Ok(Ok(code)) => {
             let text = tail(&log);

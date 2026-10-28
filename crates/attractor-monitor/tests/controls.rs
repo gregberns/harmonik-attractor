@@ -3,7 +3,7 @@
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use attractor_journal::{
     append_entry_at, new_run_id, write_run_meta, AttemptEndReason, EventData, IndexEntry,
@@ -34,8 +34,20 @@ impl Env {
     }
 }
 
+/// How long a test waits for the Monitor to show a Run or for a started
+/// child to exit: far longer than either takes, so a loaded machine only
+/// makes a test slower, not fail.
+const PATIENCE: Duration = Duration::from_secs(60);
+
 /// `body` is the shell run after the call is recorded (one line: cwd, args).
+/// A started child has [`PATIENCE`] to exit before the Monitor reports it as
+/// started, so a resume or rerun reply comes after the fake has run.
 async fn env(body: &str) -> Env {
+    env_with_window(body, PATIENCE).await
+}
+
+/// [`env`] with the Monitor's startup window set to `window`.
+async fn env_with_window(body: &str, window: Duration) -> Env {
     let tmp = tempfile::tempdir().unwrap();
     let fake = tmp.path().join("fake-pas");
     std::fs::write(
@@ -50,6 +62,7 @@ async fn env(body: &str) -> Env {
     let index = tmp.path().join("runs.jsonl");
     let state = AppState::new(&index);
     state.set_pas_exe(&fake);
+    state.set_startup_window(window);
     let token = state.csrf_token().as_str().to_string();
     watcher::spawn(state.clone(), index, Duration::from_millis(100));
     let l = bind(0).await.unwrap();
@@ -174,7 +187,8 @@ async fn post(e: &Env, id: &str, action: &str) -> (u16, String) {
 }
 
 async fn page(e: &Env, id: &str) -> String {
-    for _ in 0..100 {
+    let deadline = Instant::now() + PATIENCE;
+    while Instant::now() < deadline {
         let (code, body) = request(e.addr, "GET", &format!("/runs/{id}"), None).await;
         if code == 200 {
             return body;
@@ -255,7 +269,8 @@ async fn resume_output_goes_to_the_same_runs_console_log() {
     page(&e, &id).await;
     assert_eq!(post(&e, &id, "resume").await.0, 200);
     let log = e.root().join("logs/runs").join(&id).join("console.log");
-    for _ in 0..50 {
+    let deadline = Instant::now() + PATIENCE;
+    while Instant::now() < deadline {
         if std::fs::read_to_string(&log).is_ok_and(|s| s.contains("hello-from-child")) {
             return;
         }
@@ -305,7 +320,8 @@ async fn buttons_follow_status() {
         // The watcher registers a Run before it folds the journal, so wait
         // for the page to show the loaded state.
         let mut html = page(&e, &id).await;
-        for _ in 0..100 {
+        let deadline = Instant::now() + PATIENCE;
+        while Instant::now() < deadline {
             if ["stop", "kill", "resume", "rerun"]
                 .iter()
                 .all(|a| has(&html, a) == shown.contains(a))
@@ -382,7 +398,7 @@ async fn resume_lock_error_shows_pid_and_run_id() {
 
 #[tokio::test]
 async fn slow_child_is_reported_started_and_quick_success_is_not_an_error() {
-    let e = env("sleep 5").await;
+    let e = env_with_window("sleep 5", Duration::from_millis(100)).await;
     let id = add_run(&e, Kind::Stopped, RUN_ARGV);
     page(&e, &id).await;
     assert_eq!(post(&e, &id, "resume").await.0, 200);
