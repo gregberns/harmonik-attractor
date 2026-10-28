@@ -16,7 +16,7 @@ the saved id.
 
 **Blocked by:** 13
 
-**Status:** ready
+**Status:** done
 
 - [ ] Seam 2: SIGKILL `pas` during a claude-fake attempt (wait for the fake's init line, not just LlmStarted), resume: the next attempt passes `--resume <the same id>`
 - [ ] The interrupted commit has `Pas-Session: <id>`
