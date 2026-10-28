@@ -337,6 +337,8 @@ async fn a_thread_that_is_not_found_is_a_crash_with_the_reason_on_stderr() {
     assert_eq!(result.agent_session_id, None);
 }
 
+// The thread id is in the fake's first line, so the timeout must outlast
+// its start: 500 ms is not enough on a loaded machine.
 #[tokio::test]
 async fn a_timed_out_attempt_still_reports_the_thread_id() {
     let fx = Fixture::new();
@@ -344,7 +346,7 @@ async fn a_timed_out_attempt_still_reports_the_thread_id() {
         .run_in(
             "scenario=hang",
             None,
-            Duration::from_millis(500),
+            Duration::from_secs(5),
             Session::Continue("thread-0".into()),
         )
         .await;
