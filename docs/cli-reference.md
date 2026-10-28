@@ -362,8 +362,13 @@ session by default (design §1):
   `Pas-Session`. Codex's `thread_id` is known only once Codex reports it:
   a Codex attempt `pas` never finished loses it, and the node's next
   attempt continues the thread's earlier session, or starts a new one.
-  A Claude agent killed before it created its session is resumed with an
-  id it doesn't know, which fails as reported (see No fallback). An
+  When the killed attempt started a new session, the resume reads its
+  transcript: if the agent named the session there (Claude's init line), the
+  next attempt continues it; if not (`pas` died before the agent created
+  it), the next attempt starts it again with `--session-id` and the same
+  id. The remaining edge: a kill after Claude created the session but
+  before its init line reached the transcript; Claude then refuses the
+  repeated `--session-id`, a reported failure (see No fallback). An
   attempt whose agent reports no id leaves the thread's session as it was.
 - **Profile fields:** `session_args` (added when starting a new session),
   and one of `resume_args` (replaces only `session_args`) or

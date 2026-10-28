@@ -100,6 +100,7 @@ PAS runs one invocation of a node at a time.
 | `hang` | init, then `exec sleep $FAKE_HANG_SECS` (killed by the node timeout) | - |
 | `slow` | init, three assistant lines 0.2 s apart, then success | 0 |
 | `edit_commit` | writes `fake-edit.txt` in its cwd, commits it as `fake-claude edit`, then success | 0 |
+| `pre_init_hang` | creates `started` in `$FAKE_AGENT_SCENARIOS`, then waits for the file `go` there (at most 10 s) before printing anything, so a test can kill it before its init line | - |
 | `edit_hang` | writes `partial.txt` in its cwd (uncommitted), then hangs like `hang` | - |
 | `commit_hang` | writes `committed.txt` in its cwd, commits it as `fake-claude commit` (like `edit_commit`), creates `committed`, then hangs like `hang` | - |
 | `pas_dir` | creates `.pas/x` (holding `x`) and `visible.txt` in its cwd, then success | 0 |

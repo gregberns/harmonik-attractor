@@ -157,6 +157,12 @@ impl AgentHandler for ClaudeP {
     fn transcript_usage(&self, transcript: &str) -> Usage {
         summarize(transcript)
     }
+
+    /// The init line's `session_id`: Claude prints it once the session
+    /// exists.
+    fn transcript_session(&self, transcript: &str) -> Option<String> {
+        claude_session_id(transcript)
+    }
 }
 
 impl ClaudeP {

@@ -65,6 +65,12 @@ pub trait AgentHandler: Send + Sync {
     /// fails: missing or unreadable data is `None`. For an invocation whose
     /// future was dropped before `run` returned.
     fn transcript_usage(&self, transcript: &str) -> Usage;
+    /// The session id the agent named in a transcript (its stdout so far):
+    /// proof that it created or continued that session. `None` when it
+    /// named none, or the handler can't tell.
+    fn transcript_session(&self, _transcript: &str) -> Option<String> {
+        None
+    }
 }
 
 /// Told about each invocation's processes and its end (the engine journals
@@ -532,6 +538,13 @@ impl Agents {
         self.resolve(profile)
             .map(|(_, handler)| handler.transcript_usage(transcript))
             .unwrap_or_default()
+    }
+
+    /// [`AgentHandler::transcript_session`] of the profile's handler; `None`
+    /// for an unknown profile.
+    pub fn transcript_session(&self, profile: &str, transcript: &str) -> Option<String> {
+        let (_, handler) = self.resolve(profile)?;
+        handler.transcript_session(transcript)
     }
 
     fn resolve(&self, name: &str) -> Option<(&Profile, &Arc<dyn AgentHandler>)> {

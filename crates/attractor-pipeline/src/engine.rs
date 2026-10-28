@@ -8,7 +8,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 
-use attractor_agent_handler::CancellationToken;
+use attractor_agent_handler::{CancellationToken, Session};
 use attractor_journal::{EventData, JournalWriter, EVENTS_FILE};
 use attractor_types::{AttractorError, Context, Outcome, Result, StageStatus};
 
@@ -73,6 +73,8 @@ struct ExecutionProgress {
     /// The session that attempt's agent runs in, when known before it
     /// started.
     active_attempt_session: Option<String>,
+    /// Whether that session was a new one, started with an id PAS chose.
+    active_attempt_new_session: bool,
     /// Set when resuming a checkpoint with an attempt in progress; consumed
     /// the first time that node is entered in this process.
     resuming_attempt: bool,
@@ -119,6 +121,7 @@ impl CheckpointData<'_> {
         checkpoint.active_attempt_number = progress.active_attempt_number;
         checkpoint.active_attempt_head = progress.active_attempt_head.clone();
         checkpoint.active_attempt_session = progress.active_attempt_session.clone();
+        checkpoint.active_attempt_new_session = progress.active_attempt_new_session;
         checkpoint.agent_sessions = progress.agent_sessions.clone();
         checkpoint.last_failure = progress.last_failure.clone();
         save_checkpoint(&checkpoint, logs_root).await?;
@@ -549,12 +552,26 @@ impl PipelineExecutor {
             progress.active_attempt_number = None;
             progress.active_attempt_head = None;
             progress.active_attempt_session = None;
+            progress.active_attempt_new_session = false;
             progress.resuming_attempt = false;
         }
         // An attempt `pas` never finished: record what it left, whether or
         // not attempts are left, before anything else (work is never lost).
         let mut resume_note = None;
+        // A new session the interrupted attempt's agent never created is
+        // started again with its id: there is nothing to resume.
+        let mut restart_session = None;
         if std::mem::take(&mut progress.resuming_attempt) {
+            if let (true, Some(id)) = (
+                progress.active_attempt_new_session,
+                progress.active_attempt_session.as_deref(),
+            ) {
+                let transcript = self.interrupted_transcript(&node.id, progress).await;
+                let created = handler.session_created(resolved, id, &transcript);
+                if let Session::New(id) = resumed_session(id, created) {
+                    restart_session = Some(id);
+                }
+            }
             if let Some((note, interrupted)) = self
                 .record_interrupted(configured, &node.id, progress)
                 .await?
@@ -603,10 +620,17 @@ impl PipelineExecutor {
             // the resume and the interrupted commit. Codex reports its id
             // only as it runs: that one is recorded after the attempt.
             let thread_key = resolved.thread_key().to_string();
-            let prior_session = progress.agent_sessions.get(&thread_key).cloned();
-            let new_session = uuid::Uuid::new_v4().to_string();
+            let (prior_session, new_session) = match restart_session.take() {
+                Some(id) => (None, id),
+                None => (
+                    progress.agent_sessions.get(&thread_key).cloned(),
+                    uuid::Uuid::new_v4().to_string(),
+                ),
+            };
             progress.active_attempt_session =
                 handler.session_before_start(resolved, prior_session.as_deref(), &new_session);
+            progress.active_attempt_new_session =
+                progress.active_attempt_session.as_ref() == Some(&new_session);
             if let Some(id) = &progress.active_attempt_session {
                 progress
                     .agent_sessions
@@ -849,6 +873,23 @@ impl PipelineExecutor {
     /// (`Pas-Status: interrupted`) and return the note for the next
     /// attempt's prompt and the commit; `None` when it left nothing or there
     /// is no worktree.
+    /// The interrupted attempt's transcript (the agent's stdout so far);
+    /// empty when the attempt journalled no agent start or it can't be read.
+    async fn interrupted_transcript(&self, node_id: &str, progress: &ExecutionProgress) -> String {
+        let (Some(run_dir), Some(attempt)) = (&self.run_dir, progress.active_attempt_number) else {
+            return String::new();
+        };
+        let journal = tokio::fs::read_to_string(run_dir.join(EVENTS_FILE))
+            .await
+            .unwrap_or_default();
+        match transcript_path_in(&journal, node_id, attempt) {
+            Some(path) => tokio::fs::read_to_string(run_dir.join(path))
+                .await
+                .unwrap_or_default(),
+            None => String::new(),
+        }
+    }
+
     async fn record_interrupted(
         &self,
         configured: &RunConfiguration,
@@ -1127,6 +1168,7 @@ impl PipelineExecutor {
                 progress.active_attempt_number = cp.active_attempt_number;
                 progress.active_attempt_head = cp.active_attempt_head;
                 progress.active_attempt_session = cp.active_attempt_session;
+                progress.active_attempt_new_session = cp.active_attempt_new_session;
                 progress.agent_sessions = cp.agent_sessions;
                 progress.last_failure = cp.last_failure;
                 quality_loop_counters = cp.quality_loop_counters;
@@ -1534,6 +1576,29 @@ fn next_attempt_number(last: Option<u32>, attempts_used: usize) -> u32 {
 /// only uncommitted changes count.
 fn left_work(dirty: bool, head: Option<&str>, start_head: Option<&str>) -> bool {
     dirty || start_head.is_some_and(|start| head != Some(start))
+}
+
+/// The session the attempt after an interrupted one runs in, when that
+/// attempt was started with the new session `saved`: continue it if its
+/// agent `created` it, else start it again with the same id.
+fn resumed_session(saved: &str, created: bool) -> Session {
+    if created {
+        Session::Continue(saved.to_string())
+    } else {
+        Session::New(saved.to_string())
+    }
+}
+
+/// The transcript of the `LlmStarted` for `node`'s `attempt` last in a
+/// journal: the interrupted attempt's latest agent output.
+fn transcript_path_in(journal: &str, node: &str, attempt: u32) -> Option<String> {
+    journal
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|event| event["type"] == "LlmStarted")
+        .filter(|event| event["data"]["node_id"] == node && event["data"]["attempt"] == attempt)
+        .last()
+        .and_then(|event| event["data"]["transcript"].as_str().map(str::to_owned))
 }
 
 /// The line added to the prompt of the attempt after an interrupted one.

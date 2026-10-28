@@ -268,6 +268,12 @@ case $scenario in
             -c commit.gpgsign=false commit -q -m 'fake-claude edit' || exit 3
         succeed 'fake-claude: edited and committed'
         ;;
+    pre_init_hang)
+        # Started, but killed before it creates its session: no init line.
+        : >"$FAKE_AGENT_SCENARIOS/started"
+        wait_for_go
+        succeed 'fake-claude: success'
+        ;;
     edit_hang)
         printf '%s\n' 'partial work by fake-claude' >partial.txt
         hang

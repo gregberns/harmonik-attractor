@@ -83,6 +83,10 @@ pub struct PipelineCheckpoint {
     /// in the interrupted commit's `Pas-Session` trailer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_attempt_session: Option<String>,
+    /// Whether that session was new, started with an id PAS chose: a resume
+    /// starts it again if the agent never created it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub active_attempt_new_session: bool,
     /// Thread key (a node's `thread_id`, else its id) -> the agent session id
     /// its agent last reported, so a node that runs again continues it
     /// (ticket 08). Older checkpoints read it as empty.
@@ -136,6 +140,7 @@ impl PipelineCheckpoint {
             active_attempt_number: None,
             active_attempt_head: None,
             active_attempt_session: None,
+            active_attempt_new_session: false,
             agent_sessions: BTreeMap::new(),
             last_failure: BTreeMap::new(),
             execution_fingerprint: None,
@@ -177,6 +182,7 @@ impl PipelineCheckpoint {
             active_attempt_number: None,
             active_attempt_head: None,
             active_attempt_session: None,
+            active_attempt_new_session: false,
             agent_sessions: BTreeMap::new(),
             last_failure: BTreeMap::new(),
             execution_fingerprint,

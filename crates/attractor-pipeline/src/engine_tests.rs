@@ -4045,3 +4045,26 @@ fn resume_note_names_the_base_and_the_interrupted_commit() {
          commit def. Review git diff abc before continuing."
     );
 }
+
+#[test]
+fn an_interrupted_new_session_is_resumed_only_if_its_agent_created_it() {
+    assert_eq!(resumed_session("s1", true), Session::Continue("s1".into()));
+    assert_eq!(resumed_session("s1", false), Session::New("s1".into()));
+}
+
+#[test]
+fn the_interrupted_transcript_is_the_attempts_last_agent_start() {
+    let journal = [
+        r#"{"type":"LlmStarted","data":{"node_id":"work","attempt":1,"transcript":"t/a"}}"#,
+        r#"{"type":"LlmStarted","data":{"node_id":"other","attempt":2,"transcript":"t/b"}}"#,
+        r#"{"type":"LlmStarted","data":{"node_id":"work","attempt":2,"transcript":"t/c"}}"#,
+        r#"{"type":"LlmStarted","data":{"node_id":"work","attempt":2,"transcript":"t/d"}}"#,
+        r#"{"type":"LlmStarted","data":{"node_id":"work","attempt":2,"#,
+    ]
+    .join("\n");
+    assert_eq!(
+        transcript_path_in(&journal, "work", 2).as_deref(),
+        Some("t/d")
+    );
+    assert_eq!(transcript_path_in(&journal, "work", 3), None);
+}

@@ -249,6 +249,14 @@ pub trait NodeHandler: Send + Sync {
         None
     }
 
+    /// Whether the agent of an attempt `pas` never finished created session
+    /// `id`, judged from that attempt's transcript. Asked on resume when
+    /// the attempt was started with a new session id. The default, true,
+    /// resumes it.
+    fn session_created(&self, _resolved: &ResolvedNode, _id: &str, _transcript: &str) -> bool {
+        true
+    }
+
     /// Execute this handler for a given node.
     async fn execute(
         &self,
@@ -286,6 +294,11 @@ impl DynHandler {
         new_id: &str,
     ) -> Option<String> {
         self.0.session_before_start(resolved, prior, new_id)
+    }
+
+    /// See [`NodeHandler::session_created`].
+    pub fn session_created(&self, resolved: &ResolvedNode, id: &str, transcript: &str) -> bool {
+        self.0.session_created(resolved, id, transcript)
     }
 
     pub async fn execute(

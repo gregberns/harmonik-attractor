@@ -118,14 +118,19 @@ Fields: `current_node_id`, `completed_nodes`, `node_outcomes`,
 `active_node_attempts`, `active_attempt_number`, `active_attempt_head`,
 `active_attempt_session` (the session that attempt runs in, when known
 before its agent started; a resume's interrupted commit names it),
+`active_attempt_new_session` (true when that session was new; a resume
+starts it again with the same id if the agent's transcript never named it),
 `agent_sessions` (thread key, a node's `thread_id` or else its id, to the
 agent session id its agent last reported, or the one an attempt was started
-with when known before it started; a node that runs again continues it), `last_failure` (node id to how that node's last finished attempt
-failed: `{"kind":"timed_out","timeout_ms":…}`, `{"kind":"failed","class":…,"reason":…}`
-or `{"kind":"asked_to_retry","reason":…}`; removed when the node succeeds;
-the node's next attempt gets a note naming it), `execution_fingerprint`. A resume refuses a checkpoint whose
-`execution_fingerprint` does not match the current graph. It belongs to the
-Pipeline folder, not a Run: `run_id` names the Run it resumes. Source:
+with when known before it started; a node that runs again continues it),
+`last_failure` (node id to how that node's last finished attempt failed:
+`{"kind":"timed_out","timeout_ms":…}`,
+`{"kind":"failed","class":…,"reason":…}` or
+`{"kind":"asked_to_retry","reason":…}`; removed when the node succeeds; the
+node's next attempt gets a note naming it), `execution_fingerprint`. A
+resume refuses a checkpoint whose `execution_fingerprint` does not match
+the current graph. It belongs to the Pipeline folder, not a Run: `run_id`
+names the Run it resumes. Source:
 `crates/attractor-pipeline/src/checkpoint.rs`.
 
 ### `run.lock` and the Worktree lock

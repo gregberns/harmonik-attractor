@@ -433,3 +433,34 @@ fn a_sigkilled_claude_attempt_keeps_its_session_for_the_resume_and_the_commit() 
     assert_eq!(commits[0].status, "interrupted", "{commits:#?}");
     assert_eq!(session_trailer(&fake, &commits[0].sha), id);
 }
+
+#[test]
+fn a_claude_attempt_killed_before_its_init_line_starts_the_same_session_again() {
+    let fake = FakeAgent::new();
+    scenario(&fake, "work.1", "scenario=pre_init_hang");
+    scenario(&fake, "work.2", "scenario=success");
+    let dot = work_node(r#"timeout="120s", max_retries=1"#)
+        .replace(r#"agent="fake","#, r#"agent="fake-claude","#);
+    let mut pas = spawn_run(&fake, &dot);
+    let mut agent = KillGroup(Some(agent_pgid(&fake)));
+    // The fake has started and waits for `go` (never written): no init line.
+    let started = fake.scenarios().join("started");
+    wait_for("the fake to start", Duration::from_secs(20), || {
+        started.is_file()
+    });
+
+    pas.kill().unwrap();
+    pas.wait().unwrap();
+    agent.kill_now();
+
+    let output = fake.command(&dot).output().unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    // Claude never created the session, so it is started again with its id
+    // rather than resumed.
+    let starts = fake.invocations();
+    assert_eq!(starts.len(), 2, "{starts:#?}");
+    let id = flag(&starts[0], "--session-id").expect("a new session first");
+    assert_eq!(flag(&starts[1], "--session-id"), Some(id));
+    assert_eq!(flag(&starts[1], "--resume"), None);
+}

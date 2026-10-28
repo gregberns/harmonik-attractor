@@ -283,6 +283,15 @@ impl NodeHandler for CodergenHandler {
         }
     }
 
+    fn session_created(&self, resolved: &ResolvedNode, id: &str, transcript: &str) -> bool {
+        resolved.agent.as_ref().is_some_and(|agent| {
+            self.agents
+                .transcript_session(&agent.profile, transcript)
+                .as_deref()
+                == Some(id)
+        })
+    }
+
     fn provider_handler(&self) -> Option<&dyn ProviderNodeHandler> {
         Some(self)
     }
