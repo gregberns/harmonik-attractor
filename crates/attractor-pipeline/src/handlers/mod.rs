@@ -76,7 +76,10 @@ pub(crate) mod tests {
 
     /// `Agents` with the three shipped handlers and the built-in `claude`,
     /// `codex` and `gemini` profiles, each running `command` (a stub
-    /// script), with this process's environment as the parent.
+    /// script), with this process's environment as the parent. The Gemini
+    /// `--help` probe gets a minute, not 10 s: on a loaded machine a fresh
+    /// stub can take longer than that to start, and the run then falls back
+    /// to `json`.
     pub(crate) fn stub_agents(command: &std::path::Path) -> std::sync::Arc<Agents> {
         let profiles = builtin_profiles()
             .unwrap()
@@ -91,7 +94,10 @@ pub(crate) mod tests {
                 vec![
                     std::sync::Arc::new(attractor_handler_claude_p::ClaudeP::default()),
                     std::sync::Arc::new(attractor_handler_codex_exec::CodexExec),
-                    std::sync::Arc::new(attractor_handler_gemini::Gemini::default()),
+                    std::sync::Arc::new(
+                        attractor_handler_gemini::Gemini::default()
+                            .with_probe_timeout(std::time::Duration::from_secs(60)),
+                    ),
                 ],
                 profiles,
                 std::env::vars().collect(),
