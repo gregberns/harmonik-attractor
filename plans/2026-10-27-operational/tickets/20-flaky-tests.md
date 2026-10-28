@@ -25,6 +25,11 @@ and dropping upper time bounds:
 - run_lifecycle.rs THREE_STAGES uses `llm_provider="claude"` with the real
   PATH (safe only via --dry-run): put blocking agent stubs first on PATH in a
   shared tests helper.
+- attractor-handler-codex-exec `a_timed_out_attempt_still_reports_the_thread_id`:
+  flaked once under load.
+- attractor-cli tests/pi.rs
+  `a_retry_after_a_timeout_continues_the_same_pi_session`: a 1 s timeout;
+  failed once under load ~50, passed 5/5 alone.
 - Optional: fold FakeAgent's `command`/`command_with`/
   `command_without_test_agents` into `command_in`.
 

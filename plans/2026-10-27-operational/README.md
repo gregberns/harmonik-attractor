@@ -66,3 +66,8 @@ These change how the product behaves, so they are not tickets yet. Each
     0.11.0)?
 12. **hk3 integration:** no harmonik-v3 code calls `pas` yet. That work
     lives in harmonik-v3.
+13. **Strip the Gemini API keys?** The default strip list removes
+    `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` but not `GEMINI_API_KEY` or
+    `GOOGLE_API_KEY`, so a Gemini agent bills an inherited API key, unlike
+    claude and codex. Strip them too, with a `gemini-api` recipe like
+    `codex-api`?
