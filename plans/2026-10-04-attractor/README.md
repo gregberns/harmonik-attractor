@@ -6,12 +6,12 @@ below). The research and the operator's decisions stay in harmonik-v3:
 [research](https://github.com/gregberns/harmonik-v3/blob/main/plans/2026-10-04-attractor/research/), [decisions.md](https://github.com/gregberns/harmonik-v3/blob/main/plans/2026-10-04-attractor/decisions.md),
 [requirements.md](https://github.com/gregberns/harmonik-v3/blob/main/plans/2026-10-04-attractor/requirements.md).
 
-Status: READY. Tickets run in parallel, each in its own worktree, as soon
-as their blockers are merged; the integrator merges them one at a time
-([docs/git-workflow.md](../../docs/git-workflow.md)). After 01: 02a and 06
-can start; after 02a: 02b and 03; and so on down the table. 02a/02b, 05 and
-06 all touch the engine and run preparation, so expect the integrator to
-resolve conflicts between them.
+Status: COMPLETE (main 20aedd5, 2026-10-06). Two steps were deferred to
+the operator: 02b step 8 (catch handler panics as `Failed(Crash)`; design.md
+§1 still lists it as an `Agents` duty) and 03 step 8 (`allowed_tools` and
+`max_budget_usd` as profile templates; they still pass as `extra_args`).
+Follow-up work, including those two decisions, is in
+[2026-10-27-operational](../2026-10-27-operational/README.md).
 
 - [spec.md](spec.md): what to build, testing decisions, out of scope, risks
 - [design.md](design.md): the design, with code references and reasoning
@@ -31,7 +31,7 @@ branch, as part of merging it.
 | 01 | [Fake-agent harness (digital twin of claude -p)](tickets/01-fake-agent-harness.md) | none | done |
 | 02a | [Agent handler interface, process runner and the claude-p handler](tickets/02a-handler-crates-claude-p.md) | 01 | done |
 | 02b | [Agent start events, live stderr and graceful kill](tickets/02b-agent-start-events-stderr-kill.md) | 02a | done (catch-unwind deferred, operator pending) |
-| 03 | [Agent profiles in config, test-only profiles and reasoning level](tickets/03-agent-profiles-config.md) | 02a | done |
+| 03 | [Agent profiles in config, test-only profiles and reasoning level](tickets/03-agent-profiles-config.md) | 02a | done (step 8 deferred, operator pending) |
 | 04 | [Codex and Gemini as handler crates; remove LlmProvider](tickets/04-port-codex-gemini.md) | 03 | done |
 | 05 | [Clear run-ending errors and the two failure-hiding fixes](tickets/05-failure-reporting-and-hidden-failures.md) | 02b | done |
 | 06 | [A worktree and branch per run](tickets/06-worktree-and-branch.md) | 01 | done |

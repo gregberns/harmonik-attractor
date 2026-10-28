@@ -1,5 +1,5 @@
 description: Build the plan's tickets in parallel, each in its own git worktree and branch from main; review and test in the ticket's worktree; one integrator merges passed tickets to main one at a time, pushes, and cleans up.
-input: the ready plan in this repo, plans/2026-10-04-attractor/ (spec.md, tickets/, README.md ticket table, edges and status); git workflow in docs/git-workflow.md.
+input: the active plan in this repo, named in plans/README.md (its README.md ticket table, edges and status, and its tickets/); git workflow in docs/git-workflow.md.
 steps:
   - name: hand out
     who: captain

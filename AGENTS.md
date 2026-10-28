@@ -9,18 +9,17 @@ harmonik-v3 (hk3). `CLAUDE.md` is a symlink to this file; edit `AGENTS.md`.
 
 Loaded into every agent session, so every line costs context. Only: what
 the project is, rules to follow, and one-line pointers to `docs/`. Put
-explanations in `docs/` and link them here. Keep it under 80 lines.
+explanations in `docs/` and link them here. Keep it under 80 lines, each
+line under 80 characters. No transient state: no ticket numbers, dates,
+statuses or "until X" notes; those belong in the plan.
 
 ## Where the work comes from
 
-- The plan: [plans/2026-10-04-attractor/](plans/2026-10-04-attractor/README.md)
-  (`spec.md`, `design.md`, `CONTEXT.md` glossary, ticket table and status).
-- Work comes from its `tickets/`, in order, one at a time. Build only what
-  a ticket asks; no speculative options. Use the glossary's terms.
+- The active plan is named in [plans/README.md](plans/README.md); its
+  README has the ticket table and status, its `tickets/` the work.
+- Build only what a ticket asks. Use the glossary's terms (`CONTEXT.md`).
 - No other tracker for our own work: no `bd`/beads, TodoWrite or TODO
   lists. (PAS's beads integration, docs/guide.md, is a product feature.)
-- Until ticket 02a, codergen runs the local `claude` CLI (`claude -p`), with
-  no API key; tests never do, they use the fakes.
 
 ## Build and test
 
@@ -31,12 +30,12 @@ cargo clippy --workspace --all-targets   # lint: no new warnings (baseline 1)
 cargo fmt --all -- --check               # format check
 ```
 
-All crates share one version in the root `Cargo.toml` (`[workspace.package]`);
-crates use `version.workspace = true`. Never set a version in a crate.
+All crates use the root `Cargo.toml` version (`version.workspace = true`);
+never set a version in a crate.
 
 ## Programming rules
 
-Pure core, imperative shell; detail in [docs/engineering.md](docs/engineering.md).
+Pure core, imperative shell ([docs/engineering.md](docs/engineering.md)).
 - Decisions (graph compilation, routing, outcome and failure mapping) are
   pure functions over immutable data.
 - Side effects (processes, files, git, clock) live at the edges behind
@@ -59,7 +58,8 @@ Detail in [docs/engineering.md](docs/engineering.md#testing).
 ## Zero framework cognition
 
 The engine provides structure (graph, routing, commits, process control)
-and never judgment; judgment belongs to agents and graph authors. Read [docs/concepts/zero-framework-cognition.md](docs/concepts/zero-framework-cognition.md).
+and never judgment; judgment belongs to agents and graph authors. Read
+[zero-framework-cognition.md](docs/concepts/zero-framework-cognition.md).
 
 ## Git workflow
 
@@ -71,9 +71,9 @@ to `main` (fast-forward), then pushes it and removes the worktree. See
 
 ## Docs
 
-- [docs/dot-dialect.md](docs/dot-dialect.md): the DOT dialect; read before writing `.dot` files
-- [docs/guide.md](docs/guide.md): pipeline patterns and handler dispatch
-- [docs/cli-reference.md](docs/cli-reference.md): CLI commands, flags, environment
-- [docs/task-verification.md](docs/task-verification.md): goal gates, edge routing, budget guards
-- [docs/execution-capabilities.md](docs/execution-capabilities.md): what the engine supports and rejects
-- [docs/run-folder.md](docs/run-folder.md): the run folder contract: every file and journal event
+- [dot-dialect.md](docs/dot-dialect.md): read before writing `.dot` files
+- [guide.md](docs/guide.md): pipeline patterns and handler dispatch
+- [cli-reference.md](docs/cli-reference.md): commands, flags, environment
+- [task-verification.md](docs/task-verification.md): goal gates, routing
+- [execution-capabilities.md](docs/execution-capabilities.md): what's rejected
+- [run-folder.md](docs/run-folder.md): every run file and journal event

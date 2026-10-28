@@ -24,7 +24,8 @@ follows it (workflow `build-branches`). Decisions Q61, Q63, Q64.
 ## Steps
 
 1. **Hand out.** The captain hands out every ticket whose blockers are
-   merged (edges in [the plan README](../plans/2026-10-04-attractor/README.md)),
+   merged (edges in the active plan's README, named in
+   [plans/README.md](../plans/README.md)),
    one per free builder.
 2. **Branch.** The builder creates the ticket worktree from the current
    `main`:
@@ -45,12 +46,11 @@ follows it (workflow `build-branches`). Decisions Q61, Q63, Q64.
    ticket worktree:
    - rebase onto `main` (or merge `main` in when a rebase would be
      painful) and resolve every conflict. Parallel tickets that touch the
-     engine (the plan names 02a/02b, 05 and 06) will conflict; resolving
-     that is the integrator's job;
+     same code will conflict; resolving that is the integrator's job;
    - run `cargo test --workspace`, `cargo fmt --all -- --check` and
      `cargo clippy --workspace --all-targets` (no new warnings; see
      [engineering.md](engineering.md#testing));
-   - mark the ticket done in `plans/2026-10-04-attractor/README.md` and
+   - mark the ticket done in the active plan's README and
      commit that on the ticket branch;
    - fast-forward `main` in the main checkout: `git -C <repo root> merge
      --ff-only ticket/<nn>-<slug>` (`git fetch . <branch>:main` is refused
