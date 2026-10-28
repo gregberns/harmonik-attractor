@@ -56,6 +56,15 @@ All notable changes to PAS are documented here.
   retrying after N attempts").
 - A Codex run with no agent message, or with a non-zero exit, is no longer
   a success.
+- A `pas` killed mid-attempt keeps the agent's session on resume, and a
+  session the agent never created is started again with the same id.
+- "Context from prior pipeline steps" is listed in key order, so the same
+  context gives the same prompt on every run.
+- The no-cost warning (`PROVIDER_COST_UNTRACKED`) follows the profile's
+  handler, not its name: a `codex-api` profile warns, a claude-p profile
+  named `codex` doesn't.
+- An `inherit_from` cycle names its chain (`a → b → a`) instead of saying
+  the profile inherits from itself.
 
 ## [0.11.0] — 2026-09-27
 

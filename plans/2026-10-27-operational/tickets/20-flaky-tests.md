@@ -19,8 +19,13 @@ and dropping upper time bounds:
   3 s upper bound.
 - attractor-pipeline codergen_handler_tests transcripts:: (three tests):
   wait for the transcript line before dropping; warm the stub.
-- attractor-monitor tests/controls.rs (three tests): write the fake once per
-  binary (likely "text file busy" from concurrent write-and-exec) and the
+- attractor-pipeline codergen_regression_tests (the Gemini cases, e.g.
+  `nonzero_exit_with_final_result_gives_pre_streaming_outcome`): under load
+  the `gemini --help` probe times out, so the stub runs with
+  `--output-format json` instead of `stream-json`.
+- attractor-monitor tests/controls.rs (every test that spawns the fake,
+  including `resume_output_goes_to_the_same_runs_console_log`): write the
+  fake once per binary (likely "text file busy" from concurrent write-and-exec) and the
   2 s startup window.
 - run_lifecycle.rs THREE_STAGES uses `llm_provider="claude"` with the real
   PATH (safe only via --dry-run): put blocking agent stubs first on PATH in a
