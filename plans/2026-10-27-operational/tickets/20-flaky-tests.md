@@ -42,5 +42,19 @@ and dropping upper time bounds:
 
 **Status:** backlog (operator: not an immediate priority)
 
-- [ ] Each listed test passes 20x under load (a busy-loop load script)
-- [ ] No test writes into the source tree
+- [x] Each listed test passes 20x under load (a busy-loop load script)
+- [x] No test writes into the source tree
+
+**Findings:**
+- controls.rs: passed 14/14 with `--test-threads=1` but failed 3/14 in
+  parallel, both under load. The cause was not "text file busy" but the
+  monitor's 2 s startup window: the fake `pas` could not start within it,
+  so the monitor answered "started" before it had run. A hidden,
+  tests-only `AppState::set_startup_window` gives the tests 60 s.
+- Gemini regression cases: each run took 13-31 s under load ~140, so the
+  10 s `--help` probe timed out (1 failure in 20); the test `Agents` give
+  the probe 60 s.
+- codex thread id: the id is in the fake's first line, so a 500 ms
+  timeout could fire before it; now 5 s. pi retry: the 1 s node timeout
+  also covers the retry; now 5 s.
+- The FakeAgent `command` fold was left out (optional).
