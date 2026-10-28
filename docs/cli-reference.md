@@ -363,7 +363,7 @@ session by default (design §1):
   a Codex attempt `pas` never finished loses it, and the node's next
   attempt continues the thread's earlier session, or starts a new one.
   When the killed attempt started a new session, the resume reads its
-  transcript: if the agent named the session there (Claude's init line), the
+  transcripts (every spawn's): if the agent named the session there (Claude's init line), the
   next attempt continues it; if not (`pas` died before the agent created
   it), the next attempt starts it again with `--session-id` and the same
   id. The remaining edge: a kill after Claude created the session but

@@ -4053,7 +4053,7 @@ fn an_interrupted_new_session_is_resumed_only_if_its_agent_created_it() {
 }
 
 #[test]
-fn the_interrupted_transcript_is_the_attempts_last_agent_start() {
+fn the_interrupted_transcripts_are_every_spawn_of_the_attempt() {
     let journal = [
         r#"{"type":"LlmStarted","data":{"node_id":"work","attempt":1,"transcript":"t/a"}}"#,
         r#"{"type":"LlmStarted","data":{"node_id":"other","attempt":2,"transcript":"t/b"}}"#,
@@ -4062,9 +4062,6 @@ fn the_interrupted_transcript_is_the_attempts_last_agent_start() {
         r#"{"type":"LlmStarted","data":{"node_id":"work","attempt":2,"#,
     ]
     .join("\n");
-    assert_eq!(
-        transcript_path_in(&journal, "work", 2).as_deref(),
-        Some("t/d")
-    );
-    assert_eq!(transcript_path_in(&journal, "work", 3), None);
+    assert_eq!(transcript_paths_in(&journal, "work", 2), ["t/c", "t/d"]);
+    assert!(transcript_paths_in(&journal, "work", 3).is_empty());
 }

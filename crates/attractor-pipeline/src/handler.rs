@@ -250,9 +250,9 @@ pub trait NodeHandler: Send + Sync {
     }
 
     /// Whether the agent of an attempt `pas` never finished created session
-    /// `id`, judged from that attempt's transcript. Asked on resume when
-    /// the attempt was started with a new session id. The default, true,
-    /// resumes it.
+    /// `id`, judged from that attempt's transcripts (every spawn's, joined).
+    /// Asked on resume when the attempt was started with a new session id.
+    /// The default, true, resumes it.
     fn session_created(&self, _resolved: &ResolvedNode, _id: &str, _transcript: &str) -> bool {
         true
     }

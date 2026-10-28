@@ -869,12 +869,9 @@ impl PipelineExecutor {
         })
     }
 
-    /// On resume, commit what an interrupted attempt left in the worktree
-    /// (`Pas-Status: interrupted`) and return the note for the next
-    /// attempt's prompt and the commit; `None` when it left nothing or there
-    /// is no worktree.
-    /// The interrupted attempt's transcript (the agent's stdout so far);
-    /// empty when the attempt journalled no agent start or it can't be read.
+    /// The interrupted attempt's transcripts (the agent's stdout so far),
+    /// every spawn's, joined; empty when the attempt journalled no agent
+    /// start or they can't be read.
     async fn interrupted_transcript(&self, node_id: &str, progress: &ExecutionProgress) -> String {
         let (Some(run_dir), Some(attempt)) = (&self.run_dir, progress.active_attempt_number) else {
             return String::new();
@@ -882,14 +879,21 @@ impl PipelineExecutor {
         let journal = tokio::fs::read_to_string(run_dir.join(EVENTS_FILE))
             .await
             .unwrap_or_default();
-        match transcript_path_in(&journal, node_id, attempt) {
-            Some(path) => tokio::fs::read_to_string(run_dir.join(path))
+        let mut transcripts = String::new();
+        for path in transcript_paths_in(&journal, node_id, attempt) {
+            let text = tokio::fs::read_to_string(run_dir.join(path))
                 .await
-                .unwrap_or_default(),
-            None => String::new(),
+                .unwrap_or_default();
+            transcripts.push_str(&text);
+            transcripts.push('\n');
         }
+        transcripts
     }
 
+    /// On resume, commit what an interrupted attempt left in the worktree
+    /// (`Pas-Status: interrupted`) and return the note for the next
+    /// attempt's prompt and the commit; `None` when it left nothing or there
+    /// is no worktree.
     async fn record_interrupted(
         &self,
         configured: &RunConfiguration,
@@ -1589,16 +1593,16 @@ fn resumed_session(saved: &str, created: bool) -> Session {
     }
 }
 
-/// The transcript of the `LlmStarted` for `node`'s `attempt` last in a
-/// journal: the interrupted attempt's latest agent output.
-fn transcript_path_in(journal: &str, node: &str, attempt: u32) -> Option<String> {
+/// The transcripts of every `LlmStarted` for `node`'s `attempt` in a
+/// journal, in order: one per spawn (a rate-limited attempt re-spawns).
+fn transcript_paths_in(journal: &str, node: &str, attempt: u32) -> Vec<String> {
     journal
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .filter(|event| event["type"] == "LlmStarted")
         .filter(|event| event["data"]["node_id"] == node && event["data"]["attempt"] == attempt)
-        .last()
-        .and_then(|event| event["data"]["transcript"].as_str().map(str::to_owned))
+        .filter_map(|event| event["data"]["transcript"].as_str().map(str::to_owned))
+        .collect()
 }
 
 /// The line added to the prompt of the attempt after an interrupted one.
