@@ -19,7 +19,7 @@ codex row of the failure table in the docs.
 
 **Blocked by:** 13
 
-**Status:** ready
+**Status:** done
 
 - [ ] Seam 1: garbage stdout + exit 0 → NoResult; `thread.started` only + exit 137 → Crash with the exit code; a normal run → Completed with the message
 - [ ] fake-codex gains the scenarios it needs (and tests/agents/README.md lists them)
