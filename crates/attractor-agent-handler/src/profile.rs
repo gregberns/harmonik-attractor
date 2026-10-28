@@ -77,6 +77,13 @@ impl Profile {
     pub fn can_resume(&self) -> bool {
         self.resume.is_some()
     }
+
+    /// Whether a new session is started with an id PAS chooses (a
+    /// `{session_id}` in `session_args`), so the id is known before the
+    /// agent runs.
+    pub fn takes_session_id(&self) -> bool {
+        self.session_args.iter().any(|a| a.contains("{session_id}"))
+    }
 }
 
 /// An invocation's argv and how many leading words are the program.

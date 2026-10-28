@@ -261,6 +261,28 @@ impl NodeHandler for CodergenHandler {
         "codergen"
     }
 
+    fn session_before_start(
+        &self,
+        resolved: &ResolvedNode,
+        prior: Option<&str>,
+        new_id: &str,
+    ) -> Option<String> {
+        let profile = &resolved.agent.as_ref()?.profile;
+        let can_resume = self.agents.can_resume(profile).unwrap_or(false);
+        match choose_session(
+            Fidelity::effective(resolved.fidelity, can_resume),
+            prior,
+            || new_id.to_string(),
+        ) {
+            Session::Continue(id) => Some(id),
+            Session::New(id) => self
+                .agents
+                .takes_session_id(profile)
+                .unwrap_or(false)
+                .then_some(id),
+        }
+    }
+
     fn provider_handler(&self) -> Option<&dyn ProviderNodeHandler> {
         Some(self)
     }
@@ -449,7 +471,12 @@ impl CodergenHandler {
         let session = choose_session(
             Fidelity::effective(resolved.fidelity, can_resume),
             controls.session.and_then(|s| s.prior),
-            || uuid::Uuid::new_v4().to_string(),
+            || {
+                controls.session.map_or_else(
+                    || uuid::Uuid::new_v4().to_string(),
+                    |s| s.new_id.to_string(),
+                )
+            },
         );
         let continued = session.is_continue();
         // One id names the Model Invocation everywhere: `LlmInvoked`, the

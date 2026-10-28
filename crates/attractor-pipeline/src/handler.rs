@@ -35,11 +35,13 @@ pub struct HandlerExecutionContext<'a> {
 }
 
 /// An agent attempt's session (design §1): the session id recorded for its
-/// thread, if any, and where the handler puts the id the agent reported.
-/// Scoped to one attempt; the engine records `reported` afterwards.
+/// thread, if any, the id a new session gets, and where the handler puts the
+/// id the agent reported. Scoped to one attempt; the engine records
+/// `reported` afterwards.
 #[derive(Clone, Copy)]
 pub struct SessionContext<'a> {
     pub prior: Option<&'a str>,
+    pub new_id: &'a str,
     pub reported: &'a std::sync::OnceLock<String>,
 }
 
@@ -232,6 +234,21 @@ pub trait NodeHandler: Send + Sync {
         false
     }
 
+    /// The session id an agent attempt will run in, when it is known before
+    /// the agent starts: the thread's `prior` session it continues, or
+    /// `new_id` when the agent is started with the id PAS chose. `None`
+    /// when the agent reports its id only as it runs, or for a handler with
+    /// no agent. The engine checkpoints it, so a `pas` killed mid-attempt
+    /// still knows the session.
+    fn session_before_start(
+        &self,
+        _resolved: &ResolvedNode,
+        _prior: Option<&str>,
+        _new_id: &str,
+    ) -> Option<String> {
+        None
+    }
+
     /// Execute this handler for a given node.
     async fn execute(
         &self,
@@ -259,6 +276,16 @@ impl DynHandler {
     /// See [`NodeHandler::resumes_interrupted_attempt`].
     pub fn resumes_interrupted_attempt(&self) -> bool {
         self.0.resumes_interrupted_attempt()
+    }
+
+    /// See [`NodeHandler::session_before_start`].
+    pub fn session_before_start(
+        &self,
+        resolved: &ResolvedNode,
+        prior: Option<&str>,
+        new_id: &str,
+    ) -> Option<String> {
+        self.0.session_before_start(resolved, prior, new_id)
     }
 
     pub async fn execute(

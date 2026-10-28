@@ -70,6 +70,9 @@ struct ExecutionProgress {
     active_attempt_number: Option<u32>,
     /// The worktree's HEAD when that attempt started.
     active_attempt_head: Option<String>,
+    /// The session that attempt's agent runs in, when known before it
+    /// started.
+    active_attempt_session: Option<String>,
     /// Set when resuming a checkpoint with an attempt in progress; consumed
     /// the first time that node is entered in this process.
     resuming_attempt: bool,
@@ -115,6 +118,7 @@ impl CheckpointData<'_> {
         checkpoint.active_node_attempts = progress.active_node_attempts;
         checkpoint.active_attempt_number = progress.active_attempt_number;
         checkpoint.active_attempt_head = progress.active_attempt_head.clone();
+        checkpoint.active_attempt_session = progress.active_attempt_session.clone();
         checkpoint.agent_sessions = progress.agent_sessions.clone();
         checkpoint.last_failure = progress.last_failure.clone();
         save_checkpoint(&checkpoint, logs_root).await?;
@@ -544,6 +548,7 @@ impl PipelineExecutor {
             progress.active_node_attempts = 0;
             progress.active_attempt_number = None;
             progress.active_attempt_head = None;
+            progress.active_attempt_session = None;
             progress.resuming_attempt = false;
         }
         // An attempt `pas` never finished: record what it left, whether or
@@ -593,6 +598,20 @@ impl PipelineExecutor {
             let head_before = run_commits::head(workdir).await;
             progress.active_attempt_number = Some(attempt_number);
             progress.active_attempt_head = head_before.clone();
+            // The session, checkpointed before the agent starts when its id
+            // is already known, so a `pas` killed mid-attempt keeps it for
+            // the resume and the interrupted commit. Codex reports its id
+            // only as it runs: that one is recorded after the attempt.
+            let thread_key = resolved.thread_key().to_string();
+            let prior_session = progress.agent_sessions.get(&thread_key).cloned();
+            let new_session = uuid::Uuid::new_v4().to_string();
+            progress.active_attempt_session =
+                handler.session_before_start(resolved, prior_session.as_deref(), &new_session);
+            if let Some(id) = &progress.active_attempt_session {
+                progress
+                    .agent_sessions
+                    .insert(thread_key.clone(), id.clone());
+            }
             // A waiting attempt the process does not live through is asked
             // again on resume rather than counted as used.
             progress.active_node_attempts = if handler.resumes_interrupted_attempt() {
@@ -622,10 +641,8 @@ impl PipelineExecutor {
                 .agent
                 .is_some()
                 .then(|| crate::handler::SessionContext {
-                    prior: progress
-                        .agent_sessions
-                        .get(resolved.thread_key())
-                        .map(String::as_str),
+                    prior: prior_session.as_deref(),
+                    new_id: &new_session,
                     reported: &reported_session,
                 });
 
@@ -685,11 +702,16 @@ impl PipelineExecutor {
             // Record the session the agent reported, whatever the attempt's
             // result (Ok, Err or Cancelled), so a retry, a loop-back or a
             // resume continues it.
+            // With no id reported (the agent never started, or died before
+            // naming its session), the thread keeps the session it had.
             let session_id = reported_session.into_inner();
-            if let Some(id) = &session_id {
-                progress
-                    .agent_sessions
-                    .insert(resolved.thread_key().to_string(), id.clone());
+            let recorded = session_id.clone().or(prior_session);
+            let changed = progress.agent_sessions.get(&thread_key) != recorded.as_ref();
+            match recorded {
+                Some(id) => progress.agent_sessions.insert(thread_key, id),
+                None => progress.agent_sessions.remove(&thread_key),
+            };
+            if changed || session_id.is_some() {
                 checkpoint.save(&node.id, progress).await?;
             }
             // A finished attempt sets or clears the node's failure for its
@@ -861,7 +883,7 @@ impl PipelineExecutor {
                 status: run_commits::AttemptStatus::Interrupted,
                 class: None,
             },
-            session: None,
+            session: progress.active_attempt_session.as_deref(),
         };
         let interrupted = run_commits::commit_attempt(&worktree.root, &commit)
             .await
@@ -1104,6 +1126,7 @@ impl PipelineExecutor {
                 progress.active_node_attempts = cp.active_node_attempts;
                 progress.active_attempt_number = cp.active_attempt_number;
                 progress.active_attempt_head = cp.active_attempt_head;
+                progress.active_attempt_session = cp.active_attempt_session;
                 progress.agent_sessions = cp.agent_sessions;
                 progress.last_failure = cp.last_failure;
                 quality_loop_counters = cp.quality_loop_counters;

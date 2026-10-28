@@ -374,3 +374,62 @@ fn repeated_resumes_with_no_attempts_left_record_the_interruption_once() {
         .collect();
     assert_eq!(summary, [("interrupted", "1")], "{commits:#?}");
 }
+
+/// The value after `flag` in `argv`.
+fn flag(argv: &[String], flag: &str) -> Option<String> {
+    let at = argv.iter().position(|a| a == flag)?;
+    argv.get(at + 1).cloned()
+}
+
+/// The `Pas-Session` trailer of commit `sha`.
+fn session_trailer(fake: &FakeAgent, sha: &str) -> String {
+    fake.git(&[
+        "log",
+        "-1",
+        "--format=%(trailers:key=Pas-Session,valueonly,separator=)",
+        sha,
+    ])
+    .trim()
+    .to_string()
+}
+
+#[test]
+fn a_sigkilled_claude_attempt_keeps_its_session_for_the_resume_and_the_commit() {
+    let fake = FakeAgent::new();
+    scenario(&fake, "work.1", "scenario=edit_hang");
+    scenario(&fake, "work.2", "scenario=success");
+    // The harness's fake-claude profile: the built-in claude session forms.
+    let dot = work_node(r#"timeout="120s", max_retries=1"#)
+        .replace(r#"agent="fake","#, r#"agent="fake-claude","#);
+    let mut pas = spawn_run(&fake, &dot);
+    let mut agent = KillGroup(Some(agent_pgid(&fake)));
+    // Wait for the fake's init line (the session exists), not just its start.
+    let started = journal_so_far(&fake)
+        .into_iter()
+        .find(|e| e["type"] == "LlmStarted")
+        .unwrap();
+    let id = started["data"]["session_id"].as_str().unwrap().to_string();
+    let run = fake.run_dirs().into_iter().next().unwrap();
+    let transcript = run.join(started["data"]["transcript"].as_str().unwrap());
+    wait_for("the fake's init line", Duration::from_secs(20), || {
+        fs::read_to_string(&transcript).is_ok_and(|t| t.contains(r#""subtype":"init""#))
+    });
+
+    pas.kill().unwrap();
+    pas.wait().unwrap();
+    agent.kill_now();
+
+    let output = fake.command(&dot).output().unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    let starts = fake.invocations();
+    assert_eq!(starts.len(), 2, "{starts:#?}");
+    assert_eq!(
+        flag(&starts[0], "--session-id").as_deref(),
+        Some(id.as_str())
+    );
+    assert_eq!(flag(&starts[1], "--resume").as_deref(), Some(id.as_str()));
+    let commits = engine_commits(&fake);
+    assert_eq!(commits[0].status, "interrupted", "{commits:#?}");
+    assert_eq!(session_trailer(&fake, &commits[0].sha), id);
+}

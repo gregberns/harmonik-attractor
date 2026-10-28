@@ -298,6 +298,15 @@ impl Agents {
         Some(profile.can_resume() || handler.resumes_natively())
     }
 
+    /// Whether `profile` starts a new session with the id PAS chose, so the
+    /// id is known before the agent runs (claude's `--session-id`, Pi);
+    /// false for agents that report theirs (codex's thread id). `None` for
+    /// an unknown profile.
+    pub fn takes_session_id(&self, profile: &str) -> Option<bool> {
+        let (profile, handler) = self.resolve(profile)?;
+        Some(profile.takes_session_id() || handler.resumes_natively())
+    }
+
     /// The longest `kill_grace` of any profile: how long a stopped agent
     /// may take to exit.
     pub fn max_kill_grace(&self) -> Duration {
