@@ -35,7 +35,7 @@ first:
 
 **Blocked by:** 14, 15, 16
 
-**Status:** ready
+**Status:** done
 
 - [ ] Each item above fixed or found already right
 - [ ] `run_folder_doc` tests still pass

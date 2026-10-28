@@ -21,7 +21,7 @@ In priority order. The integrator marks a ticket done here when merging it.
 | 14 | [Never pass the parent session's identity to agents](tickets/14-strip-session-identity-env.md) | 13 | done |
 | 15 | [A Codex run with no agent message is not a success](tickets/15-codex-no-hidden-success.md) | 13 | done |
 | 16 | [`pas validate --workdir` reads the same pas.toml as run](tickets/16-validate-workdir.md) | 13 | done |
-| 17 | [Docs match the code](tickets/17-docs-drift.md) | 14, 15, 16 | ready |
+| 17 | [Docs match the code](tickets/17-docs-drift.md) | 14, 15, 16 | done |
 | 18 | [Keep the session id when pas is killed mid-attempt](tickets/18-session-id-at-start.md) | 13 | done |
 | 19 | [Small fixes: context order, cost warning, profile cycles](tickets/19-small-fixes.md) | 13 | ready |
 | 20 | [Flaky tests and test hygiene](tickets/20-flaky-tests.md) | 13 | backlog |
