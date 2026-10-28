@@ -106,6 +106,20 @@ fn codex_crash_stops_the_run_with_the_crash_message() {
     );
 }
 
+#[test]
+fn codex_garbage_stops_the_run_with_a_no_result_error_naming_the_node() {
+    let fake = FakeAgent::new();
+    let output = fake.run(&one_node(
+        r#"agent="fake-codex", prompt="scenario=garbage""#,
+    ));
+    assert!(!output.status.success());
+    let err = stderr(&output);
+    assert!(
+        err.contains("failed on node 'work': Codex CLI exited 0 with no agent message. stderr: "),
+        "{err}"
+    );
+}
+
 // --- Gemini ---
 
 #[test]

@@ -23,8 +23,10 @@ enum CodexEvent {
     /// Top-level fatal stream error — distinct from turn.failed.
     #[serde(rename = "error")]
     Error { message: String },
+    #[serde(rename = "turn.completed")]
+    TurnCompleted,
     #[serde(other)]
-    Other, // thread.started, turn.started, turn.completed, item.started, item.updated
+    Other, // thread.started, turn.started, item.started, item.updated
 }
 
 #[derive(Deserialize)]
@@ -54,7 +56,8 @@ struct CodexTokenUsage {
     output_tokens: Option<u64>,
 }
 
-/// What a Codex stream says: its answer, and whether it is an error.
+/// What a Codex stream says: its answer, whether it is an error, and
+/// whether it finished.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parsed {
     /// The last agent message, else the error message, else a note that
@@ -62,6 +65,8 @@ pub struct Parsed {
     pub text: String,
     /// A `turn.failed` or stream `error` event was seen.
     pub is_error: bool,
+    /// An agent message or a `turn.completed` event was seen.
+    pub finished: bool,
 }
 
 /// What a finished process left: its exit status and output.
@@ -91,12 +96,13 @@ fn head(s: &str, max: usize) -> &str {
     }
 }
 
-/// The last agent message and whether the run failed. Malformed events are
-/// skipped; never fails.
+/// The last agent message, whether the run failed and whether it finished.
+/// Malformed events are skipped; never fails.
 pub fn parse(stdout: &str) -> Parsed {
     let mut last_message: Option<String> = None;
     let mut is_error = false;
     let mut error_message: Option<String> = None;
+    let mut turn_completed = false;
 
     for event in serde_json::Deserializer::from_str(stdout).into_iter::<CodexEvent>() {
         match event {
@@ -115,11 +121,13 @@ pub fn parse(stdout: &str) -> Parsed {
                 is_error = true;
                 error_message = Some(message);
             }
+            Ok(CodexEvent::TurnCompleted) => turn_completed = true,
             Ok(CodexEvent::Other) | Err(_) => {}
         }
     }
 
     Parsed {
+        finished: turn_completed || last_message.is_some(),
         text: last_message
             .or(error_message)
             .unwrap_or_else(|| "No agent message found in Codex output".into()),
@@ -127,21 +135,16 @@ pub fn parse(stdout: &str) -> Parsed {
     }
 }
 
-/// Whether stdout holds an answer; without one, a non-zero exit is a crash.
-/// For Codex, any stdout counts (as before the handler crates).
-pub fn has_final_result(stdout: &str) -> bool {
-    !stdout.is_empty()
-}
-
 /// The `codex-exec` failure table, first match wins (the cancelled, timeout
 /// and launch rows are decided before there is any output):
-/// - no stdout and a non-zero exit or a signal: `Crash`, with the exit status
-///   as `detail` (the stderr is in `stderr_tail`);
-/// - blank stdout: `NoResult`, "Codex CLI produced no output";
+/// - blank stdout and exit 0: `NoResult`, "Codex CLI produced no output";
 /// - a `turn.failed` or stream `error` event: `Reported`, with the last
-///   agent message (else the error message) as text;
-/// - otherwise `Completed` with the last agent message, even after a
-///   non-zero exit (with no message, the text says so).
+///   agent message (else the error message) as text, at any exit;
+/// - a non-zero exit or a signal: `Crash`, with the exit status as `detail`
+///   (the stderr is in `stderr_tail`), even after an agent message;
+/// - an agent message or `turn.completed`: `Completed` with the last agent
+///   message;
+/// - otherwise (exit 0, neither): `NoResult`.
 pub fn classify(invocation_id: &str, out: &Exited<'_>, duration: Duration) -> AgentResult {
     let base = AgentResult {
         exit: Some(ExitInfo {
@@ -154,14 +157,7 @@ pub fn classify(invocation_id: &str, out: &Exited<'_>, duration: Duration) -> Ag
         agent_session_id: codex_thread_id(out.stdout),
         ..AgentResult::failed(invocation_id, FailureClass::NoResult, "")
     };
-    if !out.status.success() && !has_final_result(out.stdout) {
-        return AgentResult {
-            status: AgentStatus::Failed(FailureClass::Crash),
-            detail: format!("exited with {}", out.status),
-            ..base
-        };
-    }
-    if out.stdout.trim().is_empty() {
+    if out.status.success() && out.stdout.trim().is_empty() {
         return AgentResult {
             detail: format!(
                 "{} produced no output. stderr: {}",
@@ -172,17 +168,33 @@ pub fn classify(invocation_id: &str, out: &Exited<'_>, duration: Duration) -> Ag
         };
     }
     let parsed = parse(out.stdout);
+    if parsed.is_error {
+        return AgentResult {
+            status: AgentStatus::Failed(FailureClass::Reported),
+            detail: parsed.text.clone(),
+            text: parsed.text,
+            ..base
+        };
+    }
+    if !out.status.success() {
+        return AgentResult {
+            status: AgentStatus::Failed(FailureClass::Crash),
+            detail: format!("exited with {}", out.status),
+            ..base
+        };
+    }
+    if !parsed.finished {
+        return AgentResult {
+            detail: format!(
+                "{} exited 0 with no agent message. stderr: {}",
+                CodexExec::DISPLAY_NAME,
+                head(out.stderr, 500)
+            ),
+            ..base
+        };
+    }
     AgentResult {
-        status: if parsed.is_error {
-            AgentStatus::Failed(FailureClass::Reported)
-        } else {
-            AgentStatus::Completed
-        },
-        detail: if parsed.is_error {
-            parsed.text.clone()
-        } else {
-            String::new()
-        },
+        status: AgentStatus::Completed,
         text: parsed.text,
         ..base
     }
@@ -322,6 +334,8 @@ mod tests {
     }
 
     const STARTED: &str = r#"{"type":"thread.started","thread_id":"thread-7"}"#;
+    const TURN_COMPLETED: &str =
+        r#"{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}"#;
 
     #[test]
     fn the_thread_id_comes_from_thread_started() {
@@ -388,17 +402,48 @@ mod tests {
     }
 
     #[test]
-    fn a_message_completes_even_after_a_non_zero_exit() {
+    fn a_message_after_a_non_zero_exit_is_a_crash() {
         let result = classified(2, MESSAGE, "");
+        assert_eq!(result.status, AgentStatus::Failed(FailureClass::Crash));
+        assert_eq!(result.detail, "exited with exit status: 2");
+    }
+
+    #[test]
+    fn thread_started_only_after_a_non_zero_exit_is_a_crash() {
+        let result = classified(137, &format!("{STARTED}\n"), "");
+        assert_eq!(result.status, AgentStatus::Failed(FailureClass::Crash));
+        assert_eq!(result.detail, "exited with exit status: 137");
+        assert_eq!(result.exit.unwrap().code, Some(137));
+    }
+
+    #[test]
+    fn a_message_after_exit_0_completes() {
+        let result = classified(0, MESSAGE, "");
         assert_eq!(result.status, AgentStatus::Completed);
         assert_eq!(result.text, "Done");
     }
 
     #[test]
-    fn output_without_a_message_completes_saying_so() {
-        // As before the handler crates: unreadable stdout is not a failure.
-        let result = classified(0, "not json", "");
+    fn turn_completed_without_a_message_completes_saying_so() {
+        let stdout = format!("{STARTED}\n{TURN_COMPLETED}\n");
+        let result = classified(0, &stdout, "");
         assert_eq!(result.status, AgentStatus::Completed);
         assert_eq!(result.text, "No agent message found in Codex output");
+    }
+
+    #[test]
+    fn output_without_a_message_after_exit_0_is_no_result() {
+        for stdout in ["not json", STARTED] {
+            let result = classified(0, stdout, "warn");
+            assert_eq!(
+                result.status,
+                AgentStatus::Failed(FailureClass::NoResult),
+                "{stdout:?}"
+            );
+            assert_eq!(
+                result.detail,
+                "Codex CLI exited 0 with no agent message. stderr: warn"
+            );
+        }
     }
 }

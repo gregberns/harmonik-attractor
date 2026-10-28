@@ -152,11 +152,24 @@ async fn no_output_is_no_result() {
 }
 
 #[tokio::test]
-async fn garbage_completes_without_a_message_as_before() {
+async fn garbage_after_exit_0_is_no_result() {
     let fx = Fixture::new();
     let result = fx.run("scenario=garbage", None, LONG).await;
-    assert_eq!(result.status, AgentStatus::Completed);
-    assert_eq!(result.text, "No agent message found in Codex output");
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::NoResult));
+    assert_eq!(
+        result.detail,
+        "Codex CLI exited 0 with no agent message. stderr: "
+    );
+}
+
+#[tokio::test]
+async fn a_killed_run_with_only_thread_started_is_a_crash() {
+    let fx = Fixture::new();
+    let result = fx.run("scenario=killed", None, LONG).await;
+    assert_eq!(result.status, AgentStatus::Failed(FailureClass::Crash));
+    assert_eq!(result.detail, "exited with exit status: 137");
+    assert_eq!(result.exit.unwrap().code, Some(137));
+    assert!(result.agent_session_id.is_some());
 }
 
 #[tokio::test]

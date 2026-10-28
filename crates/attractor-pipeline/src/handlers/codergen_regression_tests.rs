@@ -845,9 +845,24 @@ async fn error_responses_give_pre_streaming_fail_outcomes() {
 async fn nonzero_exit_with_final_result_gives_pre_streaming_outcome() {
     for response in recorded_responses().into_iter().chain(error_responses()) {
         let stage = stage(response.provider, None);
-        let (both, _dir) = run_both(&response, &stage, 1, true).await;
-        let (new, old) = both_ok(&both, response.case);
-        assert_same_outcome(new, old, response.case);
+        let (both, dir) = run_both(&response, &stage, 1, true).await;
+        match (&both.new, &both.old) {
+            // Ticket 15: a Codex message after a non-zero exit, with no
+            // `turn.failed`, is now a crash.
+            (Err(new), Ok(_)) if response.provider == ProviderAlias::CODEX => {
+                let expected = crash_error(
+                    legacy::display_name(response.provider),
+                    &stage.node.id,
+                    1,
+                    &dir.path().join("run"),
+                );
+                assert_eq!(new.to_string(), expected, "{}", response.case)
+            }
+            _ => {
+                let (new, old) = both_ok(&both, response.case);
+                assert_same_outcome(new, old, response.case);
+            }
+        }
     }
 }
 

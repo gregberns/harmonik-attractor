@@ -151,6 +151,7 @@ or shims them on `PATH` as `codex`/`gemini` for the `llm_provider` aliases.
 | `success` | `agent_message` `fake-codex: success`, `turn.completed` | answer `fake-gemini: success` in the requested format |
 | `turn_failed` / `failure` | a message, then `turn.failed`, exit 1 | an error (json) or error `result` (stream-json), exit 1 |
 | `crash` | no stdout, `fake-codex: crashed` on stderr, exit 3 | no stdout, `fake-gemini: crashed` on stderr, exit 3 |
+| `killed` | `thread.started` and `turn.started`, no message, exit 137 | (none) |
 | `garbage` | non-JSON stdout, exit 0 | non-JSON stdout, exit 0 |
 | `silent` | nothing, exit 0 | (none) |
 | `hang` | starts, then sleeps `FAKE_HANG_SECS` | sleeps `FAKE_HANG_SECS` |

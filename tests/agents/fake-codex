@@ -154,6 +154,12 @@ case $scenario in
         printf '%s\n' 'fake-codex: crashed' >&2
         exit 3
         ;;
+    killed)
+        # Killed mid-turn (as by SIGKILL under a shell): the thread started,
+        # no message, exit 137.
+        started
+        exit 137
+        ;;
     thread_not_found)
         # What `codex exec resume <id>` does when it has no such thread: no
         # JSON, the reason on stderr, exit 1.

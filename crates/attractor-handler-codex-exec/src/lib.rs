@@ -15,7 +15,7 @@ use attractor_agent_handler::{
 };
 use attractor_agent_process::{run_local, LocalRun, Spawn};
 
-pub use parse::{classify, codex_thread_id, has_final_result, parse, summarize, Exited, Parsed};
+pub use parse::{classify, codex_thread_id, parse, summarize, Exited, Parsed};
 
 /// The handler for profiles with mechanism `codex-exec`.
 #[derive(Debug, Default, Clone, Copy)]

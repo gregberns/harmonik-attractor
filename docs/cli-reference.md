@@ -262,6 +262,13 @@ stdin is `/dev/null`, the environment is the profile's (below; the
 and a timeout or stop gets TERM, `kill_grace`, then KILL. `LlmInvoked`
 records the profile name as `provider`.
 
+**Codex outcomes.** A `turn.failed` or stream `error` event fails as
+reported, with the last agent message (else the error message), at any exit
+code. Otherwise a non-zero exit or a signal is a crash with the exit status,
+even after an agent message. Exit 0 completes with the last agent message
+when there is one or a `turn.completed` event; with neither (no output, or
+output that isn't Codex JSONL) it fails as no result.
+
 > **Codex and `OPENAI_API_KEY`.** The default `env.remove` strips
 > `OPENAI_API_KEY`, so Codex bills the logged-in subscription, never an
 > inherited API key. A project whose Codex authenticates with an API key
