@@ -13,7 +13,8 @@ first:
   get the `reasoning_args` error (validation.rs:230). The test named at :24
   no longer exists. Also the stale comment at execution_plan.rs:673-675.
 - docs/cli-reference.md: `pas decompose --validate` missing from the
-  options table (875-882) and from "exactly one source" (867); `pi` missing
+  options table (875-882); it `requires` SPEC_PATH (main.rs:266), so check
+  whether "exactly one source" (867) needs it at all; `pi` missing
   from the agent CLIs needed on PATH (1452-1456); `PAS_REQUIRE_BD` and
   `GEMINI_API_KEY` undocumented.
 - docs/accept-execute-c4.md:126 and accept-execute-c4-dot.md:135 cite

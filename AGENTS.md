@@ -16,8 +16,8 @@ statuses or "until X" notes; those belong in the plan.
 ## Where the work comes from
 
 - The active plan is named in [plans/README.md](plans/README.md); its
-  README has the ticket table and status, its `tickets/` the work.
-- Build only what a ticket asks. Use the glossary's terms (`CONTEXT.md`).
+  README links the ticket table, `tickets/` and the glossary (`CONTEXT.md`).
+- Build only what a ticket asks; use the glossary's terms.
 - No other tracker for our own work: no `bd`/beads, TodoWrite or TODO
   lists. (PAS's beads integration, docs/guide.md, is a product feature.)
 
