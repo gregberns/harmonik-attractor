@@ -26,6 +26,7 @@ In priority order. The integrator marks a ticket done here when merging it.
 | 19 | [Small fixes: context order, cost warning, profile cycles](tickets/19-small-fixes.md) | 13 | done |
 | 20 | [Flaky tests and test hygiene](tickets/20-flaky-tests.md) | 13 | done |
 | 21 | [Strip the Gemini API keys like the others](tickets/21-strip-gemini-keys.md) | none | open |
+| 22 | [Warn when a node sets `model` instead of `llm_model`](tickets/22-warn-node-model.md) | none | open |
 
 ## Waiting on the operator
 
@@ -38,8 +39,10 @@ These change how the product behaves, so they are not tickets yet. Each
    phases shared one workdir. Recommended: start phase N+1's branch at
    phase N's final commit. A phase is a whole `.dot` file; nodes inside
    one `.dot` already share one branch.
-2. **A first real run.** Operator: yes (2026-10-27); the captain runs it
-   by hand, and each finding becomes a ticket. Nothing has run with a real agent since the plan
+2. **A first real run.** Done 2026-10-27 at bd0592d: claude haiku, a tool
+   check, one loop-back (the claude session resumed), codex, a final check;
+   one commit per node, $0.003. Findings: ticket 22 and item 14. Not yet
+   exercised: codex resume, gemini, pi. Before it: nothing has run with a real agent since the plan
    (only pre-plan code, in harmonik-v3 research/pas-spike). A hand-run smoke
    test (claude haiku + codex + a tool check + one loop-back; a few cents of
    subscription) would check what the fakes can't: each CLI accepts PAS's
@@ -71,3 +74,11 @@ These change how the product behaves, so they are not tickets yet. Each
     lives in harmonik-v3.
 13. **Strip the Gemini API keys?** Operator: yes, keep the providers in
     sync; Google isn't supported yet, so no `gemini-api` recipe. Ticket 21.
+14. **Agents see the operator's Claude setup.** A `claude` node loads the
+    operator's `~/.claude` plugins and hooks and gets every tool the
+    operator's session has, including `SendMessage`, `ListAgents` and
+    `Workflow`: a pipeline agent can message the operator's other live
+    sessions (the hk3 crew). Options: a default `--disallowedTools` list in
+    the `claude` profile, or isolate user settings with
+    `--setting-sources project`. Recommended: isolate, since a
+    pipeline should run the same on every machine.
