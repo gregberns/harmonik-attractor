@@ -29,7 +29,7 @@ docs/run-folder.md if it lists env names.
 
 **Blocked by:** 13
 
-**Status:** ready
+**Status:** done
 
 - [ ] Seam 1 (`Agents::run` with a fake): with `CLAUDECODE`, `CLAUDE_CODE_MESSAGING_TOKEN`, `HK3_AGENT_ID` and `KEEPER_X` in the parent env, none reach the agent; `CLAUDE_CODE_MAX_OUTPUT_TOKENS` and an unrelated `FOO` do (`CLAUDE_CODE_USE_BEDROCK` is on the default strip list already)
 - [ ] The same with a profile that sets its own `env.remove`

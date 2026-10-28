@@ -18,7 +18,7 @@ In priority order. The integrator marks a ticket done here when merging it.
 | # | Ticket | Blocked by | Status |
 |---|---|---|---|
 | 13 | [Plan and AGENTS.md alignment](tickets/13-plan-and-docs-alignment.md) | none | done |
-| 14 | [Never pass the parent session's identity to agents](tickets/14-strip-session-identity-env.md) | 13 | ready |
+| 14 | [Never pass the parent session's identity to agents](tickets/14-strip-session-identity-env.md) | 13 | done |
 | 15 | [A Codex run with no agent message is not a success](tickets/15-codex-no-hidden-success.md) | 13 | done |
 | 16 | [`pas validate --workdir` reads the same pas.toml as run](tickets/16-validate-workdir.md) | 13 | ready |
 | 17 | [Docs match the code](tickets/17-docs-drift.md) | 14, 15, 16 | ready |
