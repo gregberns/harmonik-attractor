@@ -3,6 +3,7 @@
 //! finished (SIGKILL, or a stop) is committed as `interrupted` on resume, and
 //! the re-run's prompt says so (ticket 07).
 
+mod blocked_agents;
 #[allow(dead_code)]
 mod fake_agent;
 

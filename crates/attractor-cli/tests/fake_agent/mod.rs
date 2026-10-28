@@ -6,9 +6,9 @@
 //! and the Run's logs and state folders. Pipelines select the fake with
 //! `agent="fake"`, and every `pas run` passes `--allow-test-agents`. A
 //! `bin/` first on `PATH` holds a fail-loud stub for every agent CLI
-//! ([`BLOCKED_AGENTS`]), so a test can never reach a real agent from the
-//! user's `PATH`; [`FakeAgent::shim_claude_on_path`] replaces the `claude`
-//! stub with the fake (the `llm_provider="claude"` alias), and
+//! ([`crate::blocked_agents`]), so a test can never reach a real agent
+//! from the user's `PATH`; [`FakeAgent::shim_claude_on_path`] replaces the
+//! `claude` stub with the fake (the `llm_provider="claude"` alias), and
 //! `shim_codex_on_path`/`shim_gemini_on_path` do the same for `codex` and
 //! `gemini`. The `pas.toml` also has `fake-codex`, `fake-gemini` and
 //! `fake-claude` profiles (the built-in `codex`/`gemini`/`claude` profiles
@@ -35,10 +35,6 @@ fn fake_claude() -> PathBuf {
     fake_script("fake-claude")
 }
 
-/// Agent CLIs a test must never reach on the user's `PATH`: each gets a
-/// stub in `bin/` that exits 2 unless a test shims the fake in its place.
-pub const BLOCKED_AGENTS: [&str; 4] = ["claude", "codex", "gemini", "pi"];
-
 /// The dummy API key the Pi tests give `pas` as `FAKE_PI_KEY`.
 #[allow(dead_code)]
 pub const FAKE_PI_KEY: &str = "sk-secret";
@@ -55,9 +51,7 @@ impl FakeAgent {
         for dir in [fake.bin(), fake.scenarios(), fake.repo(), fake.home()] {
             fs::create_dir_all(dir).unwrap();
         }
-        for agent in BLOCKED_AGENTS {
-            fake.block_agent(agent);
-        }
+        crate::blocked_agents::block_agents(&fake.bin());
         fake.git(&["init", "-q"]);
         fake.write_pas_toml("");
         fake.git(&["add", "pas.toml"]);
@@ -122,21 +116,6 @@ impl FakeAgent {
         let path = self.bin().join(agent);
         fs::remove_file(&path).unwrap();
         std::os::unix::fs::symlink(fake_script(fake), path).unwrap();
-    }
-
-    /// Writes `bin/<agent>`: a stub that refuses to run, ahead of any real
-    /// agent on the user's `PATH`.
-    fn block_agent(&self, agent: &str) {
-        use std::os::unix::fs::PermissionsExt;
-        let stub = self.bin().join(agent);
-        fs::write(
-            &stub,
-            format!(
-                "#!/bin/sh\necho 'real agent blocked in tests: call shim_{agent}_on_path()' >&2\nexit 2\n"
-            ),
-        )
-        .unwrap();
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     fn path(&self) -> &Path {
@@ -209,12 +188,9 @@ impl FakeAgent {
 
     /// `pas` with the fake's environment, in the scratch folder.
     fn pas(&self) -> Command {
-        let path = std::env::var_os("PATH").unwrap_or_default();
-        let mut paths = vec![self.bin()];
-        paths.extend(std::env::split_paths(&path));
         let mut command = Command::new(env!("CARGO_BIN_EXE_pas"));
         command
-            .env("PATH", std::env::join_paths(paths).unwrap())
+            .env("PATH", crate::blocked_agents::path_with(&self.bin()))
             .env("FAKE_AGENT_SCENARIOS", self.scenarios())
             .env("PAS_STATE_DIR", self.path().join("state"))
             // Agents' session files (`~/.claude`, `~/.codex`) and anything

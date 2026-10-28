@@ -4,6 +4,7 @@
 //! prompt files the fake writes per start.
 
 // This crate uses a subset of the shared harness.
+mod blocked_agents;
 #[allow(dead_code)]
 mod fake_agent;
 

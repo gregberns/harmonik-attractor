@@ -5,6 +5,7 @@
 //! no test runs a real `pi`, calls an endpoint or uses a real key.
 
 // This crate uses a subset of the shared harness.
+mod blocked_agents;
 #[allow(dead_code)]
 mod fake_agent;
 

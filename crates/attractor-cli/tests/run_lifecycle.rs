@@ -3,6 +3,7 @@
 //! Run Index entry, and Attempt lifecycle Events, observed through the real
 //! binary.
 
+mod blocked_agents;
 mod common;
 
 use std::fs;
@@ -21,8 +22,9 @@ fn pas() -> &'static str {
     env!("CARGO_BIN_EXE_pas")
 }
 
-/// A scratch folder with a Pipeline file, a logs folder, and a state folder
-/// holding the Run Index.
+/// A scratch folder with a Pipeline file, a logs folder, a state folder
+/// holding the Run Index, and `bin/` with fail-loud agent stubs, first on
+/// every `pas` command's `PATH` (`THREE_STAGES` names `claude`).
 struct Fixture {
     dir: tempfile::TempDir,
 }
@@ -31,7 +33,15 @@ impl Fixture {
     fn new(source: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("p.dot"), source).unwrap();
+        blocked_agents::block_agents(&dir.path().join("bin"));
         Self { dir }
+    }
+
+    /// `pas` with the agent stubs first on `PATH`.
+    fn pas(&self) -> Command {
+        let mut command = Command::new(pas());
+        command.env("PATH", blocked_agents::path_with(&self.path().join("bin")));
+        command
     }
 
     fn path(&self) -> &Path {
@@ -69,7 +79,7 @@ impl Fixture {
     }
 
     fn command(&self, extra: &[&str]) -> Command {
-        let mut command = Command::new(pas());
+        let mut command = self.pas();
         command
             .args(self.args(extra))
             .env("PAS_STATE_DIR", self.path().join("state"))
@@ -149,7 +159,8 @@ fn assert_failure(output: &Output) {
     );
 }
 
-/// Three stages between start and exit; runs in `--dry-run`.
+/// Three stages between start and exit; runs in `--dry-run`, with the
+/// Fixture's stub `claude` first on `PATH` in case a run ever starts one.
 const THREE_STAGES: &str = r#"digraph Three {
     node [llm_provider="claude"]
     start [shape="Mdiamond"]
@@ -173,6 +184,17 @@ fn assert_contiguous_seq(events: &[Value]) {
     let seqs: Vec<u64> = events.iter().map(|e| e["seq"].as_u64().unwrap()).collect();
     let expected: Vec<u64> = (1..=seqs.len() as u64).collect();
     assert_eq!(seqs, expected, "seq must run 1..n without gaps");
+}
+
+// Without --dry-run, THREE_STAGES reaches the Fixture's stub `claude`,
+// never a real one on the user's PATH.
+#[test]
+fn three_stages_without_dry_run_reaches_only_the_stub_agent() {
+    let fx = Fixture::new(THREE_STAGES);
+    let output = fx.run(&[]);
+    assert_failure(&output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("real agent blocked in tests"), "{stderr}");
 }
 
 // AC: fresh run creates run.json + events.jsonl and one Index line; the
@@ -662,7 +684,7 @@ fn directory_run_creates_one_run_per_pipeline() {
     fs::write(batch.join("02-b.dot"), THREE_STAGES).unwrap();
 
     let run_dir_cmd = |extra: &[&str]| {
-        Command::new(pas())
+        fx.pas()
             .arg("run")
             .arg(&batch)
             .args(["--dry-run"])
@@ -884,7 +906,8 @@ fn directory_run_stops_heartbeat_per_pipeline() {
     fs::write(batch.join("01-a.dot"), napping("A")).unwrap();
     fs::write(batch.join("02-b.dot"), napping("B")).unwrap();
 
-    let output = Command::new(pas())
+    let output = fx
+        .pas()
         .arg("run")
         .arg(&batch)
         .env("PAS_STATE_DIR", fx.path().join("state"))

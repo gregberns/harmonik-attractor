@@ -5,6 +5,7 @@
 //! `llm_provider` aliases with the fakes shimmed on `PATH`.
 
 // This crate uses a subset of the shared harness.
+mod blocked_agents;
 #[allow(dead_code)]
 mod fake_agent;
 

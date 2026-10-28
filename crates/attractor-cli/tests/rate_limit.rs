@@ -6,6 +6,7 @@
 //! the 1 s minimum: the product waiting, not a sleep in this test.
 
 // This crate uses a subset of the shared harness.
+mod blocked_agents;
 #[allow(dead_code)]
 mod fake_agent;
 

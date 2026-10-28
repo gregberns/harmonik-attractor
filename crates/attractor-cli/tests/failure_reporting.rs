@@ -3,6 +3,7 @@
 //! names the node, the attempt and the agent's files; a node whose edges match
 //! nothing stops the Run; tool nodes route as before (ticket 05).
 
+mod blocked_agents;
 #[allow(dead_code)]
 mod fake_agent;
 

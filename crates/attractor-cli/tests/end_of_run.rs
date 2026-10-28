@@ -3,6 +3,7 @@
 //! through writes `final.json`; a successful Run removes its worktree and
 //! keeps its branch (ticket 07).
 
+mod blocked_agents;
 #[allow(dead_code)]
 mod common;
 #[allow(dead_code)]

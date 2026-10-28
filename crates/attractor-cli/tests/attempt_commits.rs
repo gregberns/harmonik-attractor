@@ -2,6 +2,7 @@
 //! `pas run` end to end with the fake `claude`: the engine records every
 //! attempt as one commit on the Run's branch (ticket 07).
 
+mod blocked_agents;
 #[allow(dead_code)]
 mod fake_agent;
 

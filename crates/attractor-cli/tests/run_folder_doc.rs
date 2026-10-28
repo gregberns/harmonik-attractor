@@ -10,6 +10,7 @@
 //! start (for `console.log`). Both are slow or need the Monitor; the
 //! constant check covers those two names.
 
+mod blocked_agents;
 #[allow(dead_code)]
 mod fake_agent;
 

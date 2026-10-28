@@ -3,6 +3,7 @@
 //! `transcripts/<inv>.prompt.txt` with the prompt and argv and no
 //! environment values (ticket 12).
 
+mod blocked_agents;
 #[allow(dead_code)]
 mod fake_agent;
 

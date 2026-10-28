@@ -5,6 +5,7 @@
 //! `llm_provider="claude"` alias, through `pas run` with the fake.
 
 // This crate uses a subset of the shared harness.
+mod blocked_agents;
 mod common;
 #[allow(dead_code)]
 mod fake_agent;

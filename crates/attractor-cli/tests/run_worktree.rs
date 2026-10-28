@@ -3,6 +3,7 @@
 //! through `pas run` with the fake agents in temporary git repos.
 
 // This crate uses a subset of the shared harness.
+mod blocked_agents;
 mod common;
 #[allow(dead_code)]
 mod fake_agent;

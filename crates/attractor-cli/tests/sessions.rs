@@ -4,6 +4,7 @@
 //! profile (the built-in `claude` with the fake as command), so they get the
 //! built-in `--session-id`/`--resume` forms.
 
+mod blocked_agents;
 #[allow(dead_code)]
 mod fake_agent;
 

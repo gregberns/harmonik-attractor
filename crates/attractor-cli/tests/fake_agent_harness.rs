@@ -4,6 +4,7 @@
 //! prompt, and checks what a caller sees: exit status, stderr, journal, the
 //! fake's own logs and the workdir's git history.
 
+mod blocked_agents;
 mod common;
 mod fake_agent;
 
