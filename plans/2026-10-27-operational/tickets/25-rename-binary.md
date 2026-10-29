@@ -19,7 +19,7 @@
 
 **Blocked by:** none
 
-**Status:** open
+**Status:** done
 
 - [x] `cargo build --release` makes `harmonik-attractor` and `hka`, no `pas`
 - [x] No user-facing message says `pas ` (grep the CLI crate's strings)
