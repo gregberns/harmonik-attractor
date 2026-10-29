@@ -1,6 +1,6 @@
 # Design: configure what each Claude agent starts with (item 15)
 
-Status: proposal, waiting on the operator.
+Status: approved by the operator 2026-10-28. Tickets 29-30.
 
 ## Goal
 

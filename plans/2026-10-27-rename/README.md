@@ -1,7 +1,7 @@
 # Rename: `pas` becomes `harmonik-attractor` (alias `hka`)
 
-Status: proposal, waiting on the operator's OK of the layout below. No
-tickets yet.
+Status: approved by the operator 2026-10-28. Tickets 25-28 live in the
+[operational plan](../2026-10-27-operational/README.md).
 
 The operator's call (2026-10-28): the tool is `harmonik-attractor`, with
 `hka` as a short alias. Agents mostly start it, so the long name is fine.

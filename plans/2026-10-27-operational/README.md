@@ -29,6 +29,12 @@ In priority order. The integrator marks a ticket done here when merging it.
 | 22 | [Warn when a node sets `model` instead of `llm_model`](tickets/22-warn-node-model.md) | none | done |
 | 23 | [Claude agents can't reach the operator's other sessions](tickets/23-no-cross-session-tools.md) | none | done |
 | 24 | [Directory mode: each phase starts from the previous phase's result](tickets/24-chain-phases.md) | none | done |
+| 25 | [Rename: the binary is `harmonik-attractor`, alias `hka`](tickets/25-rename-binary.md) | none | open |
+| 26 | [Rename: `pas.toml` and `.pas/` become `.harmonik-attractor/`](tickets/26-rename-config-and-run-folder.md) | 25 | open |
+| 27 | [Rename: `HKA_*` env vars, state dirs and commit trailers](tickets/27-rename-env-state-trailers.md) | 26 | open |
+| 28 | [Rename: docs, README, AGENTS.md and examples](tickets/28-rename-docs.md) | 27 | open |
+| 29 | [Claude agent setup fields: isolation, settings, skills, tools](tickets/29-agent-setup-fields.md) | 28 | open |
+| 30 | [`[codergen.claude]` fills the new fields; docs and an example role](tickets/30-agent-setup-codergen-fold.md) | 29 | open |
 
 ## Waiting on the operator
 
@@ -82,5 +88,8 @@ These change how the product behaves, so they are not tickets yet. Each
     tools, plugin dirs) or by rewriting a profile's whole `args`.
     Operator: wants it. Proposed: `settings`, `plugin_dirs`, `tools` and
     `disallowed_tools` as `claude` profile fields, so a `reviewer` profile
-    (`inherit_from = "claude"`) carries its own skills. Design proposal:
-    [agent-setup.md](agent-setup.md).
+    (`inherit_from = "claude"`) carries its own skills. Design:
+    [agent-setup.md](agent-setup.md), approved 2026-10-28. Tickets 29-30.
+16. **Rename** to `harmonik-attractor` (alias `hka`): layout approved
+    2026-10-28 ([rename plan](../2026-10-27-rename/README.md)). Tickets
+    25-28, one after another (each touches most files).
