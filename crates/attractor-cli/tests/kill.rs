@@ -14,7 +14,7 @@ use std::os::unix::process::CommandExt;
 mod common;
 
 fn pas() -> &'static str {
-    env!("CARGO_BIN_EXE_pas")
+    env!("CARGO_BIN_EXE_harmonik-attractor")
 }
 
 const RUN: &str = "0192a000-0000-7000-8000-000000000001";

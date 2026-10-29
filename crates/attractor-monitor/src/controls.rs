@@ -64,7 +64,7 @@ impl std::fmt::Display for ControlError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NotARunCommand => f.write_str(
-                "this Run was not started with `pas run`, so it cannot be re-issued from the Monitor",
+                "this Run was not started with `hka run`, so it cannot be re-issued from the Monitor",
             ),
         }
     }
@@ -149,7 +149,7 @@ fn failure_message(out: &spawn::PasOutput) -> String {
         .and_then(|v| v["error"]["message"].as_str().map(String::from));
     from_json
         .or_else(|| Some(out.stderr.trim().to_string()).filter(|s| !s.is_empty()))
-        .unwrap_or_else(|| format!("pas exited with code {}", out.code.unwrap_or(-1)))
+        .unwrap_or_else(|| format!("hka exited with code {}", out.code.unwrap_or(-1)))
 }
 
 pub(crate) fn tail(path: &Path) -> String {
@@ -196,7 +196,7 @@ fn target(
 async fn run_pas_command(state: &AppState, args: Vec<OsString>, done: &str) -> Response {
     let exe = match state.pas_exe() {
         Ok(e) => e,
-        Err(e) => return failed(&format!("Cannot find the pas executable: {e}")),
+        Err(e) => return failed(&format!("Cannot find the hka executable: {e}")),
     };
     match spawn::run_at(&exe, &args).await {
         Ok(out) if out.code == Some(0) => reply(StatusCode::OK, "notice", done),
@@ -295,7 +295,7 @@ async fn start(
 ) -> Response {
     let exe = match state.pas_exe() {
         Ok(e) => e,
-        Err(e) => return failed(&format!("Cannot find the pas executable: {e}")),
+        Err(e) => return failed(&format!("Cannot find the hka executable: {e}")),
     };
     let log = run_dir.console_log();
     let before = std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0);
@@ -315,9 +315,9 @@ async fn start(
             };
             let code = code.map_or("a signal".to_string(), |c| format!("code {c}"));
             failed(&if text.is_empty() {
-                format!("pas exited with {code} at start.")
+                format!("hka exited with {code} at start.")
             } else {
-                format!("pas exited with {code} at start: {text}")
+                format!("hka exited with {code} at start: {text}")
             })
         }
     }
@@ -365,7 +365,7 @@ pub async fn answer(
     }
     let exe = match state.pas_exe() {
         Ok(e) => e,
-        Err(e) => return failed(&format!("Cannot find the pas executable: {e}")),
+        Err(e) => return failed(&format!("Cannot find the hka executable: {e}")),
     };
     let run_id = snap.entry.run_id.clone();
     let mut args: Vec<OsString> = ["answer", "--source", "monitor", "--json", "--"]

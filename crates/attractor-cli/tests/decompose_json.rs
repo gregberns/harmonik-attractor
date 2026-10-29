@@ -64,7 +64,7 @@ fn log_lines(dir: &Path, name: &str) -> Vec<String> {
 }
 
 fn pas(args: &[&str], bin: &Path, work: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_pas"))
+    Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(args)
         .current_dir(work)
         .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))

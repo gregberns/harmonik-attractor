@@ -36,7 +36,7 @@ const QUICK: &str = r#"digraph Quick {
 }"#;
 
 fn pas() -> &'static str {
-    env!("CARGO_BIN_EXE_pas")
+    env!("CARGO_BIN_EXE_harmonik-attractor")
 }
 
 /// A scratch folder: `repo/` (a git repository when asked), Pipeline files,

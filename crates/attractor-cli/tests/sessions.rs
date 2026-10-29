@@ -277,7 +277,7 @@ fn a_gemini_node_is_fresh_and_full_on_it_fails_validation() {
         one_node(r#"agent="fake-gemini", fidelity="full""#),
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_pas"))
+    let output = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(["validate", "--allow-test-agents"])
         .arg(&pipeline)
         .current_dir(fake.repo())
@@ -445,7 +445,7 @@ fn pas_validate_refuses_one_thread_id_across_different_profiles() {
         }"#,
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_pas"))
+    let output = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(["validate", "--allow-test-agents"])
         .arg(&pipeline)
         .current_dir(fake.repo())

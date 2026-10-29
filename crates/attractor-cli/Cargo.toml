@@ -6,8 +6,13 @@ license.workspace = true
 description = "Pascal's Discrete Attractor — DOT-based pipeline runner for AI workflows"
 
 [[bin]]
-name = "pas"
+name = "harmonik-attractor"
 path = "src/main.rs"
+
+# The short name for typing; the same program.
+[[bin]]
+name = "hka"
+path = "src/hka.rs"
 
 [features]
 # Off by default; release builds enable it (see install.sh).

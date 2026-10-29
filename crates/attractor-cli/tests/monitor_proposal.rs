@@ -66,7 +66,7 @@ fi"#,
             .local_addr()
             .unwrap()
             .port();
-        let monitor = Command::new(env!("CARGO_BIN_EXE_pas"))
+        let monitor = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
             .args(["monitor", "--port", &port.to_string()])
             .env("PAS_STATE_DIR", dir.path().join("state"))
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))

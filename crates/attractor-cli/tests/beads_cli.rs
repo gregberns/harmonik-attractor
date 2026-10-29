@@ -12,7 +12,7 @@ use std::process::{Command, Output};
 const BEADS_PROGRAM: &str = concat!("b", "d");
 
 fn scaffold(path_dir: &Path, workdir: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_pas"))
+    Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(["scaffold", "e-1", "--output", "out.dot"])
         .current_dir(workdir)
         .env("PATH", path_dir)

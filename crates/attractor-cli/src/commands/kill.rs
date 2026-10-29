@@ -403,7 +403,7 @@ pub fn cmd_kill(run_id: &str, _grace: Option<&str>, json: bool) -> anyhow::Resul
         run_id,
         json,
         Err(KillError::Io(
-            "pas kill is not supported on this platform".into(),
+            "hka kill is not supported on this platform".into(),
         )),
     )
 }

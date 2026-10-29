@@ -155,7 +155,7 @@ fn run_plan_inner(
                 "{display_name} does not report per-call cost; Total cost and {budget_description} cannot track {node_count} {display_name} {node_label}. Step limits still apply."
             ),
             suggestion: Some(
-                "Track spend for this provider separately (e.g. via its own billing dashboard) — pas cannot include it in its running total".into(),
+                "Track spend for this provider separately (e.g. via its own billing dashboard) — hka cannot include it in its running total".into(),
             ),
             workdir: None,
         });
@@ -175,7 +175,7 @@ fn run_plan_inner(
                     "Pipeline uses 'quality' handler but no pas.toml found in {}",
                     workdir.display()
                 ),
-                suggestion: Some("pas init".into()),
+                suggestion: Some("hka init".into()),
                 workdir: Some(workdir.to_path_buf()),
             });
         }
@@ -195,7 +195,7 @@ fn run_plan_inner(
                     "Pipeline uses 'quality' handler but no pas.toml found in {}",
                     workdir.display()
                 ),
-                suggestion: Some("pas init".into()),
+                suggestion: Some("hka init".into()),
                 workdir: Some(workdir.to_path_buf()),
             });
         }
@@ -360,7 +360,7 @@ mod tests {
         );
         assert_eq!(findings[0].code, "QUALITY_NO_MANIFEST");
         assert_eq!(findings[0].severity, Severity::Warn);
-        assert_eq!(findings[0].suggestion.as_deref(), Some("pas init"));
+        assert_eq!(findings[0].suggestion.as_deref(), Some("hka init"));
     }
 
     /// (c) no quality node + no manifest → no findings.

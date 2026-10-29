@@ -564,7 +564,7 @@ fn run_until_stopped_at_gate(fake: &FakeAgent, extra: &[&str]) -> PathBuf {
         wt.join("at-gate").exists().then_some(())
     });
     let run_id = fake.run_meta()["run_id"].as_str().unwrap().to_string();
-    let stop = std::process::Command::new(env!("CARGO_BIN_EXE_pas"))
+    let stop = std::process::Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(["stop", &run_id])
         .env("PAS_STATE_DIR", fake.root().join("state"))
         .current_dir(fake.root())

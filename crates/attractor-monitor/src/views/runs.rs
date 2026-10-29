@@ -158,7 +158,7 @@ pub fn table(rows: &[RunRow], total: usize) -> Markup {
         return html! {
             div.empty {
                 p { "No Runs yet." }
-                p { "Start one with " code { "pas run <pipeline.dot>" } }
+                p { "Start one with " code { "hka run <pipeline.dot>" } }
             }
         };
     }
@@ -533,15 +533,15 @@ mod tests {
         let html = table(&[], 0).into_string();
         assert!(html.contains("No Runs yet"));
         assert!(
-            html.contains("<code>pas run &lt;pipeline.dot&gt;</code>"),
+            html.contains("<code>hka run &lt;pipeline.dot&gt;</code>"),
             "{html}"
         );
         let page = page(&[], 0, &[], &RunsQuery::default()).into_string();
-        assert!(page.contains("pas run"));
+        assert!(page.contains("hka run"));
 
         let html = table(&[], 3).into_string();
         assert!(html.contains("No Runs match"));
-        assert!(!html.contains("pas run"));
+        assert!(!html.contains("hka run"));
     }
 
     #[test]

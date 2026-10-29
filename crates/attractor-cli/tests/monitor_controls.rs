@@ -51,7 +51,7 @@ impl Fx {
             .local_addr()
             .unwrap()
             .port();
-        let monitor = Command::new(env!("CARGO_BIN_EXE_pas"))
+        let monitor = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
             .args(["monitor", "--port", &port.to_string()])
             .env("PAS_STATE_DIR", dir.path().join("state"))
             .current_dir(dir.path())
@@ -88,7 +88,7 @@ impl Fx {
 
     /// Start `pas run` like a user would and wait until `slow` executes.
     fn start_run(&self) -> (std::sync::mpsc::Receiver<Option<i32>>, String) {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_pas"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
             .args([
                 "run",
                 "p.dot",

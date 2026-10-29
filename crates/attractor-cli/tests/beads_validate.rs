@@ -26,7 +26,7 @@ fn validate(path_dir: &Path, pipeline: &str) -> Output {
     let work = tempfile::tempdir().unwrap();
     let file = work.path().join("pipeline.dot");
     fs::write(&file, pipeline).unwrap();
-    Command::new(env!("CARGO_BIN_EXE_pas"))
+    Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .arg("validate")
         .arg(&file)
         .env("PATH", path_dir)
@@ -99,7 +99,7 @@ fn validate_fails_when_select_has_no_epic() {
 
 fn run(path_dir: &Path, work: &Path, extra: &[&str]) -> Output {
     fs::write(work.join("p.dot"), PIPELINE).unwrap();
-    Command::new(env!("CARGO_BIN_EXE_pas"))
+    Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .arg("run")
         .arg(work.join("p.dot"))
         .arg("--workdir")

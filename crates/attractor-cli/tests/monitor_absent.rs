@@ -3,7 +3,7 @@
 use std::process::Command;
 
 fn pas() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_pas"))
+    Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
 }
 
 #[test]

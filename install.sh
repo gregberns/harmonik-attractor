@@ -2,16 +2,18 @@
 set -euo pipefail
 
 INSTALL_DIR="${HOME}/.local/bin"
-BIN_NAME="pas"
+BIN_NAMES=("harmonik-attractor" "hka")
 
-echo "Building Pascal's Discrete Attractor (release)..."
+echo "Building harmonik-attractor (release)..."
 cargo build -p attractor-cli --release --features monitor
 
 # Create install directory if needed
 mkdir -p "${INSTALL_DIR}"
 
-# Copy binary
-cp "target/release/${BIN_NAME}" "${INSTALL_DIR}/${BIN_NAME}"
+# Copy binaries
+for BIN_NAME in "${BIN_NAMES[@]}"; do
+    cp "target/release/${BIN_NAME}" "${INSTALL_DIR}/${BIN_NAME}"
+done
 
 # Sign with Apple Developer identity (prevents macOS SIGKILL on unsigned binaries)
 if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
@@ -20,13 +22,17 @@ if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
     exit 1
 fi
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "${CODESIGN_IDENTITY}"; then
-    codesign --force --sign "${CODESIGN_IDENTITY}" "${INSTALL_DIR}/${BIN_NAME}"
-    echo "Signed ${BIN_NAME} with ${CODESIGN_IDENTITY}"
+    for BIN_NAME in "${BIN_NAMES[@]}"; do
+        codesign --force --sign "${CODESIGN_IDENTITY}" "${INSTALL_DIR}/${BIN_NAME}"
+        echo "Signed ${BIN_NAME} with ${CODESIGN_IDENTITY}"
+    done
 else
     echo "WARNING: Signing identity not found, skipping codesign"
 fi
 
-echo "Installed ${BIN_NAME} to ${INSTALL_DIR}/${BIN_NAME}"
+for BIN_NAME in "${BIN_NAMES[@]}"; do
+    echo "Installed ${BIN_NAME} to ${INSTALL_DIR}/${BIN_NAME}"
+done
 
 # Check if install dir is in PATH
 if ! echo "${PATH}" | tr ':' '\n' | grep -qx "${INSTALL_DIR}"; then
@@ -45,4 +51,4 @@ if ! echo "${PATH}" | tr ':' '\n' | grep -qx "${INSTALL_DIR}"; then
 fi
 
 echo ""
-"${INSTALL_DIR}/${BIN_NAME}" --version
+"${INSTALL_DIR}/hka" --version

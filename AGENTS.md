@@ -24,7 +24,7 @@ statuses or "until X" notes; those belong in the plan.
 ## Build and test
 
 ```bash
-cargo build --release                    # binary: target/release/pas
+cargo build --release                    # binaries harmonik-attractor, hka
 cargo test --workspace                   # all tests
 cargo clippy --workspace --all-targets   # lint: no new warnings (baseline 1)
 cargo fmt --all -- --check               # format check

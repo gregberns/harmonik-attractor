@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 fn pas() -> &'static str {
-    env!("CARGO_BIN_EXE_pas")
+    env!("CARGO_BIN_EXE_harmonik-attractor")
 }
 
 /// `slow` takes ~2 s; `next` must not start when a stop arrives during it.

@@ -210,7 +210,7 @@ fn a_stop_between_stages_keeps_the_worktree_and_reports_stopped() {
             .any(|e| e["type"] == "StageStarted" && e["data"]["node_id"] == "wait")
     });
 
-    let stop: Output = Command::new(env!("CARGO_BIN_EXE_pas"))
+    let stop: Output = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(["stop", &run_id(&fake)])
         .env("PAS_STATE_DIR", fake.root().join("state"))
         .current_dir(fake.root())

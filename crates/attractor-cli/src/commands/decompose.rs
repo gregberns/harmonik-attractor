@@ -214,7 +214,7 @@ async fn run(source: DecomposeSource<'_>, dry_run: bool, json: bool) -> Result<(
 
     println!("\nNext steps:");
     println!("1. Review tasks: bd list");
-    println!("2. Generate pipeline: pas scaffold {}", created.epic_id);
+    println!("2. Generate pipeline: hka scaffold {}", created.epic_id);
 
     Ok(())
 }

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 fn pas() -> &'static str {
-    env!("CARGO_BIN_EXE_pas")
+    env!("CARGO_BIN_EXE_harmonik-attractor")
 }
 
 /// `pas` with its Run Index in a scratch folder, never the developer's

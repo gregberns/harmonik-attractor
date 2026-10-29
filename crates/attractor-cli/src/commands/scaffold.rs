@@ -234,7 +234,7 @@ fn print_human(epic_id: &str, scaffolded: &Scaffolded) {
     if !has_error {
         println!("\nNext steps:");
         println!("1. Review pipeline: cat {}", output_path.display());
-        println!("2. Run pipeline: pas run {} -w .", output_path.display());
+        println!("2. Run pipeline: hka run {} -w .", output_path.display());
     }
 }
 

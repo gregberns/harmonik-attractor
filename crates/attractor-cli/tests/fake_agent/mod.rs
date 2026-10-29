@@ -188,7 +188,7 @@ impl FakeAgent {
 
     /// `pas` with the fake's environment, in the scratch folder.
     fn pas(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_pas"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"));
         command
             .env("PATH", crate::blocked_agents::path_with(&self.bin()))
             .env("FAKE_AGENT_SCENARIOS", self.scenarios())

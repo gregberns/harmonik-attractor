@@ -1,11 +1,12 @@
-//! CLI binary for running and validating Attractor pipelines.
+// CLI binary for running and validating Attractor pipelines. `hka.rs`
+// includes this file, so it has no inner attributes or doc comments.
 
 mod agents;
 mod commands;
 
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use commands::{
     cmd_answer, cmd_decompose, cmd_generate, cmd_generate_dir, cmd_info, cmd_init, cmd_kill,
     cmd_launch, cmd_plan, cmd_run, cmd_run_dir, cmd_runs, cmd_scaffold, cmd_stop, cmd_validate,
@@ -15,7 +16,7 @@ use commands::{
 
 #[derive(Parser)]
 #[command(
-    name = "pas",
+    name = "harmonik-attractor",
     version,
     about = "Pascal's Discrete Attractor — DOT-based pipeline runner for AI workflows"
 )]
@@ -129,7 +130,7 @@ enum Commands {
     /// Answer a waiting Human Gate by creating its answer file. Exits 7 when
     /// the question is already answered
     Answer {
-        /// Run ID (a UUID from `pas runs`)
+        /// Run ID (a UUID from `hka runs`)
         run_id: String,
 
         /// Question ID from the Run's `HumanInputRequested` Event
@@ -150,7 +151,7 @@ enum Commands {
     /// Ask an active Run to stop after its current stage. It ends with
     /// `stopped` and can be resumed by running the same command again
     Stop {
-        /// Run ID (a UUID from `pas runs`)
+        /// Run ID (a UUID from `hka runs`)
         run_id: String,
 
         /// Who is stopping, recorded in the journal
@@ -163,10 +164,10 @@ enum Commands {
     },
 
     /// End an active Run now: SIGTERM, then SIGKILL after the grace period.
-    /// The last completed stage's checkpoint is kept, so the same `pas run`
+    /// The last completed stage's checkpoint is kept, so the same `hka run`
     /// command resumes it
     Kill {
-        /// Run ID (a UUID from `pas runs`)
+        /// Run ID (a UUID from `hka runs`)
         run_id: String,
 
         /// How long to wait after SIGTERM before SIGKILL (e.g. 500ms, 10s, 1m).
@@ -297,11 +298,11 @@ enum Commands {
     /// Generate pipeline .dot files from spec (and optional PRD) files.
     ///
     /// Single-file mode:
-    ///   pas generate my-spec.md
-    ///   pas generate my-prd.md my-spec.md
+    ///   hka generate my-spec.md
+    ///   hka generate my-prd.md my-spec.md
     ///
     /// Directory mode:
-    ///   pas generate docs/implementation/
+    ///   hka generate docs/implementation/
     ///
     /// In directory mode, files ending in -spec.md are discovered and sorted
     /// lexically. Each spec is paired with a matching -prd.md file if one
@@ -477,8 +478,23 @@ async fn main() -> anyhow::Result<()> {
     result
 }
 
+/// The program's name as typed: `hka` when run as `hka`, otherwise
+/// `harmonik-attractor`. Help, usage and version text use it.
+fn program_name(argv0: Option<std::ffi::OsString>) -> &'static str {
+    let typed = argv0
+        .as_deref()
+        .map(std::path::Path::new)
+        .and_then(|p| p.file_stem());
+    match typed {
+        Some(stem) if stem == "hka" => "hka",
+        _ => "harmonik-attractor",
+    }
+}
+
 async fn run_cli() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+    let name = program_name(std::env::args_os().next());
+    let matches = Cli::command().name(name).bin_name(name).get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
 
     // Setup tracing
     let filter = if cli.verbose { "debug" } else { "info" };
@@ -684,19 +700,19 @@ async fn run_cli() -> anyhow::Result<()> {
                     (None, None, 2) => (Some(files[0].clone()), files[1].clone()),
                     (Some(_), None, 0) => {
                         anyhow::bail!(
-                            "Spec file is required. Usage: pas generate [--prd PRD] <SPEC>"
+                            "Spec file is required. Usage: hka generate [--prd PRD] <SPEC>"
                         );
                     }
                     (None, None, 0) => {
-                        anyhow::bail!("Spec file is required. Usage: pas generate [PRD] <SPEC>");
+                        anyhow::bail!("Spec file is required. Usage: hka generate [PRD] <SPEC>");
                     }
                     _ => {
                         anyhow::bail!(
                             "Too many arguments. Usage:\n  \
-                             pas generate <SPEC>\n  \
-                             pas generate <PRD> <SPEC>\n  \
-                             pas generate --prd <PRD> --spec <SPEC>\n  \
-                             pas generate <DIRECTORY>"
+                             hka generate <SPEC>\n  \
+                             hka generate <PRD> <SPEC>\n  \
+                             hka generate --prd <PRD> --spec <SPEC>\n  \
+                             hka generate <DIRECTORY>"
                         );
                     }
                 };

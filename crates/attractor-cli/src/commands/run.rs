@@ -911,7 +911,7 @@ pub async fn cmd_run(
     if let Some(node) = &result.stopped_before {
         say!(
             json,
-            "\nStopped before {node}; resume with the same pas run command (Run {run_id})"
+            "\nStopped before {node}; resume with the same hka run command (Run {run_id})"
         );
         return Ok(RunEnd::Stopped);
     }
@@ -1243,7 +1243,7 @@ pub async fn cmd_run_dir(
              The directory must contain one or more *.dot pipeline files.\n\
              Files are sorted lexically and run in that order — use zero-padded\n\
              names to control execution order (e.g. phase-01.dot, phase-02.dot).\n\n\
-             To generate .dot files from specs: pas generate <DOCS_DIR>",
+             To generate .dot files from specs: hka generate <DOCS_DIR>",
             dir.display()
         );
     }

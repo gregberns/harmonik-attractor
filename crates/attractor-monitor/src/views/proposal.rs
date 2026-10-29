@@ -120,7 +120,7 @@ fn load(state: &AppState, pid: &str) -> Result<(PathBuf, PlanMeta), Response> {
 /// Parse `pas decompose --json` output. The JSON is on stdout even when the
 /// exit code is 1, so it is parsed whatever the code. `Err` is a message.
 fn parse_decompose(out: std::io::Result<spawn::PasOutput>) -> Result<Value, String> {
-    let out = out.map_err(|e| format!("cannot run pas decompose: {e}"))?;
+    let out = out.map_err(|e| format!("cannot run hka decompose: {e}"))?;
     let v: Option<Value> = serde_json::from_str(out.stdout.trim()).ok();
     match v {
         Some(v) if v["ok"] == Value::Bool(true) && out.code == Some(0) => Ok(v),
@@ -132,7 +132,7 @@ fn parse_decompose(out: std::io::Result<spawn::PasOutput>) -> Result<Value, Stri
             })
         }
         _ => Err(format!(
-            "pas decompose produced no usable result (exit {:?}): {}",
+            "hka decompose produced no usable result (exit {:?}): {}",
             out.code,
             tail(&out.stderr)
         )),
@@ -142,7 +142,7 @@ fn parse_decompose(out: std::io::Result<spawn::PasOutput>) -> Result<Value, Stri
 async fn decompose(state: &AppState, args: Vec<OsString>, repo: &Path) -> Result<Value, String> {
     let exe = state
         .pas_exe()
-        .map_err(|e| format!("cannot find the pas executable: {e}"))?;
+        .map_err(|e| format!("cannot find the hka executable: {e}"))?;
     parse_decompose(spawn::run_at_in(&exe, &args, Some(repo)).await)
 }
 
@@ -179,7 +179,7 @@ pub async fn generate(State(state): State<AppState>, UrlPath(pid): UrlPath<Strin
         Err(e) => {
             return reply(
                 StatusCode::BAD_GATEWAY,
-                notice_err(&format!("pas decompose returned a malformed Proposal: {e}")),
+                notice_err(&format!("hka decompose returned a malformed Proposal: {e}")),
             )
         }
     };
@@ -326,7 +326,7 @@ pub async fn create_epic(
     let (Some(epic), Some(tasks)) = (v["epic_id"].as_str(), v["task_ids"].as_array()) else {
         return reply(
             StatusCode::BAD_GATEWAY,
-            editor(&pid, &p, Some("pas decompose returned no Epic id")),
+            editor(&pid, &p, Some("hka decompose returned no Epic id")),
         );
     };
     let tasks: Vec<String> = tasks

@@ -226,7 +226,7 @@ impl Scratch {
     }
 
     fn pas(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_pas"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"));
         command
             .args(args)
             .current_dir(self.path())

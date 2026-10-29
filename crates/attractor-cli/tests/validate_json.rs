@@ -26,7 +26,7 @@ const WARNING_ONLY: &str = r#"digraph G {
 }"#;
 
 fn pas(args: &[&str], file: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_pas"))
+    Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .arg("validate")
         .arg(file)
         .args(args)

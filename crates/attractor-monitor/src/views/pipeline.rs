@@ -235,12 +235,12 @@ impl Ctx {
 async fn check(state: &AppState, repo: &Path, dot: &Path) -> Check {
     let exe = match state.pas_exe() {
         Ok(e) => e,
-        Err(e) => return Check::Failed(format!("cannot find the pas executable: {e}")),
+        Err(e) => return Check::Failed(format!("cannot find the hka executable: {e}")),
     };
     let args: Vec<OsString> = vec!["validate".into(), dot.into(), "--json".into()];
     match spawn::run_at_in(&exe, &args, Some(repo)).await {
         Ok(o) => pipeline::parse_validate(o.code, &o.stdout, &o.stderr),
-        Err(e) => Check::Failed(format!("cannot run pas validate: {e}")),
+        Err(e) => Check::Failed(format!("cannot run hka validate: {e}")),
     }
 }
 
@@ -268,7 +268,7 @@ fn failure(out: &spawn::PasOutput) -> (Option<String>, String) {
         .as_ref()
         .and_then(|v| v["error"]["message"].as_str().map(String::from))
         .or_else(|| Some(out.stderr.trim().to_string()).filter(|s| !s.is_empty()))
-        .unwrap_or_else(|| format!("pas exited with code {}", out.code.unwrap_or(-1)));
+        .unwrap_or_else(|| format!("hka exited with code {}", out.code.unwrap_or(-1)));
     (code, msg)
 }
 
@@ -336,7 +336,7 @@ pub(crate) async fn build_step(state: &AppState, c: &Ctx) -> Built {
         Err(e) => {
             return Built::Failed(reply(
                 StatusCode::BAD_GATEWAY,
-                notice_err(&format!("cannot find the pas executable: {e}")),
+                notice_err(&format!("cannot find the hka executable: {e}")),
             ))
         }
     };
@@ -473,7 +473,7 @@ pub(crate) async fn launch_step(state: &AppState, c: &Ctx, form: &Pairs) -> Resp
                 StatusCode::BAD_GATEWAY,
                 &chk,
                 &values,
-                Some(&format!("cannot find the pas executable: {e}")),
+                Some(&format!("cannot find the hka executable: {e}")),
             )
         }
     };
@@ -538,8 +538,8 @@ pub(crate) async fn launch_step(state: &AppState, c: &Ctx, form: &Pairs) -> Resp
                 let mut msg = refusal_message(&console);
                 if msg.is_empty() {
                     msg = match other {
-                        Some(n) => format!("pas exited with code {n} at start"),
-                        None => "pas was stopped by a signal at start".into(),
+                        Some(n) => format!("hka exited with code {n} at start"),
+                        None => "hka was stopped by a signal at start".into(),
                     };
                 }
                 let (status, hint) = match other {

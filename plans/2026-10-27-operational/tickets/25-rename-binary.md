@@ -21,5 +21,5 @@
 
 **Status:** open
 
-- [ ] `cargo build --release` makes `harmonik-attractor` and `hka`, no `pas`
-- [ ] No user-facing message says `pas ` (grep the CLI crate's strings)
+- [x] `cargo build --release` makes `harmonik-attractor` and `hka`, no `pas`
+- [x] No user-facing message says `pas ` (grep the CLI crate's strings)

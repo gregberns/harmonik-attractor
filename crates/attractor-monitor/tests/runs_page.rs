@@ -171,7 +171,7 @@ async fn page_polls_the_table_fragment() {
         r#"hx-trigger="every 2s""#,
         r##"hx-include="#filters""##,
         r#"src="/assets/htmx.min.js""#,
-        "pas run",
+        "hka run",
     ] {
         assert!(body.contains(want), "missing {want}: {body}");
     }

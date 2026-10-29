@@ -21,7 +21,7 @@ const PIPELINE: &str = r#"digraph Gate {
 }"#;
 
 fn pas() -> &'static str {
-    env!("CARGO_BIN_EXE_pas")
+    env!("CARGO_BIN_EXE_harmonik-attractor")
 }
 
 struct Fixture {

@@ -88,7 +88,7 @@ fn tail(s: &str) -> &str {
 pub fn parse_validate(code: Option<i32>, stdout: &str, stderr: &str) -> Check {
     let Ok(v) = serde_json::from_str::<Value>(stdout.trim()) else {
         return Check::Failed(format!(
-            "pas validate produced no usable result (exit {code:?}): {}",
+            "hka validate produced no usable result (exit {code:?}): {}",
             tail(stderr)
         ));
     };
@@ -104,7 +104,7 @@ pub fn parse_validate(code: Option<i32>, stdout: &str, stderr: &str) -> Check {
         .filter(|_| v["ok"] == Value::Bool(true))
     else {
         return Check::Failed(format!(
-            "pas validate produced no usable result (exit {code:?}): {}",
+            "hka validate produced no usable result (exit {code:?}): {}",
             tail(stderr)
         ));
     };

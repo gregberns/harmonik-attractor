@@ -19,7 +19,7 @@ const RUN_ID: &str = "01920000-0000-7000-8000-00000000abcd";
 const HEARTBEAT_ENV: &str = "PAS_HEARTBEAT_INTERVAL_MS";
 
 fn pas() -> &'static str {
-    env!("CARGO_BIN_EXE_pas")
+    env!("CARGO_BIN_EXE_harmonik-attractor")
 }
 
 /// A scratch folder with a Pipeline file, a logs folder, a state folder

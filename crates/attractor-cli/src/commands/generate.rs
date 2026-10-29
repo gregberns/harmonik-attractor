@@ -441,7 +441,7 @@ fn print_human(input: &GenerateInput<'_>, generated: &Generated) {
             generated.output_path.display()
         );
         println!(
-            "2. Run pipeline: pas run {} -w .",
+            "2. Run pipeline: hka run {} -w .",
             generated.output_path.display()
         );
     }

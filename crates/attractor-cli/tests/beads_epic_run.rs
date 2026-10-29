@@ -27,7 +27,7 @@ use serde_json::Value;
 const PREFIX: &str = "pe";
 
 fn pas() -> &'static str {
-    env!("CARGO_BIN_EXE_pas")
+    env!("CARGO_BIN_EXE_harmonik-attractor")
 }
 
 fn repo_root() -> PathBuf {

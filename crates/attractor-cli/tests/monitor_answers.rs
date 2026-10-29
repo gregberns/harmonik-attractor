@@ -61,7 +61,7 @@ impl Fx {
             .unwrap()
             .port();
         let state = dir.path().join("state");
-        let monitor = Command::new(env!("CARGO_BIN_EXE_pas"))
+        let monitor = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
             .args(["monitor", "--port", &port.to_string()])
             .env("PAS_STATE_DIR", &state)
             .current_dir(dir.path())
@@ -69,7 +69,7 @@ impl Fx {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        let run = Command::new(env!("CARGO_BIN_EXE_pas"))
+        let run = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
             .args([
                 "run",
                 "p.dot",
@@ -241,7 +241,7 @@ fn click_answers_the_gate_as_monitor_and_the_buttons_disappear() {
 fn gate_answered_from_the_terminal_is_reported_and_left_unchanged() {
     let fx = Fx::new();
     let (_, token) = fx.page();
-    let out = Command::new(env!("CARGO_BIN_EXE_pas"))
+    let out = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(["answer", &fx.id, &fx.qid(), "reject", "--source", "cli"])
         .env("PAS_STATE_DIR", fx.path().join("state"))
         .output()

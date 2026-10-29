@@ -68,7 +68,7 @@ impl Scratch {
 
     /// `pas <args>` with this scratch folder's state folder.
     fn pas(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_pas"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"));
         command
             .env("PAS_STATE_DIR", self.path().join("state"))
             .env_remove("PAS_HEARTBEAT_INTERVAL_MS")

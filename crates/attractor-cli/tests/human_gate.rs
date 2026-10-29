@@ -29,7 +29,7 @@ const PIPELINE: &str = r#"digraph Gate {
 const TWO_POLLS: Duration = Duration::from_millis(2500);
 
 fn pas() -> &'static str {
-    env!("CARGO_BIN_EXE_pas")
+    env!("CARGO_BIN_EXE_harmonik-attractor")
 }
 
 /// A scratch folder with the Pipeline, a logs folder, and a state folder.

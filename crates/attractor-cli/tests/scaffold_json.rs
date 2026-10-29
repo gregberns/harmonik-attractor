@@ -22,7 +22,7 @@ fn beads_stub(dir: &Path, script: &str) {
 }
 
 fn pas(args: &[&str], path_dir: &Path, workdir: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_pas"))
+    Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(args)
         .current_dir(workdir)
         .env("PATH", path_dir)

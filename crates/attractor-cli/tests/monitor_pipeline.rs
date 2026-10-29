@@ -113,7 +113,7 @@ impl Fx {
             .local_addr()
             .unwrap()
             .port();
-        let monitor = Command::new(env!("CARGO_BIN_EXE_pas"))
+        let monitor = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
             .args(["monitor", "--port", &port.to_string()])
             .env("PAS_STATE_DIR", dir.path().join("state"))
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
@@ -280,7 +280,7 @@ fn run_dir_of(repo: &Path, dot: &Path, id: &str) -> PathBuf {
 
 #[test]
 fn defaults_match_pas_run_help() {
-    let out = Command::new(env!("CARGO_BIN_EXE_pas"))
+    let out = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(["run", "--help"])
         .output()
         .unwrap();
@@ -393,7 +393,7 @@ fn worktree_lock_is_shown_unless_shared_workdir_is_checked() {
     let waits = fx.dir.path().join("waits.dot");
     fs::write(&waits, WAITS).unwrap();
     let holder_logs = fx.dir.path().join("holder-logs");
-    let holder = Command::new(env!("CARGO_BIN_EXE_pas"))
+    let holder = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(["run"])
         .arg(&waits)
         .arg("--workdir")
