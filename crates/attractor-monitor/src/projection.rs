@@ -47,7 +47,7 @@ pub struct AttemptEnd {
 pub struct AttemptView {
     pub attempt: u32,
     pub pid: Option<u32>,
-    pub pas_version: Option<String>,
+    pub hka_version: Option<String>,
     pub argv: Vec<String>,
     pub git_head: Option<String>,
     pub resumed_from_node: Option<String>,
@@ -251,7 +251,7 @@ impl RunView {
                     AttemptView {
                         attempt,
                         pid: None,
-                        pas_version: None,
+                        hka_version: None,
                         argv: Vec::new(),
                         git_head: None,
                         resumed_from_node: None,
@@ -336,7 +336,7 @@ impl RunView {
             }
             EventData::AttemptStarted {
                 pid,
-                pas_version,
+                hka_version,
                 argv,
                 git_head,
                 resumed_from_node,
@@ -344,7 +344,7 @@ impl RunView {
             } => {
                 let a = self.attempt_mut(event.attempt, ts);
                 a.pid = Some(*pid);
-                a.pas_version = Some(pas_version.clone());
+                a.hka_version = Some(hka_version.clone());
                 a.argv = argv.clone();
                 a.git_head = git_head.clone();
                 a.resumed_from_node = resumed_from_node.clone();
@@ -604,7 +604,7 @@ mod tests {
         EventData::AttemptStarted {
             attempt: 0,
             pid,
-            pas_version: "1".into(),
+            hka_version: "1".into(),
             argv: vec!["pas".into()],
             git_head: None,
             resumed_from_node: None,

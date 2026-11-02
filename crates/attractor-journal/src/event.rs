@@ -123,7 +123,7 @@ pub enum EventData {
     AttemptStarted {
         attempt: u32,
         pid: u32,
-        pas_version: String,
+        hka_version: String,
         argv: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         git_head: Option<String>,
@@ -509,7 +509,7 @@ mod tests {
             EventData::AttemptStarted {
                 attempt: 2,
                 pid: 42,
-                pas_version: s("0.11.0"),
+                hka_version: s("0.11.0"),
                 argv: vec![s("pas"), s("run")],
                 git_head: Some(s("abc")),
                 resumed_from_node: None,

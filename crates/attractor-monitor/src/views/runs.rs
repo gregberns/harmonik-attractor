@@ -338,7 +338,7 @@ mod tests {
         EventData::AttemptStarted {
             attempt: 0,
             pid: 42,
-            pas_version: "1".into(),
+            hka_version: "1".into(),
             argv: vec![],
             git_head: None,
             resumed_from_node: None,

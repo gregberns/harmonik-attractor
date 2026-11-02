@@ -18,7 +18,7 @@ log="$FAKE_AGENT_SCENARIOS/invocations.log"
 # _KEY, so tests can see that no API key reached pi's environment.
 {
     printf '%s\n' '--- start' "FAKE_PID=$$"
-    env | grep -E '^(PAS_|ANTHROPIC_|OPENAI_|CLAUDE_CODE_USE_|PI_CODING_AGENT_DIR=|PI_TELEMETRY=|PI_OFFLINE=|PI_SKIP_VERSION_CHECK=)|^[A-Za-z_][A-Za-z0-9_]*_KEY=' | sort
+    env | grep -E '^(HKA_|HKA_|ANTHROPIC_|OPENAI_|CLAUDE_CODE_USE_|PI_CODING_AGENT_DIR=|PI_TELEMETRY=|PI_OFFLINE=|PI_SKIP_VERSION_CHECK=)|^[A-Za-z_][A-Za-z0-9_]*_KEY=' | sort
 } >>"$FAKE_AGENT_SCENARIOS/env.log"
 
 # Log argv, one argument per line; the positional prompt (last) as <prompt>.
@@ -66,15 +66,15 @@ printf '%s\n' '--- start' "$prompt" >>"$FAKE_AGENT_SCENARIOS/prompts.log"
 # Count this node's starts and keep each start's and attempt's prompt, as
 # fake-claude does.
 node_start=
-if [ -n "${PAS_NODE_ID:-}" ]; then
-    starts="$FAKE_AGENT_SCENARIOS/starts.$PAS_NODE_ID"
+if [ -n "${HKA_NODE_ID:-}" ]; then
+    starts="$FAKE_AGENT_SCENARIOS/starts.$HKA_NODE_ID"
     node_start=$(cat "$starts" 2>/dev/null || echo 0)
     node_start=$((node_start + 1))
     printf '%s\n' "$node_start" >"$starts"
-    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID@$node_start"
+    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$HKA_NODE_ID@$node_start"
 fi
-if [ -n "${PAS_NODE_ID:-}" ] && [ -n "${PAS_ATTEMPT:-}" ]; then
-    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID.$PAS_ATTEMPT"
+if [ -n "${HKA_NODE_ID:-}" ] && [ -n "${HKA_ATTEMPT:-}" ]; then
+    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$HKA_NODE_ID.$HKA_ATTEMPT"
 fi
 
 # Keep what Pi would read from its agent dir, for this start: copies of
@@ -82,7 +82,7 @@ fi
 # models.json is mode 0600 exactly (`0600`, `other` or `missing`), and the
 # dir's path, so a test can check the dir is gone after the run.
 if [ -n "${PI_CODING_AGENT_DIR:-}" ] && [ -n "$node_start" ]; then
-    at="$PAS_NODE_ID@$node_start"
+    at="$HKA_NODE_ID@$node_start"
     printf '%s\n' "$PI_CODING_AGENT_DIR" >"$FAKE_AGENT_SCENARIOS/pi-agent-dir.$at"
     models="$PI_CODING_AGENT_DIR/models.json"
     if [ -f "$models" ]; then
@@ -103,13 +103,13 @@ fi
 # <node>.<attempt>, then <node>, else the node's own prompt after the last
 # "Task (".
 node_file=
-if [ -n "${PAS_NODE_ID:-}" ]; then
-    if [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID@$node_start" ]; then
-        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID@$node_start"
-    elif [ -n "${PAS_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT" ]; then
-        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT"
-    elif [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID" ]; then
-        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID"
+if [ -n "${HKA_NODE_ID:-}" ]; then
+    if [ -f "$FAKE_AGENT_SCENARIOS/$HKA_NODE_ID@$node_start" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$HKA_NODE_ID@$node_start"
+    elif [ -n "${HKA_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$HKA_NODE_ID.$HKA_ATTEMPT" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$HKA_NODE_ID.$HKA_ATTEMPT"
+    elif [ -f "$FAKE_AGENT_SCENARIOS/$HKA_NODE_ID" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$HKA_NODE_ID"
     fi
 fi
 if [ -n "$node_file" ]; then

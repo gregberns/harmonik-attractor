@@ -5,13 +5,13 @@ use std::collections::BTreeMap;
 use crate::profile::ProfileEnv;
 use crate::types::Record;
 
-/// The `PAS_*` variables set from the record. A parent value is never kept.
-const PAS_VARS: &[&str] = &[
-    "PAS_RUN_ID",
-    "PAS_NODE_ID",
-    "PAS_ATTEMPT",
-    "PAS_INVOCATION_ID",
-    "PAS_SESSION_ID",
+/// The `HKA_*` variables set from the record. A parent value is never kept.
+const HKA_VARS: &[&str] = &[
+    "HKA_RUN_ID",
+    "HKA_NODE_ID",
+    "HKA_ATTEMPT",
+    "HKA_INVOCATION_ID",
+    "HKA_SESSION_ID",
 ];
 
 /// The calling session's identity: Claude Code's and hk3's. Stripped always,
@@ -46,10 +46,10 @@ fn is_session_identity(key: &str) -> bool {
 }
 
 /// The parent environment minus the profile's `env.remove`, the session
-/// identity variables and any `PAS_*` variable above, plus the profile's
-/// `env.set`, then `PAS_NODE_ID`, `PAS_ATTEMPT`, `PAS_INVOCATION_ID`, and
-/// `PAS_RUN_ID` when the record has a run id. So `env.set` beats `env.remove` and the session identity
-/// variables, and `PAS_*` beat all three.
+/// identity variables and any `HKA_*` variable above, plus the profile's
+/// `env.set`, then `HKA_NODE_ID`, `HKA_ATTEMPT`, `HKA_INVOCATION_ID`, and
+/// `HKA_RUN_ID` when the record has a run id. So `env.set` beats `env.remove` and the session identity
+/// variables, and `HKA_*` beat all three.
 pub fn child_env(
     parent: &BTreeMap<String, String>,
     profile_env: &ProfileEnv,
@@ -59,17 +59,17 @@ pub fn child_env(
     let removed = |key: &str| profile_env.remove.iter().any(|r| r == key);
     let mut env: BTreeMap<String, String> = parent
         .iter()
-        .filter(|(k, _)| !removed(k) && !is_session_identity(k) && !PAS_VARS.contains(&k.as_str()))
+        .filter(|(k, _)| !removed(k) && !is_session_identity(k) && !HKA_VARS.contains(&k.as_str()))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     env.extend(profile_env.set.iter().map(|(k, v)| (k.clone(), v.clone())));
     if let Some(run_id) = &record.run_id {
-        env.insert("PAS_RUN_ID".into(), run_id.clone());
+        env.insert("HKA_RUN_ID".into(), run_id.clone());
     }
-    env.insert("PAS_NODE_ID".into(), record.node_id.clone());
-    env.insert("PAS_ATTEMPT".into(), record.attempt.to_string());
-    env.insert("PAS_INVOCATION_ID".into(), record.invocation_id.clone());
-    env.insert("PAS_SESSION_ID".into(), session_id.to_string());
+    env.insert("HKA_NODE_ID".into(), record.node_id.clone());
+    env.insert("HKA_ATTEMPT".into(), record.attempt.to_string());
+    env.insert("HKA_INVOCATION_ID".into(), record.invocation_id.clone());
+    env.insert("HKA_SESSION_ID".into(), session_id.to_string());
     env
 }
 
@@ -141,31 +141,31 @@ mod tests {
     fn set_beats_remove_and_pas_variables_beat_set() {
         let env = child_env(
             &parent(&[("K", "parent")]),
-            &env(&["K"], &[("K", "profile"), ("PAS_NODE_ID", "mine")]),
+            &env(&["K"], &[("K", "profile"), ("HKA_NODE_ID", "mine")]),
             &record(None),
             "sess-1",
         );
         assert_eq!(env.get("K").map(String::as_str), Some("profile"));
-        assert_eq!(env.get("PAS_NODE_ID").map(String::as_str), Some("work"));
+        assert_eq!(env.get("HKA_NODE_ID").map(String::as_str), Some("work"));
     }
 
     #[test]
     fn adds_the_four_pas_variables_from_the_record() {
         let env = child_env(
-            &parent(&[("PAS_NODE_ID", "stale")]),
+            &parent(&[("HKA_NODE_ID", "stale")]),
             &default_env(),
             &record(Some("run-1")),
             "sess-1",
         );
-        assert_eq!(env.get("PAS_RUN_ID").map(String::as_str), Some("run-1"));
-        assert_eq!(env.get("PAS_NODE_ID").map(String::as_str), Some("work"));
-        assert_eq!(env.get("PAS_ATTEMPT").map(String::as_str), Some("2"));
+        assert_eq!(env.get("HKA_RUN_ID").map(String::as_str), Some("run-1"));
+        assert_eq!(env.get("HKA_NODE_ID").map(String::as_str), Some("work"));
+        assert_eq!(env.get("HKA_ATTEMPT").map(String::as_str), Some("2"));
         assert_eq!(
-            env.get("PAS_INVOCATION_ID").map(String::as_str),
+            env.get("HKA_INVOCATION_ID").map(String::as_str),
             Some("inv-1")
         );
         assert_eq!(
-            env.get("PAS_SESSION_ID").map(String::as_str),
+            env.get("HKA_SESSION_ID").map(String::as_str),
             Some("sess-1")
         );
     }
@@ -173,12 +173,12 @@ mod tests {
     #[test]
     fn no_run_id_omits_pas_run_id_even_when_the_parent_has_one() {
         let env = child_env(
-            &parent(&[("PAS_RUN_ID", "outer")]),
+            &parent(&[("HKA_RUN_ID", "outer")]),
             &default_env(),
             &record(None),
             "sess-1",
         );
-        assert!(!env.contains_key("PAS_RUN_ID"));
-        assert_eq!(env.get("PAS_NODE_ID").map(String::as_str), Some("work"));
+        assert!(!env.contains_key("HKA_RUN_ID"));
+        assert_eq!(env.get("HKA_NODE_ID").map(String::as_str), Some("work"));
     }
 }

@@ -17,7 +17,7 @@ log="$FAKE_AGENT_SCENARIOS/invocations.log"
 # is exec'd directly, so $$ is the agent's pid). grep finding nothing is fine.
 {
     printf '%s\n' '--- start' "FAKE_PID=$$"
-    env | grep -E '^(PAS_|ANTHROPIC_|OPENAI_|GEMINI_|GOOGLE_|CLAUDE_CODE_|CLAUDECODE=|CLAUDE_PID=|CLAUDE_EFFORT=|HK3_|KEEPER_|HARMONIK_AGENT=)' | sort
+    env | grep -E '^(HKA_|HKA_|ANTHROPIC_|OPENAI_|GEMINI_|GOOGLE_|CLAUDE_CODE_|CLAUDECODE=|CLAUDE_PID=|CLAUDE_EFFORT=|HK3_|KEEPER_|HARMONIK_AGENT=)' | sort
 } >>"$FAKE_AGENT_SCENARIOS/env.log"
 
 # Log argv, one argument per line, leaving out the multi-line -p value.
@@ -66,31 +66,31 @@ printf '%s\n' '--- start' "$prompt" >>"$FAKE_AGENT_SCENARIOS/prompts.log"
 # Count this node's starts: the k-th start of node N is N@k, whatever its
 # attempt number (a loop-back revisit starts again at attempt 1).
 node_start=
-if [ -n "${PAS_NODE_ID:-}" ]; then
-    starts="$FAKE_AGENT_SCENARIOS/starts.$PAS_NODE_ID"
+if [ -n "${HKA_NODE_ID:-}" ]; then
+    starts="$FAKE_AGENT_SCENARIOS/starts.$HKA_NODE_ID"
     node_start=$(cat "$starts" 2>/dev/null || echo 0)
     node_start=$((node_start + 1))
     printf '%s\n' "$node_start" >"$starts"
-    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID@$node_start"
+    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$HKA_NODE_ID@$node_start"
 fi
-# Each attempt's prompt on its own, named by PAS_NODE_ID and PAS_ATTEMPT.
-if [ -n "${PAS_NODE_ID:-}" ] && [ -n "${PAS_ATTEMPT:-}" ]; then
-    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$PAS_NODE_ID.$PAS_ATTEMPT"
+# Each attempt's prompt on its own, named by HKA_NODE_ID and HKA_ATTEMPT.
+if [ -n "${HKA_NODE_ID:-}" ] && [ -n "${HKA_ATTEMPT:-}" ]; then
+    printf '%s\n' "$prompt" >"$FAKE_AGENT_SCENARIOS/prompt.$HKA_NODE_ID.$HKA_ATTEMPT"
 fi
 
 # The scenario text, first match wins: the first line of the file
 # <node>@<start>, then <node>.<attempt>, then <node>, in $FAKE_AGENT_SCENARIOS
-# (named by PAS_NODE_ID, the start count and PAS_ATTEMPT); else the node's own
+# (named by HKA_NODE_ID, the start count and HKA_ATTEMPT); else the node's own
 # prompt, the text after the last "Task (". The text before it holds the goal
 # and earlier nodes' results.
 node_file=
-if [ -n "${PAS_NODE_ID:-}" ]; then
-    if [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID@$node_start" ]; then
-        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID@$node_start"
-    elif [ -n "${PAS_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT" ]; then
-        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID.$PAS_ATTEMPT"
-    elif [ -f "$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID" ]; then
-        node_file="$FAKE_AGENT_SCENARIOS/$PAS_NODE_ID"
+if [ -n "${HKA_NODE_ID:-}" ]; then
+    if [ -f "$FAKE_AGENT_SCENARIOS/$HKA_NODE_ID@$node_start" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$HKA_NODE_ID@$node_start"
+    elif [ -n "${HKA_ATTEMPT:-}" ] && [ -f "$FAKE_AGENT_SCENARIOS/$HKA_NODE_ID.$HKA_ATTEMPT" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$HKA_NODE_ID.$HKA_ATTEMPT"
+    elif [ -f "$FAKE_AGENT_SCENARIOS/$HKA_NODE_ID" ]; then
+        node_file="$FAKE_AGENT_SCENARIOS/$HKA_NODE_ID"
     fi
 fi
 if [ -n "$node_file" ]; then

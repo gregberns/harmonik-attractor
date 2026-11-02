@@ -107,7 +107,7 @@ fn add_run(e: &Env, kind: Kind, argv: &[&str]) -> String {
             logs_dir: logs.clone(),
             started_at: Utc::now(),
             argv: argv.iter().map(|s| s.to_string()).collect(),
-            pas_version: "1".into(),
+            hka_version: "1".into(),
             epic_id: None,
             worktree: None,
             branch: None,
@@ -132,7 +132,7 @@ fn add_run(e: &Env, kind: Kind, argv: &[&str]) -> String {
     w.append(EventData::AttemptStarted {
         attempt: 0,
         pid: std::process::id(),
-        pas_version: "1".into(),
+        hka_version: "1".into(),
         argv: vec!["pas".into()],
         git_head: None,
         resumed_from_node: None,

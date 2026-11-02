@@ -4,7 +4,7 @@
 //! -------------------
 //! * Interactive TTY  — shows discovered toolchains, opens `$EDITOR` for
 //!   preview/edit, then asks for final write confirmation.
-//! * Non-interactive  — (no TTY, `PAS_NON_INTERACTIVE=1`, `PAS_AGENT=1`, or
+//! * Non-interactive  — (no TTY, `HKA_NON_INTERACTIVE=1`, `HKA_AGENT=1`, or
 //!   `--non-interactive`) writes straight through without blocking stdin.
 //!
 //! Existing `.harmonik-attractor/config.toml` handling
@@ -54,13 +54,13 @@ impl InitOpts {
     /// True when:
     /// - `--non-interactive` flag was passed, OR
     /// - stdin is not a terminal, OR
-    /// - `PAS_NON_INTERACTIVE=1`, OR
-    /// - `PAS_AGENT=1`
+    /// - `HKA_NON_INTERACTIVE=1`, OR
+    /// - `HKA_AGENT=1`
     pub fn is_non_interactive(&self) -> bool {
         self.non_interactive
             || !std::io::stdin().is_terminal()
-            || std::env::var("PAS_NON_INTERACTIVE").as_deref() == Ok("1")
-            || std::env::var("PAS_AGENT").as_deref() == Ok("1")
+            || std::env::var("HKA_NON_INTERACTIVE").as_deref() == Ok("1")
+            || std::env::var("HKA_AGENT").as_deref() == Ok("1")
     }
 }
 

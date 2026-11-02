@@ -64,8 +64,8 @@ impl Fixture {
         let mut command = Command::new(pas());
         command
             .args(self.args())
-            .env("PAS_STATE_DIR", self.path().join("state"))
-            .env_remove("PAS_HEARTBEAT_INTERVAL_MS")
+            .env("HKA_STATE_DIR", self.path().join("state"))
+            .env_remove("HKA_HEARTBEAT_INTERVAL_MS")
             .current_dir(self.path())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
@@ -329,8 +329,8 @@ fn command_on_a_tty(fx: &Fixture) -> Option<Command> {
         return None;
     }
     command
-        .env("PAS_STATE_DIR", fx.path().join("state"))
-        .env_remove("PAS_HEARTBEAT_INTERVAL_MS")
+        .env("HKA_STATE_DIR", fx.path().join("state"))
+        .env_remove("HKA_HEARTBEAT_INTERVAL_MS")
         .current_dir(fx.path())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());

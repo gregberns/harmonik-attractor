@@ -182,8 +182,8 @@ fn a_failed_run_keeps_its_worktree_and_reports_the_error() {
     assert!(stderr(&output).contains(error), "{}", stderr(&output));
     // The branch tip is the failed attempt's commit.
     let tip = fake.git(&["log", "-1", "--format=%B", &branch(&fake)]);
-    assert!(tip.contains("Pas-Node: work"), "{tip}");
-    assert!(tip.contains("Pas-Status: fail"), "{tip}");
+    assert!(tip.contains("Hka-Node: work"), "{tip}");
+    assert!(tip.contains("Hka-Status: fail"), "{tip}");
 
     let stdout = String::from_utf8(output.stdout).unwrap();
     let last: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
@@ -212,7 +212,7 @@ fn a_stop_between_stages_keeps_the_worktree_and_reports_stopped() {
 
     let stop: Output = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(["stop", &run_id(&fake)])
-        .env("PAS_STATE_DIR", fake.root().join("state"))
+        .env("HKA_STATE_DIR", fake.root().join("state"))
         .current_dir(fake.root())
         .output()
         .unwrap();

@@ -654,7 +654,7 @@ async fn engine_unknown_epic_fails_the_run_naming_the_id() {
 }
 
 // ---------------------------------------------------------------------------
-// Real Beads workspace (skips without bd unless PAS_REQUIRE_BD=1)
+// Real Beads workspace (skips without bd unless HKA_REQUIRE_BD=1)
 // ---------------------------------------------------------------------------
 
 async fn create(

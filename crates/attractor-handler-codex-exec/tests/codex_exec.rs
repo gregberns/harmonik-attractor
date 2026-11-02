@@ -218,8 +218,8 @@ async fn the_api_key_is_stripped_and_the_pas_ids_are_set() {
     fx.run("scenario=success", None, LONG).await;
     let env = fx.read("env.log");
     assert!(!env.contains("OPENAI_API_KEY"), "{env}");
-    assert!(env.contains("PAS_NODE_ID=work"), "{env}");
-    assert!(env.contains("PAS_RUN_ID=run-1"), "{env}");
+    assert!(env.contains("HKA_NODE_ID=work"), "{env}");
+    assert!(env.contains("HKA_RUN_ID=run-1"), "{env}");
 }
 
 #[tokio::test]
@@ -271,7 +271,7 @@ async fn a_new_session_reports_the_thread_id_codex_printed() {
     let expected = format!("00000000-0000-4000-8000-{pid:012}");
     assert_eq!(result.agent_session_id.as_deref(), Some(expected.as_str()));
     assert!(!result.continued);
-    assert!(fx.read("env.log").contains("PAS_SESSION_ID=sess-1\n"));
+    assert!(fx.read("env.log").contains("HKA_SESSION_ID=sess-1\n"));
 }
 
 #[tokio::test]

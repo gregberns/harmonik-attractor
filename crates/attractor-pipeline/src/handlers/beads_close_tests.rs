@@ -821,7 +821,7 @@ async fn without_run_journal_commits_are_unknown() {
 }
 
 // ---------------------------------------------------------------------------
-// Real Beads workspace (skips without bd unless PAS_REQUIRE_BD=1)
+// Real Beads workspace (skips without bd unless HKA_REQUIRE_BD=1)
 // ---------------------------------------------------------------------------
 
 // AC1, AC2, AC3, AC5 against real bd, through journaled engine Runs.

@@ -53,7 +53,7 @@ impl Fx {
             .port();
         let monitor = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
             .args(["monitor", "--port", &port.to_string()])
-            .env("PAS_STATE_DIR", dir.path().join("state"))
+            .env("HKA_STATE_DIR", dir.path().join("state"))
             .current_dir(dir.path())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -97,7 +97,7 @@ impl Fx {
                 "--logs",
                 self.logs().to_str().unwrap(),
             ])
-            .env("PAS_STATE_DIR", self.path().join("state"))
+            .env("HKA_STATE_DIR", self.path().join("state"))
             .current_dir(self.path())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

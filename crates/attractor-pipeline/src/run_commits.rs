@@ -17,7 +17,7 @@ use attractor_types::{AttractorError, FailureKind, Outcome, StageStatus};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
-/// An attempt's `Pas-Status` trailer.
+/// An attempt's `Hka-Status` trailer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AttemptStatus {
     Success,
@@ -75,21 +75,21 @@ pub(crate) struct AttemptCommit<'a> {
 }
 
 /// `pas(<run-id>): <node> attempt <n> (<status>)`, a blank line, then the
-/// `Pas-*` trailers (design §3).
+/// `Hka-*` trailers (design §3).
 pub(crate) fn attempt_message(commit: &AttemptCommit<'_>) -> String {
     let status = commit.record.status.as_str();
     let mut message = format!(
-        "pas({run}): {node} attempt {n} ({status})\n\n\
-         Pas-Run: {run}\nPas-Node: {node}\nPas-Attempt: {n}\nPas-Status: {status}\n",
+        "hka({run}): {node} attempt {n} ({status})\n\n\
+         Hka-Run: {run}\nHka-Node: {node}\nHka-Attempt: {n}\nHka-Status: {status}\n",
         run = commit.run_id,
         node = commit.node,
         n = commit.attempt,
     );
     if let Some(class) = commit.record.class {
-        message.push_str(&format!("Pas-Failure-Class: {}\n", class.as_str()));
+        message.push_str(&format!("Hka-Failure-Class: {}\n", class.as_str()));
     }
     if let Some(session) = commit.session {
-        message.push_str(&format!("Pas-Session: {session}\n"));
+        message.push_str(&format!("Hka-Session: {session}\n"));
     }
     message
 }
@@ -410,13 +410,13 @@ mod tests {
         };
         assert_eq!(
             attempt_message(&commit),
-            "pas(r1): work attempt 2 (fail)\n\n\
-             Pas-Run: r1\n\
-             Pas-Node: work\n\
-             Pas-Attempt: 2\n\
-             Pas-Status: fail\n\
-             Pas-Failure-Class: timeout\n\
-             Pas-Session: sess-9\n"
+            "hka(r1): work attempt 2 (fail)\n\n\
+             Hka-Run: r1\n\
+             Hka-Node: work\n\
+             Hka-Attempt: 2\n\
+             Hka-Status: fail\n\
+             Hka-Failure-Class: timeout\n\
+             Hka-Session: sess-9\n"
         );
         let success = AttemptCommit {
             record: AttemptRecord {
@@ -425,8 +425,8 @@ mod tests {
             },
             ..commit
         };
-        assert!(!attempt_message(&success).contains("Pas-Failure-Class"));
-        assert!(attempt_message(&success).starts_with("pas(r1): work attempt 2 (success)\n"));
+        assert!(!attempt_message(&success).contains("Hka-Failure-Class"));
+        assert!(attempt_message(&success).starts_with("hka(r1): work attempt 2 (success)\n"));
     }
 
     #[test]

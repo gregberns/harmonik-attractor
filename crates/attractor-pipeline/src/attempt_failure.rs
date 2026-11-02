@@ -16,7 +16,7 @@ const REASON_BYTES: usize = 2000;
 pub enum AttemptFailure {
     /// The attempt's timeout fired.
     TimedOut { timeout_ms: u64 },
-    /// The attempt failed. `class` is the `Pas-Failure-Class` name
+    /// The attempt failed. `class` is the `Hka-Failure-Class` name
     /// (`reported`, `crash`, `no_result`, `launch`), when it has one.
     Failed {
         #[serde(default, skip_serializing_if = "Option::is_none")]

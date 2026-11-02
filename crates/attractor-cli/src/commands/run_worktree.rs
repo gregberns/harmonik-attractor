@@ -1,5 +1,5 @@
 //! The git worktree and branch each Run works in (design.md §3): branch
-//! `pas/run/<run-id>` from a base commit, checked out at
+//! `hka/run/<run-id>` from a base commit, checked out at
 //! `<worktree_root>/<run-id>`, default `<project-root>/.harmonik-attractor/worktrees`.
 //!
 //! Names and decisions are pure functions; the `git` calls below them are a
@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Prefix of every Run branch.
-const BRANCH_PREFIX: &str = "pas/run/";
+const BRANCH_PREFIX: &str = "hka/run/";
 
 /// The base of a new Run's branch when `--base` is not given.
 pub(crate) const DEFAULT_BASE: &str = "HEAD";
@@ -85,7 +85,7 @@ pub(crate) struct RunWorktree {
     pub base_sha: String,
 }
 
-/// `pas/run/<run-id>`.
+/// `hka/run/<run-id>`.
 pub(crate) fn branch_name(run_id: &str) -> String {
     format!("{BRANCH_PREFIX}{run_id}")
 }
@@ -509,7 +509,7 @@ fn canonical(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
-    const BRANCH: &str = "pas/run/r1";
+    const BRANCH: &str = "hka/run/r1";
 
     fn state(path: PathState, branch_exists: bool, at: Option<&str>) -> WorktreeState {
         WorktreeState {
@@ -604,7 +604,7 @@ mod tests {
     #[test]
     fn checked_out_at_reads_worktree_list() {
         let porcelain = "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n\
-                         worktree /repo/.harmonik-attractor/worktrees/r1\nHEAD def\nbranch refs/heads/pas/run/r1\n\n\
+                         worktree /repo/.harmonik-attractor/worktrees/r1\nHEAD def\nbranch refs/heads/hka/run/r1\n\n\
                          worktree /detached\nHEAD 123\ndetached\n";
         assert_eq!(
             checked_out_at(porcelain, BRANCH),
@@ -614,7 +614,7 @@ mod tests {
             checked_out_at(porcelain, "main"),
             Some(PathBuf::from("/repo"))
         );
-        assert_eq!(checked_out_at(porcelain, "pas/run/r2"), None);
+        assert_eq!(checked_out_at(porcelain, "hka/run/r2"), None);
     }
 
     #[test]

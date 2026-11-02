@@ -10,12 +10,12 @@ fn pas() -> &'static str {
 }
 
 /// `pas` with its Run Index in a scratch folder, never the developer's
-/// `~/.local/state/pas/runs.jsonl`, run in `cwd` (a test's scratch folder,
+/// `~/.local/state/harmonik-attractor/runs.jsonl`, run in `cwd` (a test's scratch folder,
 /// so a default `.harmonik-attractor/` folder never lands in the source tree).
 fn pas_command(cwd: &Path) -> Command {
     let mut command = Command::new(pas());
     command.current_dir(cwd).env(
-        "PAS_STATE_DIR",
+        "HKA_STATE_DIR",
         Path::new(env!("CARGO_TARGET_TMPDIR")).join("cli-semantics-state"),
     );
     command
@@ -31,7 +31,7 @@ fn provider_shims(dir: &Path) {
     for provider in ["claude", "codex", "gemini"] {
         let path = dir.join(provider);
         let script = format!(
-            "#!/bin/sh\nprintf '%s\\n' '{provider}' >> \"$PAS_TEST_PROVIDER_MARKER\"\nresponse=\"${{PAS_TEST_PROVIDER_RESPONSE:-ok}}\"\nprintf '{{\"type\":\"item.completed\",\"item\":{{\"type\":\"agent_message\",\"text\":\"%s\"}}}}\\n' \"$response\"\n"
+            "#!/bin/sh\nprintf '%s\\n' '{provider}' >> \"$HKA_TEST_PROVIDER_MARKER\"\nresponse=\"${{HKA_TEST_PROVIDER_RESPONSE:-ok}}\"\nprintf '{{\"type\":\"item.completed\",\"item\":{{\"type\":\"agent_message\",\"text\":\"%s\"}}}}\\n' \"$response\"\n"
         );
         fs::write(&path, script).unwrap();
         let mut permissions = fs::metadata(&path).unwrap().permissions();
@@ -44,7 +44,7 @@ fn run_with_shims(args: &[&str], shim_dir: &Path, marker: &Path) -> Output {
     pas_command(marker.parent().unwrap())
         .args(args)
         .env("PATH", shim_dir)
-        .env("PAS_TEST_PROVIDER_MARKER", marker)
+        .env("HKA_TEST_PROVIDER_MARKER", marker)
         .output()
         .unwrap()
 }
@@ -58,8 +58,8 @@ fn run_with_shims_and_response(
     pas_command(marker.parent().unwrap())
         .args(args)
         .env("PATH", shim_dir)
-        .env("PAS_TEST_PROVIDER_MARKER", marker)
-        .env("PAS_TEST_PROVIDER_RESPONSE", response)
+        .env("HKA_TEST_PROVIDER_MARKER", marker)
+        .env("HKA_TEST_PROVIDER_RESPONSE", response)
         .output()
         .unwrap()
 }
@@ -335,7 +335,7 @@ fn exit_goal_gate_retry_target_fails_before_execution() {
             "3",
         ])
         .env("PATH", path)
-        .env("PAS_TEST_PROVIDER_MARKER", &marker)
+        .env("HKA_TEST_PROVIDER_MARKER", &marker)
         .output()
         .unwrap();
 
@@ -622,7 +622,7 @@ fn directory_mode_prepares_every_plan_before_starting_any_provider() {
     let output = pas_command(fixture.path())
         .args(["run", pipelines.to_str().unwrap(), "--fresh"])
         .env("PATH", shims.path())
-        .env("PAS_TEST_PROVIDER_MARKER", &marker)
+        .env("HKA_TEST_PROVIDER_MARKER", &marker)
         .output()
         .unwrap();
 

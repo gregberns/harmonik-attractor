@@ -45,7 +45,7 @@ impl Fixture {
         let mut command = Command::new(pas());
         command
             .args(args)
-            .env("PAS_STATE_DIR", self.path().join("state"))
+            .env("HKA_STATE_DIR", self.path().join("state"))
             .current_dir(self.path());
         command
     }

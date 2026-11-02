@@ -30,6 +30,6 @@
 
 **Status:** open
 
-- [ ] A fake agent sees `HKA_RUN_ID` etc. and no `PAS_*` (seam 2)
-- [ ] Resume after a kill still finds the interrupted attempt by its trailers
-- [ ] `grep -rn 'PAS_\|Pas-\|pas-run\|pas/run\|pas_version' crates/*/src` finds only tests that check old names aren't read
+- [x] A fake agent sees `HKA_RUN_ID` etc. and no `PAS_*` (seam 2)
+- [x] Resume after a kill still finds the interrupted attempt by its trailers
+- [x] `grep -rn 'PAS_\|Pas-\|pas-run\|pas/run\|pas_version' crates/*/src` finds only tests that check old names aren't read

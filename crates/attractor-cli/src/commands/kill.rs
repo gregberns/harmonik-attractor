@@ -460,7 +460,7 @@ mod tests {
             1,
             "AttemptStarted",
             &format!(
-                r#"{{"attempt":1,"pid":{pid},"argv":[],"pas_version":"0","resumed_from_node":null}}"#
+                r#"{{"attempt":1,"pid":{pid},"argv":[],"hka_version":"0","resumed_from_node":null}}"#
             ),
         )
     }
@@ -825,7 +825,7 @@ garbage line
             1,
             "AttemptStarted",
             &format!(
-                r#"{{"attempt":1,"pid":{PID},"argv":[],"pas_version":"0","stop_wait_ms":60000}}"#
+                r#"{{"attempt":1,"pid":{PID},"argv":[],"hka_version":"0","stop_wait_ms":60000}}"#
             ),
         );
         let s = setup(Some(&started));

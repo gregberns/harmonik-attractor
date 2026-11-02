@@ -47,8 +47,8 @@ impl Fixture {
             .arg(self.path())
             .arg("--logs")
             .arg(self.path().join("logs"))
-            .env("PAS_STATE_DIR", self.path().join("state"))
-            .env_remove("PAS_HEARTBEAT_INTERVAL_MS")
+            .env("HKA_STATE_DIR", self.path().join("state"))
+            .env_remove("HKA_HEARTBEAT_INTERVAL_MS")
             .current_dir(self.path())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -102,7 +102,7 @@ impl Fixture {
         Command::new(pas())
             .arg("answer")
             .args(args)
-            .env("PAS_STATE_DIR", self.path().join("state"))
+            .env("HKA_STATE_DIR", self.path().join("state"))
             .current_dir(self.path())
             .output()
             .unwrap()
@@ -259,7 +259,7 @@ fn no_index_is_an_unknown_run() {
             "a",
             "--json",
         ])
-        .env("PAS_STATE_DIR", tmp.path().join("none"))
+        .env("HKA_STATE_DIR", tmp.path().join("none"))
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1));

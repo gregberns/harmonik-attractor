@@ -63,7 +63,7 @@ impl Fx {
         let state = dir.path().join("state");
         let monitor = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
             .args(["monitor", "--port", &port.to_string()])
-            .env("PAS_STATE_DIR", &state)
+            .env("HKA_STATE_DIR", &state)
             .current_dir(dir.path())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -78,7 +78,7 @@ impl Fx {
                 "--logs",
                 dir.path().join("logs").to_str().unwrap(),
             ])
-            .env("PAS_STATE_DIR", &state)
+            .env("HKA_STATE_DIR", &state)
             .current_dir(dir.path())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -243,7 +243,7 @@ fn gate_answered_from_the_terminal_is_reported_and_left_unchanged() {
     let (_, token) = fx.page();
     let out = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(["answer", &fx.id, &fx.qid(), "reject", "--source", "cli"])
-        .env("PAS_STATE_DIR", fx.path().join("state"))
+        .env("HKA_STATE_DIR", fx.path().join("state"))
         .output()
         .unwrap();
     assert!(

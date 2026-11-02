@@ -9,7 +9,7 @@ mod tests {
     use crate::handlers::quality_handler::QualityHandler;
     use crate::handlers::tests::{make_minimal_graph, make_node};
 
-    /// Serializes tests that set the process-wide PAS_TRUST_THIS variable.
+    /// Serializes tests that set the process-wide HKA_TRUST_THIS variable.
     static TRUST_ENV: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     // -----------------------------------------------------------------------
@@ -322,9 +322,9 @@ cmd = "true"
 
         let outcome = {
             let _trust = TRUST_ENV.lock().await;
-            std::env::set_var("PAS_TRUST_THIS", "1");
+            std::env::set_var("HKA_TRUST_THIS", "1");
             let outcome = handler.execute(&node, &ctx, &graph).await.unwrap();
-            std::env::remove_var("PAS_TRUST_THIS");
+            std::env::remove_var("HKA_TRUST_THIS");
             outcome
         };
         assert_eq!(outcome.status, StageStatus::Success);
@@ -533,12 +533,12 @@ cmd = "true"
 
         let outcome = {
             let _trust = TRUST_ENV.lock().await;
-            std::env::set_var("PAS_TRUST_THIS", "1");
+            std::env::set_var("HKA_TRUST_THIS", "1");
             let outcome = QualityHandler
                 .execute(&node, &ctx, &make_minimal_graph())
                 .await
                 .unwrap();
-            std::env::remove_var("PAS_TRUST_THIS");
+            std::env::remove_var("HKA_TRUST_THIS");
             outcome
         };
 

@@ -115,7 +115,7 @@ impl Fx {
             .port();
         let monitor = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
             .args(["monitor", "--port", &port.to_string()])
-            .env("PAS_STATE_DIR", dir.path().join("state"))
+            .env("HKA_STATE_DIR", dir.path().join("state"))
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .current_dir(dir.path())
             .stdout(Stdio::null())
@@ -400,7 +400,7 @@ fn worktree_lock_is_shown_unless_shared_workdir_is_checked() {
         .arg(&repo)
         .arg("--logs")
         .arg(&holder_logs)
-        .env("PAS_STATE_DIR", fx.dir.path().join("state"))
+        .env("HKA_STATE_DIR", fx.dir.path().join("state"))
         .current_dir(fx.dir.path())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

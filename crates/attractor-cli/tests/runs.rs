@@ -70,8 +70,8 @@ impl Scratch {
     fn pas(&self) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"));
         command
-            .env("PAS_STATE_DIR", self.path().join("state"))
-            .env_remove("PAS_HEARTBEAT_INTERVAL_MS")
+            .env("HKA_STATE_DIR", self.path().join("state"))
+            .env_remove("HKA_HEARTBEAT_INTERVAL_MS")
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .env("GIT_CEILING_DIRECTORIES", self.path().parent().unwrap())
@@ -187,7 +187,7 @@ impl Scratch {
             EventData::AttemptStarted {
                 attempt: 1,
                 pid,
-                pas_version: "0".into(),
+                hka_version: "0".into(),
                 argv: vec![],
                 git_head: None,
                 resumed_from_node: None,
@@ -504,7 +504,7 @@ fn json_without_any_state_folder() {
     let output = s
         .pas()
         .args(["runs", "--json"])
-        .env_remove("PAS_STATE_DIR")
+        .env_remove("HKA_STATE_DIR")
         .env_remove("XDG_STATE_HOME")
         .env_remove("HOME")
         .output()

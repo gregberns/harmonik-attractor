@@ -107,13 +107,13 @@ fn wait_dead(pid: &str) -> bool {
 #[tokio::test]
 async fn env_is_exactly_the_given_map() {
     let tmp = tempfile::tempdir().unwrap();
-    let vars = env(&[("PAS_TEST_VAR", "hello world"), ("PATH", "/usr/bin:/bin")]);
+    let vars = env(&[("HKA_TEST_VAR", "hello world"), ("PATH", "/usr/bin:/bin")]);
     let out = exited(run(&argv(&["/usr/bin/env"]), &vars, tmp.path(), None, LONG).await);
     assert!(out.status.success());
     let stdout = String::from_utf8(out.stdout).unwrap();
     let mut lines: Vec<&str> = stdout.lines().collect();
     lines.sort();
-    assert_eq!(lines, ["PAS_TEST_VAR=hello world", "PATH=/usr/bin:/bin"]);
+    assert_eq!(lines, ["HKA_TEST_VAR=hello world", "PATH=/usr/bin:/bin"]);
     assert!(!stdout.contains("HOME="));
 }
 

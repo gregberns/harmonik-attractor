@@ -46,7 +46,7 @@ fn attempt_started(pid: u32) -> EventData {
     EventData::AttemptStarted {
         attempt: 0,
         pid,
-        pas_version: "1".into(),
+        hka_version: "1".into(),
         argv: vec!["pas".into()],
         git_head: None,
         resumed_from_node: None,

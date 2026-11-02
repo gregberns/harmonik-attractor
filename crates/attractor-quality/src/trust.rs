@@ -32,7 +32,7 @@ fn trust_store_path() -> PathBuf {
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join(".config")
         });
-    base.join("pas").join("trusted.json")
+    base.join("harmonik-attractor").join("trusted.json")
 }
 
 fn make_key(path: &Path, blake3: &str) -> String {
@@ -93,11 +93,11 @@ fn save_store(store: &TrustStore) -> Result<(), TrustError> {
 }
 
 pub fn is_trusted(path: &Path, blake3: &str) -> bool {
-    if std::env::var("PAS_TRUST_THIS").as_deref() == Ok("1") {
+    if std::env::var("HKA_TRUST_THIS").as_deref() == Ok("1") {
         tracing::warn!(
             path = %path.display(),
             hash = %&blake3[..blake3.len().min(16)],
-            "Trust check bypassed via PAS_TRUST_THIS — manifest is treated as trusted without verification"
+            "Trust check bypassed via HKA_TRUST_THIS — manifest is treated as trusted without verification"
         );
         return true;
     }
@@ -139,13 +139,13 @@ pub fn list_trusted() -> Result<Vec<TrustEntry>, TrustError> {
 
 pub fn prompt_and_add(path: &Path, blake3: &str) -> Result<bool, TrustError> {
     if !std::io::stdin().is_terminal()
-        || std::env::var("PAS_NON_INTERACTIVE").as_deref() == Ok("1")
-        || std::env::var("PAS_AGENT").as_deref() == Ok("1")
+        || std::env::var("HKA_NON_INTERACTIVE").as_deref() == Ok("1")
+        || std::env::var("HKA_AGENT").as_deref() == Ok("1")
     {
         return Ok(false);
     }
 
-    eprintln!("pas: trust this manifest?");
+    eprintln!("harmonik-attractor: trust this manifest?");
     eprintln!("  path: {}", path.display());
     eprintln!("  hash: {blake3}");
     eprint!("Trust? [y/N] ");
@@ -189,6 +189,23 @@ mod tests {
     }
 
     #[test]
+    fn the_trust_store_lives_in_xdg_config_home_harmonik_attractor() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let tmp = TempDir::new().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", tmp.path());
+
+        add_trust(
+            Path::new("/tmp/x/.harmonik-attractor/config.toml"),
+            "h",
+            "test",
+        )
+        .unwrap();
+        assert!(tmp.path().join("harmonik-attractor/trusted.json").is_file());
+
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+
+    #[test]
     fn trust_matches_relative_and_canonical_paths() {
         let _guard = TEST_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
@@ -210,9 +227,9 @@ mod tests {
     #[test]
     fn pas_trust_this_env_bypasses_check() {
         let _guard = TEST_LOCK.lock().unwrap();
-        std::env::set_var("PAS_TRUST_THIS", "1");
+        std::env::set_var("HKA_TRUST_THIS", "1");
         assert!(is_trusted(Path::new("/any/path"), "any_hash"));
-        std::env::remove_var("PAS_TRUST_THIS");
+        std::env::remove_var("HKA_TRUST_THIS");
     }
 
     #[test]
@@ -220,11 +237,11 @@ mod tests {
         let _guard = TEST_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         std::env::set_var("XDG_CONFIG_HOME", tmp.path());
-        std::env::set_var("PAS_AGENT", "1");
+        std::env::set_var("HKA_AGENT", "1");
 
         assert!(!is_trusted(Path::new("/any/path"), "any_hash"));
 
-        std::env::remove_var("PAS_AGENT");
+        std::env::remove_var("HKA_AGENT");
         std::env::remove_var("XDG_CONFIG_HOME");
     }
 

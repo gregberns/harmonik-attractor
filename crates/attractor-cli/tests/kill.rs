@@ -102,7 +102,7 @@ impl Synthetic {
                 1,
                 "AttemptStarted",
                 format!(
-                    r#"{{"attempt":1,"pid":{heartbeat_pid},"argv":[],"pas_version":"0","resumed_from_node":null}}"#
+                    r#"{{"attempt":1,"pid":{heartbeat_pid},"argv":[],"hka_version":"0","resumed_from_node":null}}"#
                 ),
             ),
             line(2, "Heartbeat", format!(r#"{{"pid":{heartbeat_pid}}}"#)),
@@ -154,7 +154,7 @@ impl Synthetic {
             .arg("kill")
             .arg(RUN)
             .args(args)
-            .env("PAS_STATE_DIR", self.dir.path().join("state"))
+            .env("HKA_STATE_DIR", self.dir.path().join("state"))
             .output()
             .unwrap()
     }
@@ -231,7 +231,7 @@ fn kill_on_a_run_that_is_not_active_fails_without_a_signal() {
     // Unknown Run ID.
     let out = Command::new(pas())
         .args(["kill", "0192a000-0000-7000-8000-0000000000ff"])
-        .env("PAS_STATE_DIR", run.dir.path().join("state"))
+        .env("HKA_STATE_DIR", run.dir.path().join("state"))
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1));
@@ -356,8 +356,8 @@ fn kill_ends_the_run_and_its_provider_children() {
             "--logs",
             logs.to_str().unwrap(),
         ])
-        .env("PAS_STATE_DIR", &state)
-        .env("PAS_HEARTBEAT_INTERVAL_MS", "100")
+        .env("HKA_STATE_DIR", &state)
+        .env("HKA_HEARTBEAT_INTERVAL_MS", "100")
         .current_dir(dir.path());
     let run_pid = spawn_leader(command);
     let stage_pid = read_pid(&dir.path().join("stage.pid"));
@@ -375,7 +375,7 @@ fn kill_ends_the_run_and_its_provider_children() {
 
     let out = Command::new(pas())
         .args(["kill", &run_id, "--json"])
-        .env("PAS_STATE_DIR", &state)
+        .env("HKA_STATE_DIR", &state)
         .output()
         .unwrap();
     assert!(out.status.success(), "{}", stdout(&out));
@@ -391,7 +391,7 @@ fn kill_ends_the_run_and_its_provider_children() {
     // The Run is no longer active.
     let again = Command::new(pas())
         .args(["kill", &run_id])
-        .env("PAS_STATE_DIR", &state)
+        .env("HKA_STATE_DIR", &state)
         .output()
         .unwrap();
     assert_eq!(again.status.code(), Some(1));

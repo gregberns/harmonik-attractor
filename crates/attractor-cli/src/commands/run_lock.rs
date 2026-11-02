@@ -8,7 +8,7 @@ use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 /// Worktree lock file name, inside `git rev-parse --absolute-git-dir`.
-pub(crate) const WORKTREE_LOCK: &str = "pas-run.lock";
+pub(crate) const WORKTREE_LOCK: &str = "harmonik-attractor-run.lock";
 
 /// Contents of a lock file. A field is `None` when the holder has not written
 /// it yet or the file cannot be read.

@@ -874,12 +874,12 @@ mod tests {
     async fn commands_receive_only_allowlisted_environment_variables() {
         let root = TempDir::new().unwrap();
         let environment = confined(&root);
-        let secret_key = "PAS_EXECUTION_ENV_SECRET_TOKEN";
+        let secret_key = "HKA_EXECUTION_ENV_SECRET_TOKEN";
         std::env::set_var(secret_key, "must-not-leak");
 
         let result = environment
             .exec_command(
-                "printf '%s|%s' \"${PAS_EXECUTION_ENV_SECRET_TOKEN-unset}\" \"${PATH-unset}\"",
+                "printf '%s|%s' \"${HKA_EXECUTION_ENV_SECRET_TOKEN-unset}\" \"${PATH-unset}\"",
                 5_000,
                 None,
                 None,

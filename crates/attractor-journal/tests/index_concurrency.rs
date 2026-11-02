@@ -9,7 +9,7 @@ use std::process::Command;
 
 use attractor_journal::{append_entry, IndexEntry, INDEX_FILE};
 
-const CHILD_ENV: &str = "PAS_JOURNAL_INDEX_CHILD";
+const CHILD_ENV: &str = "HKA_JOURNAL_INDEX_CHILD";
 const CHILDREN: usize = 10;
 /// Well above PIPE_BUF, so interleaved unlocked writes would tear lines.
 const PAYLOAD: usize = 64 * 1024;
@@ -45,7 +45,7 @@ fn index_append_from_10_processes() {
                     "--test-threads=1",
                 ])
                 .env(CHILD_ENV, n.to_string())
-                .env("PAS_STATE_DIR", state.path())
+                .env("HKA_STATE_DIR", state.path())
                 .stdout(std::process::Stdio::null())
                 .spawn()
                 .unwrap()
@@ -87,7 +87,7 @@ fn index_append_waits_for_the_index_lock() {
             "--test-threads=1",
         ])
         .env(CHILD_ENV, "7")
-        .env("PAS_STATE_DIR", state.path())
+        .env("HKA_STATE_DIR", state.path())
         .stdout(std::process::Stdio::null())
         .spawn()
         .unwrap();

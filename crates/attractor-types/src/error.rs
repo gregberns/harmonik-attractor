@@ -178,7 +178,7 @@ pub enum AttractorError {
     Other(String),
 }
 
-/// Why an attempt failed, as its commit's `Pas-Failure-Class` trailer
+/// Why an attempt failed, as its commit's `Hka-Failure-Class` trailer
 /// records it (design §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureKind {

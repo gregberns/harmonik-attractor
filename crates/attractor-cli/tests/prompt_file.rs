@@ -43,7 +43,7 @@ fn each_invocation_has_a_prompt_file_without_env_values() {
                 start -> work -> done
             }"#,
         )
-        .env("PAS_TEST_SECRET", "s3cr3t-value")
+        .env("HKA_TEST_SECRET", "s3cr3t-value")
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
@@ -56,7 +56,7 @@ fn each_invocation_has_a_prompt_file_without_env_values() {
         let text = fs::read_to_string(run.join(format!("transcripts/{id}.prompt.txt"))).unwrap();
         assert!(
             text.starts_with(&format!(
-                "pas prompt file v1\ninvocation: {id}\nnode: work\nattempt: {}\n",
+                "hka prompt file v1\ninvocation: {id}\nnode: work\nattempt: {}\n",
                 attempt + 1
             )),
             "{text}"
@@ -66,7 +66,7 @@ fn each_invocation_has_a_prompt_file_without_env_values() {
             text.contains("\n-p\n<prompt>\n--output-format\nstream-json\n"),
             "{text}"
         );
-        assert!(text.contains("\nPAS_TEST_SECRET\n"), "{text}");
+        assert!(text.contains("\nHKA_TEST_SECRET\n"), "{text}");
     }
     for file in files_under(&run) {
         let bytes = fs::read(&file).unwrap();

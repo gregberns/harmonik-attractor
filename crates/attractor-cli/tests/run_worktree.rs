@@ -83,7 +83,7 @@ fn run_creates_worktree_on_run_branch_at_base() {
 
     let meta = fake.run_meta();
     let run_id = meta["run_id"].as_str().unwrap();
-    let branch = format!("pas/run/{run_id}");
+    let branch = format!("hka/run/{run_id}");
     let wt = fake.worktree();
     assert_eq!(
         wt,
@@ -459,7 +459,7 @@ fn unknown_base_is_refused_before_any_branch_or_worktree() {
     )
     .unwrap();
     assert_eq!(first["error"]["code"], "invalid_base", "{first}");
-    assert_eq!(fake.git(&["branch", "--list", "pas/run/*"]), "");
+    assert_eq!(fake.git(&["branch", "--list", "hka/run/*"]), "");
     assert!(!fake.repo().join(".harmonik-attractor/worktrees").exists());
     assert_eq!(
         fake.git(&["worktree", "list", "--porcelain"])
@@ -523,7 +523,7 @@ fn second_run_of_same_pipeline_is_refused_before_any_worktree() {
         serde_json::from_str(String::from_utf8_lossy(&b.stdout).lines().next().unwrap()).unwrap();
     assert_eq!(first["error"]["code"], "pipeline_locked", "{first}");
     assert_eq!(
-        fake.git(&["branch", "--list", "pas/run/*"]).lines().count(),
+        fake.git(&["branch", "--list", "hka/run/*"]).lines().count(),
         1
     );
     assert_eq!(
@@ -574,7 +574,7 @@ fn run_until_stopped_at_gate(fake: &FakeAgent, extra: &[&str]) -> PathBuf {
     let run_id = fake.run_meta()["run_id"].as_str().unwrap().to_string();
     let stop = std::process::Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
         .args(["stop", &run_id])
-        .env("PAS_STATE_DIR", fake.root().join("state"))
+        .env("HKA_STATE_DIR", fake.root().join("state"))
         .current_dir(fake.root())
         .output()
         .unwrap();

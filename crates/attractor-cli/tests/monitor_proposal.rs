@@ -68,7 +68,7 @@ fi"#,
             .port();
         let monitor = Command::new(env!("CARGO_BIN_EXE_harmonik-attractor"))
             .args(["monitor", "--port", &port.to_string()])
-            .env("PAS_STATE_DIR", dir.path().join("state"))
+            .env("HKA_STATE_DIR", dir.path().join("state"))
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .current_dir(dir.path())
             .stdout(Stdio::null())

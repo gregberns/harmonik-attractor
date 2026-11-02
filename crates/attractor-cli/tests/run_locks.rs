@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 /// Test hook that shortens the 30 s Heartbeat interval.
-const HEARTBEAT_ENV: &str = "PAS_HEARTBEAT_INTERVAL_MS";
+const HEARTBEAT_ENV: &str = "HKA_HEARTBEAT_INTERVAL_MS";
 
 /// Blocks in a stage until a `go` file appears in the workdir. The retry
 /// lets a resume re-run the stage an interrupted Attempt was in.
@@ -209,7 +209,7 @@ impl Drop for Holder {
 fn pas_command(scratch: &Path) -> Command {
     let mut command = Command::new(pas());
     command
-        .env("PAS_STATE_DIR", scratch.join("state"))
+        .env("HKA_STATE_DIR", scratch.join("state"))
         .env_remove(HEARTBEAT_ENV)
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
@@ -286,7 +286,7 @@ fn run_worktree_lock(repo: &Path, run_id: &str) -> PathBuf {
     repo.join(".git")
         .join("worktrees")
         .join(run_id)
-        .join("pas-run.lock")
+        .join("harmonik-attractor-run.lock")
 }
 
 fn lock_contents(path: &Path) -> Value {
@@ -621,7 +621,7 @@ fn non_git_folder_takes_only_pipeline_lock() {
     assert_eq!(run_started(&b)["data"]["shared_workdir"], false);
 
     let mut found = Vec::new();
-    find_files(s.path(), "pas-run.lock", &mut found);
+    find_files(s.path(), "harmonik-attractor-run.lock", &mut found);
     assert!(found.is_empty(), "{found:?}");
 }
 
@@ -648,7 +648,11 @@ fn git_missing_takes_only_pipeline_lock() {
         .unwrap();
     assert_success(&output);
     assert!(s.logs("b").join("run.lock").is_file());
-    assert!(!s.repo().join(".git").join("pas-run.lock").exists());
+    assert!(!s
+        .repo()
+        .join(".git")
+        .join("harmonik-attractor-run.lock")
+        .exists());
 }
 
 // C5 for directory Runs: each Pipeline takes and releases its own locks and

@@ -210,7 +210,7 @@ mod tests {
     fn worktree() -> RunWorktree {
         RunWorktree {
             path: PathBuf::from("/repo/.harmonik-attractor/worktrees/r1"),
-            branch: "pas/run/r1".to_string(),
+            branch: "hka/run/r1".to_string(),
             base: "HEAD".to_string(),
             base_sha: "abc".to_string(),
         }
@@ -233,7 +233,7 @@ mod tests {
                 "v": 1,
                 "run_id": "r1",
                 "status": "success",
-                "branch": "pas/run/r1",
+                "branch": "hka/run/r1",
                 "base": "HEAD",
                 "base_sha": "abc",
                 "final_commit": "def",

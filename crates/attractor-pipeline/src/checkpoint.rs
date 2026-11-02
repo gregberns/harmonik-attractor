@@ -69,8 +69,8 @@ pub struct PipelineCheckpoint {
     /// Attempts already begun during the active node visit.
     #[serde(default)]
     pub active_node_attempts: usize,
-    /// The number of the active node's attempt in flight (`Pas-Attempt`,
-    /// `PAS_ATTEMPT`). Numbers never repeat within a visit, even when a
+    /// The number of the active node's attempt in flight (`Hka-Attempt`,
+    /// `HKA_ATTEMPT`). Numbers never repeat within a visit, even when a
     /// stopped attempt does not count toward `max_retries`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_attempt_number: Option<u32>,
@@ -80,7 +80,7 @@ pub struct PipelineCheckpoint {
     pub active_attempt_head: Option<String>,
     /// The agent session that attempt runs in, when known before its agent
     /// started (a continued session, or an id PAS chose): what a resume puts
-    /// in the interrupted commit's `Pas-Session` trailer.
+    /// in the interrupted commit's `Hka-Session` trailer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_attempt_session: Option<String>,
     /// Whether that session was new, started with an id PAS chose: a resume

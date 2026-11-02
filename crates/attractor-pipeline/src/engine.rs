@@ -891,7 +891,7 @@ impl PipelineExecutor {
     }
 
     /// On resume, commit what an interrupted attempt left in the worktree
-    /// (`Pas-Status: interrupted`) and return the note for the next
+    /// (`Hka-Status: interrupted`) and return the note for the next
     /// attempt's prompt and the commit; `None` when it left nothing or there
     /// is no worktree.
     async fn record_interrupted(

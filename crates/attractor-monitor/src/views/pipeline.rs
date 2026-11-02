@@ -345,7 +345,7 @@ pub(crate) async fn build_step(state: &AppState, c: &Ctx) -> Built {
         Err(e) => {
             return Built::Failed(reply(
                 StatusCode::BAD_GATEWAY,
-                notice_err(&format!("cannot run pas: {e}")),
+                notice_err(&format!("cannot run harmonik-attractor: {e}")),
             ))
         }
     };
@@ -499,7 +499,7 @@ pub(crate) async fn launch_step(state: &AppState, c: &Ctx, form: &Pairs) -> Resp
                     StatusCode::BAD_GATEWAY,
                     &chk,
                     &values,
-                    Some(&format!("cannot start pas: {e}")),
+                    Some(&format!("cannot start harmonik-attractor: {e}")),
                 )
             }
         };

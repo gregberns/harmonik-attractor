@@ -28,7 +28,7 @@ pub fn prompt_file_text(
         .collect();
     let names: Vec<&str> = env.keys().map(String::as_str).collect();
     format!(
-        "pas prompt file v1\n\
+        "hka prompt file v1\n\
          invocation: {invocation_id}\n\
          node: {node_id}\n\
          attempt: {attempt}\n\
@@ -71,7 +71,7 @@ mod tests {
         .collect();
         let env: BTreeMap<String, String> = [
             ("ZED", "z"),
-            ("PAS_TEST_SECRET", "s3cr3t-value"),
+            ("HKA_TEST_SECRET", "s3cr3t-value"),
             ("ALPHA", "a"),
         ]
         .into_iter()
@@ -82,7 +82,7 @@ mod tests {
 
         assert_eq!(
             text,
-            "pas prompt file v1\n\
+            "hka prompt file v1\n\
              invocation: inv-1\n\
              node: work\n\
              attempt: 2\n\
@@ -91,7 +91,7 @@ mod tests {
              claude\n--model\nx\n-p\n<prompt>\n--verbose\n\
              \n\
              env (names only):\n\
-             ALPHA\nPAS_TEST_SECRET\nZED\n\
+             ALPHA\nHKA_TEST_SECRET\nZED\n\
              \n\
              prompt:\n\
              line one\nline two"
@@ -101,7 +101,7 @@ mod tests {
 
     #[test]
     fn write_creates_the_folder() {
-        let dir = std::env::temp_dir().join(format!("pas-prompt-file-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("hka-prompt-file-{}", std::process::id()));
         let path = dir.join("transcripts/inv.prompt.txt");
         write_prompt_file(&path, "hello").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello");

@@ -49,7 +49,7 @@ fn attempt_started() -> EventData {
     EventData::AttemptStarted {
         attempt: 0,
         pid: std::process::id(),
-        pas_version: "1".into(),
+        hka_version: "1".into(),
         argv: vec!["pas".into()],
         git_head: None,
         resumed_from_node: None,
@@ -267,7 +267,7 @@ async fn ended_run_resumed_is_refreshed() {
     jw2.append(EventData::AttemptStarted {
         attempt: 1,
         pid: std::process::id(),
-        pas_version: "1".into(),
+        hka_version: "1".into(),
         argv: vec![],
         git_head: None,
         resumed_from_node: None,

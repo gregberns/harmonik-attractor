@@ -201,7 +201,7 @@ async fn run_pas_command(state: &AppState, args: Vec<OsString>, done: &str) -> R
     match spawn::run_at(&exe, &args).await {
         Ok(out) if out.code == Some(0) => reply(StatusCode::OK, "notice", done),
         Ok(out) => failed(&failure_message(&out)),
-        Err(e) => failed(&format!("Cannot run pas: {e}")),
+        Err(e) => failed(&format!("Cannot run harmonik-attractor: {e}")),
     }
 }
 
@@ -301,7 +301,7 @@ async fn start(
     let before = std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0);
     let (_pid, exited) = match spawn::spawn_detached_watch(&exe, &args, &log, Some(&meta.workdir)) {
         Ok(v) => v,
-        Err(e) => return failed(&format!("Cannot start pas: {e}")),
+        Err(e) => return failed(&format!("Cannot start harmonik-attractor: {e}")),
     };
     let window = state.startup_window().unwrap_or(STARTUP_WINDOW);
     match tokio::time::timeout(window, exited).await {
@@ -386,7 +386,7 @@ pub async fn answer(
         }
         Ok(out) if out.code == Some(EXIT_ALREADY_ANSWERED) => already_answered(None),
         Ok(out) => failed(&failure_message(&out)),
-        Err(e) => failed(&format!("Cannot run pas: {e}")),
+        Err(e) => failed(&format!("Cannot run harmonik-attractor: {e}")),
     }
 }
 
@@ -413,7 +413,7 @@ mod tests {
             logs_dir: "/abs/logs/p-1".into(),
             started_at: chrono::Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap(),
             argv: argv.iter().map(|s| s.to_string()).collect(),
-            pas_version: "1".into(),
+            hka_version: "1".into(),
             epic_id: None,
             worktree: None,
             branch: None,

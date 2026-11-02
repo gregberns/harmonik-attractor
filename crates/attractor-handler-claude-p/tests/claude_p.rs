@@ -314,10 +314,10 @@ async fn the_child_env_has_the_pas_ids_and_no_api_key() {
     assert_eq!(result.status, AgentStatus::Completed);
     let env_log = fx.read("env.log");
     for line in [
-        "PAS_ATTEMPT=2",
-        "PAS_INVOCATION_ID=inv-42",
-        "PAS_NODE_ID=work",
-        "PAS_RUN_ID=run-7",
+        "HKA_ATTEMPT=2",
+        "HKA_INVOCATION_ID=inv-42",
+        "HKA_NODE_ID=work",
+        "HKA_RUN_ID=run-7",
     ] {
         assert!(
             env_log.lines().any(|l| l == line),
@@ -441,7 +441,7 @@ async fn flaky_times_out_on_attempt_one_then_completes_on_attempt_two() {
     let env_log = fx.read("env.log");
     let attempts: Vec<&str> = env_log
         .lines()
-        .filter_map(|l| l.strip_prefix("PAS_ATTEMPT="))
+        .filter_map(|l| l.strip_prefix("HKA_ATTEMPT="))
         .collect();
     assert_eq!(attempts, ["2", "3"]);
     assert_eq!(fx.read("attempts.flaky").trim(), "2");
@@ -627,7 +627,7 @@ async fn the_prompt_file_is_written_before_the_agent_starts_without_env_values()
     req.observer = Some(&observer);
 
     let result = fx
-        .agents(fake_claude(), &[("PAS_TEST_SECRET", "s3cr3t-value")])
+        .agents(fake_claude(), &[("HKA_TEST_SECRET", "s3cr3t-value")])
         .run(req)
         .await;
 
@@ -635,15 +635,15 @@ async fn the_prompt_file_is_written_before_the_agent_starts_without_env_values()
     assert_eq!(*observer.seen.lock().unwrap(), Some(true));
     let text = fs::read_to_string(&path).unwrap();
     assert!(
-        text.starts_with("pas prompt file v1\ninvocation: inv-42\n"),
+        text.starts_with("hka prompt file v1\ninvocation: inv-42\n"),
         "{text}"
     );
     assert!(
         text.contains("\n-p\n<prompt>\n--output-format\nstream-json\n--verbose\n"),
         "{text}"
     );
-    assert!(text.contains("\nPAS_TEST_SECRET\n"), "{text}");
-    assert!(text.contains("\nPAS_NODE_ID\n"), "{text}");
+    assert!(text.contains("\nHKA_TEST_SECRET\n"), "{text}");
+    assert!(text.contains("\nHKA_NODE_ID\n"), "{text}");
     assert!(text.ends_with("prompt:\ndo the work"), "{text}");
     assert!(!text.contains("s3cr3t-value"), "{text}");
 }
@@ -707,7 +707,7 @@ async fn a_new_session_passes_session_id_and_reports_the_init_lines_id() {
     assert_eq!(invocations(&fx), [argv_with(["--session-id", "sess-1"])]);
     assert_eq!(result.agent_session_id.as_deref(), Some("sess-1"));
     assert!(!result.continued);
-    assert!(fx.read("env.log").contains("PAS_SESSION_ID=sess-1\n"));
+    assert!(fx.read("env.log").contains("HKA_SESSION_ID=sess-1\n"));
 }
 
 #[tokio::test]

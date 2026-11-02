@@ -16,7 +16,7 @@ use serde_json::Value;
 
 const RUN_ID: &str = "01920000-0000-7000-8000-00000000abcd";
 /// Test hook that shortens the 30 s Heartbeat interval.
-const HEARTBEAT_ENV: &str = "PAS_HEARTBEAT_INTERVAL_MS";
+const HEARTBEAT_ENV: &str = "HKA_HEARTBEAT_INTERVAL_MS";
 
 fn pas() -> &'static str {
     env!("CARGO_BIN_EXE_harmonik-attractor")
@@ -82,7 +82,7 @@ impl Fixture {
         let mut command = self.pas();
         command
             .args(self.args(extra))
-            .env("PAS_STATE_DIR", self.path().join("state"))
+            .env("HKA_STATE_DIR", self.path().join("state"))
             .env_remove(HEARTBEAT_ENV)
             .current_dir(self.path());
         command
@@ -689,7 +689,7 @@ fn directory_run_creates_one_run_per_pipeline() {
             .arg(&batch)
             .args(["--dry-run"])
             .args(extra)
-            .env("PAS_STATE_DIR", fx.path().join("state"))
+            .env("HKA_STATE_DIR", fx.path().join("state"))
             .env_remove(HEARTBEAT_ENV)
             .current_dir(fx.path())
             .output()
@@ -913,7 +913,7 @@ fn directory_run_stops_heartbeat_per_pipeline() {
         .pas()
         .arg("run")
         .arg(&batch)
-        .env("PAS_STATE_DIR", fx.path().join("state"))
+        .env("HKA_STATE_DIR", fx.path().join("state"))
         .env(HEARTBEAT_ENV, "100")
         .current_dir(fx.path())
         .output()

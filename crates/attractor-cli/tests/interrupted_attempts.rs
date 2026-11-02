@@ -120,7 +120,7 @@ fn scenario(fake: &FakeAgent, file: &str, line: &str) {
     fs::write(fake.scenarios().join(file), format!("{line}\n")).unwrap();
 }
 
-/// One engine commit: sha, `Pas-Status`, `Pas-Attempt`.
+/// One engine commit: sha, `Hka-Status`, `Hka-Attempt`.
 #[derive(Debug)]
 struct EngineCommit {
     sha: String,
@@ -138,7 +138,7 @@ fn engine_commits(fake: &FakeAgent) -> Vec<EngineCommit> {
     let log = fake.git(&[
         "log",
         "--reverse",
-        "--format=%H%x1f%(trailers:key=Pas-Status,valueonly,separator=)%x1f%(trailers:key=Pas-Attempt,valueonly,separator=)%x1e",
+        "--format=%H%x1f%(trailers:key=Hka-Status,valueonly,separator=)%x1f%(trailers:key=Hka-Attempt,valueonly,separator=)%x1e",
         &range,
     ]);
     log.split('\x1e')
@@ -382,12 +382,12 @@ fn flag(argv: &[String], flag: &str) -> Option<String> {
     argv.get(at + 1).cloned()
 }
 
-/// The `Pas-Session` trailer of commit `sha`.
+/// The `Hka-Session` trailer of commit `sha`.
 fn session_trailer(fake: &FakeAgent, sha: &str) -> String {
     fake.git(&[
         "log",
         "-1",
-        "--format=%(trailers:key=Pas-Session,valueonly,separator=)",
+        "--format=%(trailers:key=Hka-Session,valueonly,separator=)",
         sha,
     ])
     .trim()

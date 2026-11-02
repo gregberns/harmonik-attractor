@@ -33,8 +33,8 @@ fn starts(fake: &FakeAgent) -> Vec<Start> {
     envs.into_iter()
         .zip(argvs)
         .map(|(env, argv)| Start {
-            node: env.get("PAS_NODE_ID").cloned().unwrap_or_default(),
-            session_env: env.get("PAS_SESSION_ID").cloned().unwrap_or_default(),
+            node: env.get("HKA_NODE_ID").cloned().unwrap_or_default(),
+            session_env: env.get("HKA_SESSION_ID").cloned().unwrap_or_default(),
             argv,
         })
         .collect()
@@ -114,7 +114,7 @@ fn a_retry_resumes_the_same_session_and_keeps_the_profile_args() {
     let branch = fake.run_meta()["branch"].as_str().unwrap().to_string();
     let trailers = fake.git(&[
         "log",
-        "--format=%(trailers:key=Pas-Session,valueonly)",
+        "--format=%(trailers:key=Hka-Session,valueonly)",
         &branch,
     ]);
     assert_eq!(

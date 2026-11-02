@@ -36,7 +36,7 @@ pub struct RunInvocation {
     /// Run Index file; `None` uses the machine-wide Index (C4).
     pub index_path: Option<PathBuf>,
     /// Time between Heartbeat Events; `None` uses [`HEARTBEAT_INTERVAL`].
-    /// Only tests set it (`PAS_HEARTBEAT_INTERVAL_MS`).
+    /// Only tests set it (`HKA_HEARTBEAT_INTERVAL_MS`).
     pub heartbeat_interval: Option<Duration>,
     /// `--allow-shared-workdir`: start even if another Run holds the
     /// Worktree lock, and record `shared_workdir: true` in `RunStarted`.
@@ -54,9 +54,9 @@ pub struct RunInvocation {
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Env var that shortens the Heartbeat interval, for tests only.
-const HEARTBEAT_INTERVAL_ENV: &str = "PAS_HEARTBEAT_INTERVAL_MS";
+const HEARTBEAT_INTERVAL_ENV: &str = "HKA_HEARTBEAT_INTERVAL_MS";
 
-/// The Heartbeat interval set by `PAS_HEARTBEAT_INTERVAL_MS`, if any.
+/// The Heartbeat interval set by `HKA_HEARTBEAT_INTERVAL_MS`, if any.
 pub fn heartbeat_interval_from_env() -> Option<Duration> {
     let value = std::env::var(HEARTBEAT_INTERVAL_ENV).ok()?;
     let interval = parse_heartbeat_interval_ms(&value);
@@ -461,7 +461,7 @@ fn acquire_pipeline_lock(logs_dir: &std::path::Path) -> Result<RunLocks, SetupEr
     Ok(locks)
 }
 
-/// Take the Worktree lock on `<git-dir>/pas-run.lock` when `workdir` is in a
+/// Take the Worktree lock on `<git-dir>/harmonik-attractor-run.lock` when `workdir` is in a
 /// git worktree (the Run's own, so the lock is per Run). Returns whether the
 /// Run shares its worktree with another Run.
 fn acquire_worktree_lock(
@@ -1106,7 +1106,7 @@ async fn prepare_run(
     }
     let attempt = last_attempt(&run_dir.events()) + 1;
     let pipeline_path = absolute(path);
-    let pas_version = env!("CARGO_PKG_VERSION").to_string();
+    let hka_version = env!("CARGO_PKG_VERSION").to_string();
 
     if is_new_run {
         let started_at = chrono::Utc::now();
@@ -1120,7 +1120,7 @@ async fn prepare_run(
             logs_dir: absolute(&logs_dir),
             started_at,
             argv: invocation.argv.clone(),
-            pas_version: pas_version.clone(),
+            hka_version: hka_version.clone(),
             epic_id: None,
             worktree: place.worktree.as_ref().map(|wt| wt.path.clone()),
             branch: place.worktree.as_ref().map(|wt| wt.branch.clone()),
@@ -1181,7 +1181,7 @@ async fn prepare_run(
         .append(EventData::AttemptStarted {
             attempt,
             pid: std::process::id(),
-            pas_version,
+            hka_version,
             argv: invocation.argv.clone(),
             git_head: git_rev_parse(&place.workdir, "HEAD"),
             resumed_from_node: checkpoint.as_ref().map(|cp| cp.current_node_id.clone()),

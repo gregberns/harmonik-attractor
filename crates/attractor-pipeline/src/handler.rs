@@ -680,7 +680,7 @@ mod tests {
                 "--nocapture",
             ])
             .env("PATH", shims.path())
-            .env("PAS_LEGACY_CONDITIONAL_CHILD", "1")
+            .env("HKA_LEGACY_CONDITIONAL_CHILD", "1")
             .output()
             .unwrap();
 
@@ -695,7 +695,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn legacy_prompted_conditional_child() {
-        if std::env::var_os("PAS_LEGACY_CONDITIONAL_CHILD").is_none() {
+        if std::env::var_os("HKA_LEGACY_CONDITIONAL_CHILD").is_none() {
             return;
         }
 

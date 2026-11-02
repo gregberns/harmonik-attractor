@@ -194,7 +194,7 @@ mod tests {
         line(
             1,
             "AttemptStarted",
-            r#"{"attempt":1,"pid":1,"argv":[],"pas_version":"0","resumed_from_node":null}"#,
+            r#"{"attempt":1,"pid":1,"argv":[],"hka_version":"0","resumed_from_node":null}"#,
         )
     }
 

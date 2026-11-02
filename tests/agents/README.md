@@ -8,7 +8,7 @@ Tests select it by agent profile (ticket 03): the test repo's `.harmonik-attract
 defines a `fake` profile (`mechanism = "claude-p"`, `command` = this script,
 `test_only = true`), pipelines use `agent="fake"`, and `pas run` gets
 `--allow-test-agents`. PAS runs it with its own environment minus the
-profile's `env.remove` plus `env.set` and the `PAS_*` ids; the test sets
+profile's `env.remove` plus `env.set` and the `HKA_*` ids; the test sets
 `FAKE_AGENT_SCENARIOS`. Extra profile fields (`kill_grace`, `timeout`,
 `reasoning_args`, `env.set`, ...) go in the same `.harmonik-attractor/config.toml`. Only the test of
 the `llm_provider="claude"` alias still puts this script first on `PATH` as
@@ -27,18 +27,18 @@ helper is `crates/attractor-cli/tests/fake_agent/mod.rs`; the tests are in
   their value. An unknown flag
   exits 2 with `fake-claude: unknown flag <x>`, so argv drift shows up in
   tests. `-p` is required.
-- **Start counter.** On every start with `PAS_NODE_ID` set, the fake adds
-  one to `$FAKE_AGENT_SCENARIOS/starts.<PAS_NODE_ID>`; the new count `k`
+- **Start counter.** On every start with `HKA_NODE_ID` set, the fake adds
+  one to `$FAKE_AGENT_SCENARIOS/starts.<HKA_NODE_ID>`; the new count `k`
   makes this start `<node>@<k>`, whatever its attempt number. A loop-back
   revisit starts again at attempt 1, so only `<node>@<k>` tells the second
   visit from the first.
 - **Scenario.** The scenario text is the first match of:
-  1. the first line of `$FAKE_AGENT_SCENARIOS/<PAS_NODE_ID>@<k>`, for the
-     node's k-th start (when `PAS_NODE_ID` is set and the file exists);
-  2. the first line of `$FAKE_AGENT_SCENARIOS/<PAS_NODE_ID>.<PAS_ATTEMPT>`
+  1. the first line of `$FAKE_AGENT_SCENARIOS/<HKA_NODE_ID>@<k>`, for the
+     node's k-th start (when `HKA_NODE_ID` is set and the file exists);
+  2. the first line of `$FAKE_AGENT_SCENARIOS/<HKA_NODE_ID>.<HKA_ATTEMPT>`
      (only when both variables are set and the file exists);
-  3. the first line of `$FAKE_AGENT_SCENARIOS/<PAS_NODE_ID>` (when
-     `PAS_NODE_ID` is set and the file exists);
+  3. the first line of `$FAKE_AGENT_SCENARIOS/<HKA_NODE_ID>` (when
+     `HKA_NODE_ID` is set and the file exists);
   4. otherwise the `-p` prompt, from the text after its last `Task (`: that
      is the node's own `prompt`. The text before it holds the goal and
      earlier nodes' results.
@@ -52,7 +52,7 @@ helper is `crates/attractor-cli/tests/fake_agent/mod.rs`; the tests are in
   each visit, e.g. `review@1` routing back and `review@2` routing on.
 - **Environment.** `FAKE_AGENT_SCENARIOS` (required): an existing folder
   where the fake keeps its state. `FAKE_HANG_SECS`: how long `hang` sleeps
-  (default 30). `PAS_NODE_ID`, `PAS_ATTEMPT`: optional, for the scenario
+  (default 30). `HKA_NODE_ID`, `HKA_ATTEMPT`: optional, for the scenario
   lookup above.
 - **stdin** is read only by the `stdin` scenario.
 - **Session.** The `session_id` on its output lines is the `--session-id`
@@ -69,12 +69,12 @@ In `$FAKE_AGENT_SCENARIOS`:
 | File | Contents |
 |---|---|
 | `attempts.<scenario>` | how many times this scenario started |
-| `starts.<PAS_NODE_ID>` | how many times this node started (the start counter above) |
-| `env.log` | per start: a `--- start` line, a `FAKE_PID=<pid>` line (the fake's own pid: PAS execs it directly, so this is the agent's pid), then the sorted `PAS_*`, `ANTHROPIC_*`, `OPENAI_*` and `CLAUDE_CODE_*` environment variables, and (fake-claude only) the session identity ones PAS strips: `CLAUDECODE`, `CLAUDE_PID`, `CLAUDE_EFFORT`, `HK3_*`, `KEEPER_*`, `HARMONIK_AGENT` |
+| `starts.<HKA_NODE_ID>` | how many times this node started (the start counter above) |
+| `env.log` | per start: a `--- start` line, a `FAKE_PID=<pid>` line (the fake's own pid: PAS execs it directly, so this is the agent's pid), then the sorted `HKA_*`, `ANTHROPIC_*`, `OPENAI_*` and `CLAUDE_CODE_*` environment variables, and (fake-claude only) the session identity ones PAS strips: `CLAUDECODE`, `CLAUDE_PID`, `CLAUDE_EFFORT`, `HK3_*`, `KEEPER_*`, `HARMONIK_AGENT` |
 | `invocations.log` | per start: a `--- start` line, then each argument on its own line, without the `-p` value |
 | `prompts.log` | per start: a `--- start` line, then the full `-p` prompt |
-| `prompt.<PAS_NODE_ID>.<PAS_ATTEMPT>` | per start when both variables are set: the full `-p` prompt and a newline, overwritten on each start of that attempt |
-| `prompt.<PAS_NODE_ID>@<k>` | per start when `PAS_NODE_ID` is set: the full `-p` prompt and a newline, for the node's k-th start (never overwritten, so a revisit keeps the earlier visit's prompt) |
+| `prompt.<HKA_NODE_ID>.<HKA_ATTEMPT>` | per start when both variables are set: the full `-p` prompt and a newline, overwritten on each start of that attempt |
+| `prompt.<HKA_NODE_ID>@<k>` | per start when `HKA_NODE_ID` is set: the full `-p` prompt and a newline, for the node's k-th start (never overwritten, so a revisit keeps the earlier visit's prompt) |
 | `committed` | created (empty) by `commit_hang` after its commit |
 | `stdin.bytes` | written by `stdin`: how many bytes it read from stdin |
 | `go` | created by the test: lets `stderr_live` finish |
@@ -191,7 +191,7 @@ other fakes.
   `PI_SKIP_VERSION_CHECK` and every variable whose name ends in `_KEY`
   (e.g. `FAKE_PI_KEY`, `OPENAI_API_KEY`), so a test can check that no key
   reached pi's environment.
-- **The agent dir.** On every start with `PAS_NODE_ID` and
+- **The agent dir.** On every start with `HKA_NODE_ID` and
   `PI_CODING_AGENT_DIR` set (before the scenario runs, so `hang` does it
   too), for the node's k-th start:
 

@@ -331,7 +331,7 @@ mcp_config_json = "{\"mcpServers\":{}}"
     assert_success(&output);
     let plugin = fs::canonicalize(fake.repo()).unwrap().join("plug");
     // The minted session id, as the agent's environment had it.
-    let session = fake.env_logs()[0]["PAS_SESSION_ID"].clone();
+    let session = fake.env_logs()[0]["HKA_SESSION_ID"].clone();
     let expected = [
         "--dangerously-skip-permissions",
         "--strict-mcp-config",
@@ -380,7 +380,7 @@ fn a_profile_with_its_own_args_gets_exactly_those_args() {
 
     assert_success(&fake.run(&one_node(r#"agent="own-args", prompt="scenario=success""#)));
 
-    let session = fake.env_logs()[0]["PAS_SESSION_ID"].clone();
+    let session = fake.env_logs()[0]["HKA_SESSION_ID"].clone();
     let expected = [
         "--strict-mcp-config",
         "--session-id",

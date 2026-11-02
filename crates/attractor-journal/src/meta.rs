@@ -24,13 +24,13 @@ pub struct RunMeta {
     pub logs_dir: PathBuf,
     pub started_at: DateTime<Utc>,
     pub argv: Vec<String>,
-    pub pas_version: String,
+    pub hka_version: String,
     pub epic_id: Option<String>,
     /// The git worktree the Run works in, on `branch`; `null` when the Run
     /// works in place (no git repository, or a dry run).
     #[serde(default)]
     pub worktree: Option<PathBuf>,
-    /// `pas/run/<run-id>`.
+    /// `hka/run/<run-id>`.
     #[serde(default)]
     pub branch: Option<String>,
     /// The base ref as given (`--base`, default `HEAD`).
@@ -72,7 +72,7 @@ mod tests {
     const EXAMPLE: &str = r#"{ "v": 1, "run_id": "0192...", "pipeline_path": "/abs/pipelines/x.dot", "pipeline_name": "X",
   "workdir": "/abs/repo", "git_worktree": "/abs/repo", "logs_dir": "/abs/repo/.harmonik-attractor/logs/x-1a2b3c4d",
   "started_at": "2026-09-24T10:00:00Z", "argv": ["pas","run","pipelines/x.dot","--max-budget-usd","50"],
-  "pas_version": "0.11.0", "epic_id": null }"#;
+  "hka_version": "0.11.0", "epic_id": null }"#;
 
     #[test]
     fn write_then_read_round_trips() {

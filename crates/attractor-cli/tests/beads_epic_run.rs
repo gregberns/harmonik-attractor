@@ -12,7 +12,7 @@
 //! repository, and `BEADS_DIR` points `bd` at a workspace created there, so
 //! the repository's own `.beads` is never read or changed. The test skips
 //! with a notice when `bd` is not on `PATH`, and fails instead when
-//! `PAS_REQUIRE_BD=1`.
+//! `HKA_REQUIRE_BD=1`.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -41,8 +41,8 @@ fn repo_root() -> PathBuf {
 fn beads_available() -> bool {
     if !bd_on_path(std::env::var_os("PATH").as_deref()) {
         assert!(
-            std::env::var("PAS_REQUIRE_BD").as_deref() != Ok("1"),
-            "PAS_REQUIRE_BD=1 but bd is not on PATH"
+            std::env::var("HKA_REQUIRE_BD").as_deref() != Ok("1"),
+            "HKA_REQUIRE_BD=1 but bd is not on PATH"
         );
         eprintln!("skipping: bd not on PATH");
         return false;
@@ -214,8 +214,8 @@ async fn epic_run_claims_commits_pushes_and_closes_both_tasks() {
         .current_dir(&root)
         .env("BEADS_DIR", &beads_dir)
         .env("BEADS_ACTOR", "pas-test")
-        .env("PAS_STATE_DIR", &state)
-        .env_remove("PAS_HEARTBEAT_INTERVAL_MS")
+        .env("HKA_STATE_DIR", &state)
+        .env_remove("HKA_HEARTBEAT_INTERVAL_MS")
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
         .env_remove("GIT_INDEX_FILE")

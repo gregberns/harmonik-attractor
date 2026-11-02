@@ -10,7 +10,7 @@
 //! directory, like the CLI always has.
 //!
 //! Tests that need a real Beads workspace skip with a notice when `bd` is not
-//! on `PATH`, and fail instead when `PAS_REQUIRE_BD=1`. The error-path tests
+//! on `PATH`, and fail instead when `HKA_REQUIRE_BD=1`. The error-path tests
 //! use a stub program and never need `bd`.
 
 use std::ffi::{OsStr, OsString};
@@ -334,13 +334,13 @@ pub(crate) mod test_support {
     pub(crate) const TEST_ACTOR: &str = "pas-test";
 
     /// A temporary, isolated Beads workspace, or `None` when `bd` is missing
-    /// (panics instead under `PAS_REQUIRE_BD=1`).
+    /// (panics instead under `HKA_REQUIRE_BD=1`).
     pub(crate) async fn workspace() -> Option<(tempfile::TempDir, BeadsAdapter)> {
         match BeadsAdapter::new().run(&["--version"]).await {
             Err(BeadsError::BdNotFound { .. }) => {
                 assert!(
-                    std::env::var("PAS_REQUIRE_BD").as_deref() != Ok("1"),
-                    "PAS_REQUIRE_BD=1 but bd is not on PATH"
+                    std::env::var("HKA_REQUIRE_BD").as_deref() != Ok("1"),
+                    "HKA_REQUIRE_BD=1 but bd is not on PATH"
                 );
                 eprintln!("skipping: bd not on PATH");
                 return None;
@@ -755,12 +755,12 @@ mod tests {
         let program = stub(
             dir.path(),
             "fake-bd",
-            r#"printf '{"id":"%s|%s"}' "$(pwd -P)" "$PAS_BEADS_TEST_VAR""#,
+            r#"printf '{"id":"%s|%s"}' "$(pwd -P)" "$HKA_BEADS_TEST_VAR""#,
         );
         let id = BeadsAdapter::new()
             .with_program(&program)
             .in_dir(dir.path())
-            .with_env("PAS_BEADS_TEST_VAR", "v1")
+            .with_env("HKA_BEADS_TEST_VAR", "v1")
             .create(&NewIssue {
                 title: "t",
                 issue_type: "task",
@@ -771,7 +771,7 @@ mod tests {
             .unwrap();
         let canonical = dir.path().canonicalize().unwrap();
         assert_eq!(id, format!("{}|v1", canonical.display()));
-        assert!(std::env::var_os("PAS_BEADS_TEST_VAR").is_none());
+        assert!(std::env::var_os("HKA_BEADS_TEST_VAR").is_none());
     }
 
     // AC4: bd missing from PATH is a distinct error.

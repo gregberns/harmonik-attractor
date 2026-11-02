@@ -194,7 +194,7 @@ impl FakeAgent {
         command
             .env("PATH", crate::blocked_agents::path_with(&self.bin()))
             .env("FAKE_AGENT_SCENARIOS", self.scenarios())
-            .env("PAS_STATE_DIR", self.path().join("state"))
+            .env("HKA_STATE_DIR", self.path().join("state"))
             // Agents' session files (`~/.claude`, `~/.codex`) and anything
             // else under home stay in the test's folder, never the real one.
             .env("HOME", self.home())
@@ -204,7 +204,7 @@ impl FakeAgent {
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
-            .env_remove("PAS_HEARTBEAT_INTERVAL_MS")
+            .env_remove("HKA_HEARTBEAT_INTERVAL_MS")
             .current_dir(self.path());
         command
     }
@@ -274,7 +274,7 @@ impl FakeAgent {
             .collect()
     }
 
-    /// The fake's `PAS_*`, `ANTHROPIC_*`, `OPENAI_*` and `CLAUDE_CODE_USE_*`
+    /// The fake's `HKA_*`, `ANTHROPIC_*`, `OPENAI_*` and `CLAUDE_CODE_USE_*`
     /// environment per start.
     pub fn env_logs(&self) -> Vec<BTreeMap<String, String>> {
         self.blocks("env.log")

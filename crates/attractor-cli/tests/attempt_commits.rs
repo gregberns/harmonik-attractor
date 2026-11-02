@@ -11,7 +11,7 @@ use std::fs;
 
 use fake_agent::{stderr, FakeAgent};
 
-/// One engine commit: its subject and its `Pas-*` trailers.
+/// One engine commit: its subject and its `Hka-*` trailers.
 #[derive(Debug)]
 struct EngineCommit {
     subject: String,
@@ -34,13 +34,13 @@ fn engine_commits(fake: &FakeAgent) -> Vec<EngineCommit> {
         .filter_map(|entry| {
             let (author, body) = entry.split_once('\x1f')?;
             let subject = body.lines().next()?.to_string();
-            subject.starts_with("pas(").then(|| EngineCommit {
+            subject.starts_with("hka(").then(|| EngineCommit {
                 subject,
                 author: author.to_string(),
                 trailers: body
                     .lines()
                     .filter_map(|line| line.split_once(": "))
-                    .filter(|(key, _)| key.starts_with("Pas-"))
+                    .filter(|(key, _)| key.starts_with("Hka-"))
                     .map(|(k, v)| (k.to_string(), v.to_string()))
                     .collect(),
             })
@@ -90,13 +90,13 @@ fn three_agent_nodes_leave_three_commits_with_trailers() {
     for (commit, node) in commits.iter().zip(["a", "b", "c"]) {
         assert_eq!(
             commit.subject,
-            format!("pas({run_id}): {node} attempt 1 (success)")
+            format!("hka({run_id}): {node} attempt 1 (success)")
         );
-        assert_eq!(trailer(commit, "Pas-Run"), Some(run_id.as_str()));
-        assert_eq!(trailer(commit, "Pas-Node"), Some(node));
-        assert_eq!(trailer(commit, "Pas-Attempt"), Some("1"));
-        assert_eq!(trailer(commit, "Pas-Status"), Some("success"));
-        assert_eq!(trailer(commit, "Pas-Failure-Class"), None);
+        assert_eq!(trailer(commit, "Hka-Run"), Some(run_id.as_str()));
+        assert_eq!(trailer(commit, "Hka-Node"), Some(node));
+        assert_eq!(trailer(commit, "Hka-Attempt"), Some("1"));
+        assert_eq!(trailer(commit, "Hka-Status"), Some("success"));
+        assert_eq!(trailer(commit, "Hka-Failure-Class"), None);
     }
 }
 
@@ -112,11 +112,11 @@ fn a_retried_node_leaves_one_commit_per_attempt() {
 
     let commits = engine_commits(&fake);
     assert_eq!(commits.len(), 2, "{commits:#?}");
-    assert_eq!(trailer(&commits[0], "Pas-Attempt"), Some("1"));
-    assert_eq!(trailer(&commits[0], "Pas-Status"), Some("fail"));
-    assert_eq!(trailer(&commits[0], "Pas-Failure-Class"), Some("timeout"));
-    assert_eq!(trailer(&commits[1], "Pas-Attempt"), Some("2"));
-    assert_eq!(trailer(&commits[1], "Pas-Status"), Some("success"));
+    assert_eq!(trailer(&commits[0], "Hka-Attempt"), Some("1"));
+    assert_eq!(trailer(&commits[0], "Hka-Status"), Some("fail"));
+    assert_eq!(trailer(&commits[0], "Hka-Failure-Class"), Some("timeout"));
+    assert_eq!(trailer(&commits[1], "Hka-Attempt"), Some("2"));
+    assert_eq!(trailer(&commits[1], "Hka-Status"), Some("success"));
 }
 
 #[test]
@@ -138,12 +138,12 @@ fn a_reported_failure_and_a_crash_record_their_class() {
 
     let commits = engine_commits(&fake);
     assert_eq!(commits.len(), 2, "{commits:#?}");
-    assert_eq!(trailer(&commits[0], "Pas-Node"), Some("work"));
-    assert_eq!(trailer(&commits[0], "Pas-Status"), Some("fail"));
-    assert_eq!(trailer(&commits[0], "Pas-Failure-Class"), Some("reported"));
-    assert_eq!(trailer(&commits[1], "Pas-Node"), Some("fixup"));
-    assert_eq!(trailer(&commits[1], "Pas-Status"), Some("fail"));
-    assert_eq!(trailer(&commits[1], "Pas-Failure-Class"), Some("crash"));
+    assert_eq!(trailer(&commits[0], "Hka-Node"), Some("work"));
+    assert_eq!(trailer(&commits[0], "Hka-Status"), Some("fail"));
+    assert_eq!(trailer(&commits[0], "Hka-Failure-Class"), Some("reported"));
+    assert_eq!(trailer(&commits[1], "Hka-Node"), Some("fixup"));
+    assert_eq!(trailer(&commits[1], "Hka-Status"), Some("fail"));
+    assert_eq!(trailer(&commits[1], "Hka-Failure-Class"), Some("crash"));
 }
 
 #[test]

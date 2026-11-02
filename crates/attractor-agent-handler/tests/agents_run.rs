@@ -195,11 +195,11 @@ async fn run_hands_the_handler_argv_env_and_prompt() {
     assert_eq!(child_env.get("PATH").map(String::as_str), Some("/bin"));
     assert!(!child_env.contains_key("ANTHROPIC_API_KEY"));
     assert_eq!(
-        child_env.get("PAS_RUN_ID").map(String::as_str),
+        child_env.get("HKA_RUN_ID").map(String::as_str),
         Some("run-1")
     );
     assert_eq!(
-        child_env.get("PAS_INVOCATION_ID").map(String::as_str),
+        child_env.get("HKA_INVOCATION_ID").map(String::as_str),
         Some("inv-1")
     );
 }

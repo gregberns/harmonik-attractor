@@ -108,7 +108,7 @@ fn run(path_dir: &Path, work: &Path, extra: &[&str]) -> Output {
         .arg(work.join("logs"))
         .args(extra)
         .env("PATH", path_dir)
-        .env("PAS_STATE_DIR", work.join("state"))
+        .env("HKA_STATE_DIR", work.join("state"))
         .current_dir(work)
         .output()
         .unwrap()

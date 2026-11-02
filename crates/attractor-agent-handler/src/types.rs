@@ -23,10 +23,10 @@ pub struct Selection {
     pub reasoning: Option<String>,
 }
 
-/// The ids that name one invocation; they become the `PAS_*` variables.
+/// The ids that name one invocation; they become the `HKA_*` variables.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Record {
-    /// `None` outside a run (isolated execution): `PAS_RUN_ID` is then unset.
+    /// `None` outside a run (isolated execution): `HKA_RUN_ID` is then unset.
     pub run_id: Option<String>,
     pub node_id: String,
     /// 1-based.
@@ -38,7 +38,7 @@ pub struct Record {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Session {
     /// Start a new session; the id is minted by the engine (`{session_id}`,
-    /// `PAS_SESSION_ID`).
+    /// `HKA_SESSION_ID`).
     New(String),
     /// Continue the session with this id, as the agent reported it.
     Continue(String),

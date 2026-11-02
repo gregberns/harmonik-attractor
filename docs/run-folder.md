@@ -20,7 +20,7 @@ To set up a resume, `pas run` also reads its own bookkeeping back:
 attempt number and `seq`. It never routes on them.
 
 The record of what each attempt did is its **attempt commit** on the branch
-`pas/run/<run-id>`, not the run folder. Per-node results are also in the
+`hka/run/<run-id>`, not the run folder. Per-node results are also in the
 journal (`StageCompleted`, `StageFailed`).
 
 The run folder is **not for secrets**. A prompt file or a transcript holds
@@ -32,7 +32,7 @@ argument (for example an MCP server token inside `--mcp-config` or
 
 The worktree and the branch are **not** in the run folder. A Run works in
 `<worktree-root>/<run-id>` (default `<project-root>/.pas/worktrees/<run-id>`)
-on branch `pas/run/<run-id>`; `run.json` and `final.json` record both. See
+on branch `hka/run/<run-id>`; `run.json` and `final.json` record both. See
 [Worktree and branch](cli-reference.md#worktree-and-branch).
 
 ## Rules for readers
@@ -83,8 +83,8 @@ ID, the same form, one per Model Invocation (each agent call, so each retry
 gets a new one). `<question-id>` is `q-<node>-<n>`, 1 to 128 characters of
 `[A-Za-z0-9_-]`.
 
-`<state>` is the PAS state folder: `$PAS_STATE_DIR`, else
-`$XDG_STATE_HOME/pas`, else `~/.local/state/pas`. It is machine-wide, not
+`<state>` is the PAS state folder: `$HKA_STATE_DIR`, else
+`$XDG_STATE_HOME/harmonik-attractor`, else `~/.local/state/harmonik-attractor`. It is machine-wide, not
 per Pipeline.
 
 ## Files
@@ -101,7 +101,7 @@ per Pipeline.
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.stderr.log` | text | the agent process runner, as above, for stderr | created once, then appended | none |
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.<n>.jsonl` | spawn `n`'s stdout (`n` from 2), when a rate-limited Claude agent waited and re-spawned within the invocation | the agent process runner, as for spawn 1 | created once, then appended | none (the provider's format) |
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.<n>.stderr.log` | text | the agent process runner, as above, for spawn `n`'s stderr | created once, then appended | none |
-| `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.prompt.txt` | text, see below | the agent registry (`Agents::run`), before the handler is called | written once | first line `pas prompt file v1` |
+| `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.prompt.txt` | text, see below | the agent registry (`Agents::run`), before the handler is called | written once | first line `hka prompt file v1` |
 | `<stem>-<hash>/runs/<run-id>/pi-sessions/` | Pi's own session files | Pi (`--session-dir`), for `pi` profiles | Pi's | none (Pi's format) |
 | `<stem>-<hash>/runs/<run-id>/pi-agent/<inv>/models.json`, `settings.json` | JSON, mode 0600, in a 0700 folder | the `pi` handler, before Pi starts; the folder is removed when the invocation ends | written once (created 0600) | none (Pi's format) |
 | `<stem>-<hash>/runs/<run-id>/answers/<question-id>.json` | JSON, one line | `pas answer`, the Monitor (through `pas answer`), or `pas run`'s terminal prompt | written once; the first writer wins | `v` (1) |
@@ -136,8 +136,8 @@ names the Run it resumes. Source:
 ### `run.lock` and the Worktree lock
 
 `run.lock` is the Pipeline lock: a second `pas run` of the same Pipeline
-exits with code 5. The Worktree lock is `pas-run.lock` in the Run worktree's
-git dir (`<repo>/.git/worktrees/<run-id>/pas-run.lock`), **not** in the run
+exits with code 5. The Worktree lock is `harmonik-attractor-run.lock` in the Run worktree's
+git dir (`<repo>/.git/worktrees/<run-id>/harmonik-attractor-run.lock`), **not** in the run
 folder. Both hold `{"pid":…,"run_id":…}`; the OS releases them when the
 process exits. See [Concurrency locks](cli-reference.md#concurrency-locks).
 
@@ -145,7 +145,7 @@ process exits. See [Concurrency locks](cli-reference.md#concurrency-locks).
 
 Fields: `v`, `run_id`, `pipeline_path`, `pipeline_name`, `workdir` (the
 source directory), `git_worktree`, `logs_dir`, `started_at`, `argv`,
-`pas_version`, `epic_id`, `worktree`, `branch`, `base`, `base_sha`,
+`hka_version`, `epic_id`, `worktree`, `branch`, `base`, `base_sha`,
 `warnings`. `worktree`, `branch`, `base` and `base_sha` are `null` when the
 Run works in place (no git repository, or `--dry-run`). Source:
 `crates/attractor-journal/src/meta.rs`.
@@ -177,7 +177,7 @@ See [End of run: `final.json`](cli-reference.md#end-of-run-finaljson).
 Plain text, so `cat` and `less` work:
 
 ```
-pas prompt file v1
+hka prompt file v1
 invocation: <id>
 node: <node-id>
 attempt: <n>

@@ -144,7 +144,7 @@ impl TerminalLines {
 fn spawn_stdin_reader() -> mpsc::UnboundedReceiver<String> {
     let (tx, rx) = mpsc::unbounded_channel();
     let spawned = std::thread::Builder::new()
-        .name("pas-stdin".into())
+        .name("hka-stdin".into())
         .spawn(move || loop {
             let mut line = String::new();
             match std::io::stdin().read_line(&mut line) {

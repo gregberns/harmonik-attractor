@@ -52,32 +52,32 @@ impl IndexEntry {
     }
 }
 
-/// Resolve the PAS state folder from the values of `PAS_STATE_DIR`,
+/// Resolve the PAS state folder from the values of `HKA_STATE_DIR`,
 /// `XDG_STATE_HOME`, and `HOME`, in that order of precedence:
-/// `$PAS_STATE_DIR`, else `$XDG_STATE_HOME/pas`, else `$HOME/.local/state/pas`.
+/// `$HKA_STATE_DIR`, else `$XDG_STATE_HOME/harmonik-attractor`, else `$HOME/.local/state/harmonik-attractor`.
 /// Empty values count as unset.
 pub fn resolve_state_dir(
-    pas_state_dir: Option<OsString>,
+    hka_state_dir: Option<OsString>,
     xdg_state_home: Option<OsString>,
     home: Option<OsString>,
 ) -> Option<PathBuf> {
     let set = |v: Option<OsString>| v.filter(|v| !v.is_empty()).map(PathBuf::from);
-    set(pas_state_dir)
-        .or_else(|| set(xdg_state_home).map(|p| p.join("pas")))
-        .or_else(|| set(home).map(|p| p.join(".local").join("state").join("pas")))
+    set(hka_state_dir)
+        .or_else(|| set(xdg_state_home).map(|p| p.join("harmonik-attractor")))
+        .or_else(|| set(home).map(|p| p.join(".local").join("state").join("harmonik-attractor")))
 }
 
 /// The PAS state folder for this process's environment.
 pub fn state_dir() -> io::Result<PathBuf> {
     resolve_state_dir(
-        std::env::var_os("PAS_STATE_DIR"),
+        std::env::var_os("HKA_STATE_DIR"),
         std::env::var_os("XDG_STATE_HOME"),
         std::env::var_os("HOME"),
     )
     .ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
-            "cannot locate the PAS state folder: set PAS_STATE_DIR, XDG_STATE_HOME, or HOME",
+            "cannot locate the PAS state folder: set HKA_STATE_DIR, XDG_STATE_HOME, or HOME",
         )
     })
 }
@@ -149,19 +149,19 @@ mod tests {
         );
         assert_eq!(
             resolve_state_dir(None, os("/xdg"), os("/home/u")),
-            Some(PathBuf::from("/xdg/pas"))
+            Some(PathBuf::from("/xdg/harmonik-attractor"))
         );
         assert_eq!(
             resolve_state_dir(None, None, os("/home/u")),
-            Some(PathBuf::from("/home/u/.local/state/pas"))
+            Some(PathBuf::from("/home/u/.local/state/harmonik-attractor"))
         );
         assert_eq!(
             resolve_state_dir(os(""), os(""), os("/home/u")),
-            Some(PathBuf::from("/home/u/.local/state/pas"))
+            Some(PathBuf::from("/home/u/.local/state/harmonik-attractor"))
         );
         assert_eq!(
             resolve_state_dir(os(""), os("/xdg"), None),
-            Some(PathBuf::from("/xdg/pas"))
+            Some(PathBuf::from("/xdg/harmonik-attractor"))
         );
         assert_eq!(resolve_state_dir(None, None, None), None);
         assert_eq!(resolve_state_dir(os(""), os(""), os("")), None);

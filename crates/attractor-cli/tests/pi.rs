@@ -178,7 +178,7 @@ fn a_retry_after_a_timeout_continues_the_same_pi_session() {
             flag(argv, "--session-dir").map(|d| PathBuf::from(d).canonicalize().unwrap()),
             Some(sessions.clone())
         );
-        assert_eq!(env.get("PAS_SESSION_ID"), Some(&id));
+        assert_eq!(env.get("HKA_SESSION_ID"), Some(&id));
     }
     assert!(sessions.is_dir());
 }

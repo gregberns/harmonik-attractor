@@ -213,7 +213,7 @@ mod tests {
             1,
             0,
             "AttemptStarted",
-            r#"{"attempt":1,"pid":7,"pas_version":"0","argv":[]}"#,
+            r#"{"attempt":1,"pid":7,"hka_version":"0","argv":[]}"#,
         ) + &line(
             1,
             5,
@@ -227,7 +227,7 @@ mod tests {
             1,
             0,
             "AttemptStarted",
-            r#"{"attempt":1,"pid":7,"pas_version":"0","argv":[]}"#,
+            r#"{"attempt":1,"pid":7,"hka_version":"0","argv":[]}"#,
         ) + &line(1, 30, "Heartbeat", r#"{"pid":7}"#)
     }
 

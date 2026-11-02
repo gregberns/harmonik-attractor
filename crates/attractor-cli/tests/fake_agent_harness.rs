@@ -270,16 +270,16 @@ fn the_agent_env_has_the_pas_ids_and_no_api_key() {
     let envs = fake.env_logs();
     assert_eq!(envs.len(), 1, "{envs:?}");
     let env = &envs[0];
-    assert_eq!(env["PAS_NODE_ID"], "work");
-    assert_eq!(env["PAS_ATTEMPT"], "1");
+    assert_eq!(env["HKA_NODE_ID"], "work");
+    assert_eq!(env["HKA_ATTEMPT"], "1");
     assert_eq!(
-        env["PAS_RUN_ID"],
+        env["HKA_RUN_ID"],
         fake.run_json()["run_id"].as_str().unwrap()
     );
     let invoked = fake.events_of("LlmInvoked");
     assert_eq!(invoked.len(), 1, "{invoked:?}");
     assert_eq!(
-        env["PAS_INVOCATION_ID"],
+        env["HKA_INVOCATION_ID"],
         invoked[0]["invocation_id"].as_str().unwrap()
     );
     assert!(!env.contains_key("ANTHROPIC_API_KEY"), "{env:?}");
@@ -296,7 +296,7 @@ fn node_files_pick_a_scenario_per_attempt() {
     let attempts: Vec<String> = fake
         .env_logs()
         .iter()
-        .map(|env| env["PAS_ATTEMPT"].clone())
+        .map(|env| env["HKA_ATTEMPT"].clone())
         .collect();
     assert_eq!(attempts, ["1", "2"]);
     assert_eq!(fake.attempts("hang"), 1);
@@ -637,7 +637,7 @@ fn a_resume_after_a_stop_runs_the_stopped_node_again() {
     let starts: Vec<String> = fake
         .env_logs()
         .iter()
-        .map(|env| env["PAS_NODE_ID"].clone())
+        .map(|env| env["HKA_NODE_ID"].clone())
         .collect();
     assert_eq!(starts, ["work", "work"]);
     assert_eq!(fake.events_of("PipelineCompleted").len(), 1);

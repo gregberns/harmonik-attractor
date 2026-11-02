@@ -78,9 +78,9 @@ struct CodergenExecutionControls<'a> {
     run_dir: Option<PathBuf>,
     /// Receives `LlmInvoked`; `None` emits nothing.
     events: Option<&'a dyn EventSink>,
-    /// The Run's id, for `PAS_RUN_ID`; `None` outside a Run.
+    /// The Run's id, for `HKA_RUN_ID`; `None` outside a Run.
     run_id: Option<&'a str>,
-    /// This attempt at the node, 1-based, for `PAS_ATTEMPT`.
+    /// This attempt at the node, 1-based, for `HKA_ATTEMPT`.
     attempt: u32,
     /// Cancelled when the Run is stopped; stops a Claude agent gracefully.
     cancel: CancellationToken,
@@ -490,7 +490,7 @@ impl CodergenHandler {
         );
         let continued = session.is_continue();
         // One id names the Model Invocation everywhere: `LlmInvoked`, the
-        // Transcript file and `PAS_INVOCATION_ID`.
+        // Transcript file and `HKA_INVOCATION_ID`.
         let invocation_id = attractor_journal::new_invocation_id();
         let run_dir = controls
             .run_dir

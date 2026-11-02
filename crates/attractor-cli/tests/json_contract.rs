@@ -231,8 +231,8 @@ impl Scratch {
             .args(args)
             .current_dir(self.path())
             .env("PATH", format!("{}:/usr/bin:/bin", self.bin().display()))
-            .env("PAS_STATE_DIR", self.state())
-            .env("PAS_HEARTBEAT_INTERVAL_MS", "100")
+            .env("HKA_STATE_DIR", self.state())
+            .env("HKA_HEARTBEAT_INTERVAL_MS", "100")
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .env("GIT_CEILING_DIRECTORIES", self.path().parent().unwrap());
@@ -440,7 +440,7 @@ fn runs_contract() {
     fs::create_dir_all(broken.path().join("runs.jsonl")).unwrap();
     let out = s
         .pas(&["runs", "--json"])
-        .env("PAS_STATE_DIR", broken.path())
+        .env("HKA_STATE_DIR", broken.path())
         .output()
         .unwrap();
     check("runs", "failure", &out);
