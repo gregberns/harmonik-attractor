@@ -20,7 +20,7 @@ Also (captain's ruling 2026-11-02): the fallback commit identity
 
 **Blocked by:** 27
 
-**Status:** open
+**Status:** done
 
 - [x] `grep -rnw 'pas\|PAS' docs README.md AGENTS.md` finds only history
 - [x] The doc-pinning tests still pass
