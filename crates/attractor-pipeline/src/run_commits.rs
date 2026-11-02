@@ -97,13 +97,23 @@ pub(crate) fn attempt_message(commit: &AttemptCommit<'_>) -> String {
 /// The pathspec of everything in the worktree except `.harmonik-attractor/`.
 const ALL_BUT_PAS: [&str; 3] = ["--", ".", ":(exclude).harmonik-attractor"];
 
-/// Commit everything in the worktree at `root` except `.harmonik-attractor/`, hooks skipped,
-/// even when nothing changed; returns the new commit's sha.
+/// The pathspec of the project config, which is committed like any other
+/// file although the run data beside it is not.
+const CONFIG: [&str; 2] = ["--", ".harmonik-attractor/config.toml"];
+
+/// Commit everything in the worktree at `root` except the run data in
+/// `.harmonik-attractor/`, hooks skipped, even when nothing changed; returns
+/// the new commit's sha.
 pub(crate) async fn commit_attempt(
     root: &Path,
     commit: &AttemptCommit<'_>,
 ) -> Result<String, String> {
     run(root, &[&["add", "-A"][..], &ALL_BUT_PAS[..]].concat(), None).await?;
+    // `git add` fails on a pathspec that matches nothing, so the config is
+    // staged only when it changed.
+    if config_changed(root).await? {
+        run(root, &[&["add", "-A"][..], &CONFIG[..]].concat(), None).await?;
+    }
     let mut args: Vec<&str> = Vec::new();
     // A fixed identity when the repository has none (design §3).
     if !has_identity(root).await {
@@ -132,11 +142,23 @@ pub(crate) async fn commit_attempt(
         .ok_or_else(|| "no HEAD after the commit".to_string())
 }
 
-/// Whether the worktree has changes outside `.harmonik-attractor/`.
+/// Whether the worktree has changes outside the run data in
+/// `.harmonik-attractor/`.
 pub(crate) async fn is_dirty(root: &Path) -> Result<bool, String> {
     let status = run(
         root,
         &[&["status", "--porcelain"][..], &ALL_BUT_PAS[..]].concat(),
+        None,
+    )
+    .await?;
+    Ok(!status.trim().is_empty() || config_changed(root).await?)
+}
+
+/// Whether the project config differs from `HEAD` or is new.
+async fn config_changed(root: &Path) -> Result<bool, String> {
+    let status = run(
+        root,
+        &[&["status", "--porcelain"][..], &CONFIG[..]].concat(),
         None,
     )
     .await?;

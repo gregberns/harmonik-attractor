@@ -393,10 +393,14 @@ pub(crate) fn resolve_base(top: &Path, base: &str) -> Result<String, WorktreeErr
 }
 
 /// Whether the checkout at `top` has uncommitted changes or untracked
-/// files, outside `.harmonik-attractor/`.
+/// files, outside the run data in `.harmonik-attractor/`. The config there
+/// counts like any other file.
 pub(crate) fn is_dirty(top: &Path) -> Result<bool, WorktreeError> {
     let exclude = format!(":(exclude){PROJECT_DIR}");
-    git(top, &["status", "--porcelain", "--", ".", &exclude]).map(|out| !out.is_empty())
+    let config = format!("{PROJECT_DIR}/{}", attractor_quality::CONFIG_FILE);
+    let outside = git(top, &["status", "--porcelain", "--", ".", &exclude])?;
+    let in_config = git(top, &["status", "--porcelain", "--", &config])?;
+    Ok(!outside.is_empty() || !in_config.is_empty())
 }
 
 /// The commit `branch` points at, asked from the repository at `dir`.

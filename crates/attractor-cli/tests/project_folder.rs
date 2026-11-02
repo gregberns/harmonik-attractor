@@ -112,3 +112,21 @@ fn run_data_stays_out_of_git_status_and_the_config_stays_committable() {
         ".harmonik-attractor/config.toml"
     );
 }
+
+#[test]
+fn an_agents_edit_to_the_tracked_config_is_committed_on_the_run_branch() {
+    let fake = FakeAgent::new();
+    let edit = r#"digraph G {
+        start [shape="Mdiamond"]
+        step [shape="parallelogram", tool_command="echo '# EDITED' >> .harmonik-attractor/config.toml && echo x > other.txt"]
+        done [shape="Msquare"]
+        start -> step -> done
+    }"#;
+
+    assert_success(&fake.run(edit));
+
+    let branch = fake.run_meta()["branch"].as_str().unwrap().to_string();
+    assert_eq!(fake.git(&["show", &format!("{branch}:other.txt")]), "x");
+    let config = fake.git(&["show", &format!("{branch}:.harmonik-attractor/config.toml")]);
+    assert!(config.contains("# EDITED"), "{config}");
+}
