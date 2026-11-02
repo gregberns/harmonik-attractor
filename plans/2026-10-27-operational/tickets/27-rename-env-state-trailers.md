@@ -17,6 +17,14 @@
    trailers back (resume) reads the new ones.
 4. The session-identity strip list (ticket 14) keeps working for the new
    names where it lists PAS's own.
+5. Found after 26 (a grep of crates/*/src): the worktree lock
+   `<git-dir>/pas-run.lock` (run_lock.rs) becomes
+   `harmonik-attractor-run.lock`; the run branch prefix `pas/run/`
+   (run_worktree.rs) becomes `hka/run/`; the journal field `pas_version`
+   becomes `hka_version` (run-folder.md lists it); temp-file and stdin
+   names (`pas-prompt-file-*`, `pas-stdin`); user-facing messages
+   (`pas: trust this manifest?`, monitor `Cannot run pas`). Test fixtures
+   and Rust identifiers (`pas_exe`) may stay unless touched anyway.
 
 **Blocked by:** 26
 
@@ -24,4 +32,4 @@
 
 - [ ] A fake agent sees `HKA_RUN_ID` etc. and no `PAS_*` (seam 2)
 - [ ] Resume after a kill still finds the interrupted attempt by its trailers
-- [ ] `grep -rn 'PAS_\|Pas-' crates` finds nothing
+- [ ] `grep -rn 'PAS_\|Pas-\|pas-run\|pas/run\|pas_version' crates/*/src` finds only tests that check old names aren't read
