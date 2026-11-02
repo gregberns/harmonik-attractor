@@ -292,11 +292,11 @@ from it) takes these fields, each passed as a Claude Code flag:
 |-------|------|---------|
 | `isolation` | `--safe-mode`, `--bare`, or `--setting-sources` | `"safe"` (the built-in `claude`'s), `"bare"` (literal bare mode: API-key auth only), or `"inherit"` (no isolation; loads `setting_sources`). |
 | `setting_sources` | `--setting-sources <a,b>` | Required with `isolation = "inherit"`, and only used with it: `user`, `project`, `local`. |
+| `mcp_config` | `--mcp-config <file-or-json>` | An MCP config file, or inline JSON starting with `{`. |
 | `settings` | `--settings <file-or-json>` | A settings file, or inline JSON starting with `{`. |
-| `plugin_dirs` | `--plugin-dir <dir>`, once per dir | Plugin folders the agent loads. |
 | `tools` | `--tools <a,b>` | The built-in tools the agent may use; `[]` passes `--tools ""` (none). |
 | `disallowed_tools` | `--disallowedTools <a,b>` | Tools turned off. The built-in `claude` sets the session tools (below); `[]` passes no flag. |
-| `mcp_config` | `--mcp-config <file-or-json>` | An MCP config file, or inline JSON starting with `{`. |
+| `plugin_dirs` | `--plugin-dir <dir>`, once per dir | Plugin folders the agent loads. |
 
 A relative `settings`, `mcp_config` or `plugin_dirs` path is relative to
 the project root (the folder holding `.harmonik-attractor/`), so it works
