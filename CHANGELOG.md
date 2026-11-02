@@ -6,21 +6,22 @@ All notable changes to harmonik-attractor (formerly PAS) are documented here.
 
 ### Added
 
-- **A worktree and branch per Run.** `pas run` works in its own git worktree
-  (default `.pas/worktrees/<run-id>`, or `--worktree-root`) on branch
-  `pas/run/<run-id>` from `--base` (default `HEAD`). A resume reuses it.
-  Success removes the worktree and keeps the branch; failure keeps both.
-- **Attempt commits.** PAS commits the worktree after every attempt
-  (`pas(<run-id>): <node> attempt <n> (<status>)`, with `Pas-*` trailers).
-  An attempt `pas` never finished is committed as `interrupted` on resume,
-  and the node's next prompt says so. `final.json` and `pas run --json`
-  report the branch, base, final commit and status.
-- **Agent profiles.** `[agents.<name>]` in `pas.toml` defines how an agent
-  runs: command, args, model and reasoning flags, session forms,
-  environment (`env.remove`, `env.set`), timeout, kill grace and rate-limit
-  window. Nodes pick one with `agent=`; `llm_provider` names a built-in
-  (`claude`, `codex`, `gemini`). `reasoning_effort` fills the profile's
-  `reasoning_args`. Test-only profiles need `--allow-test-agents`.
+- **A worktree and branch per Run.** `hka run` works in its own git worktree
+  (default `.harmonik-attractor/worktrees/<run-id>`, or `--worktree-root`)
+  on branch `hka/run/<run-id>` from `--base` (default `HEAD`). A resume
+  reuses it. Success removes the worktree and keeps the branch; failure
+  keeps both.
+- **Attempt commits.** harmonik-attractor commits the worktree after every
+  attempt (`hka(<run-id>): <node> attempt <n> (<status>)`, with `Hka-*`
+  trailers). An attempt `harmonik-attractor` never finished is committed as
+  `interrupted` on resume, and the node's next prompt says so. `final.json`
+  and `hka run --json` report the branch, base, final commit and status.
+- **Agent profiles.** `[agents.<name>]` in `.harmonik-attractor/config.toml`
+  defines how an agent runs: command, args, model and reasoning flags,
+  session forms, environment (`env.remove`, `env.set`), timeout, kill grace
+  and rate-limit window. Nodes pick one with `agent=`; `llm_provider` names
+  a built-in (`claude`, `codex`, `gemini`). `reasoning_effort` fills the
+  profile's `reasoning_args`. Test-only profiles need `--allow-test-agents`.
 - **Sessions.** A node that runs again (a retry or a loop back) continues
   its agent's session (`fidelity="full"`, the default where the profile can
   resume; `fresh` starts a new one). Nodes with one `thread_id` share it.
@@ -35,8 +36,9 @@ All notable changes to harmonik-attractor (formerly PAS) are documented here.
   `LlmStarted` is journalled per spawn. `docs/run-folder.md` lists every
   file and event.
 - The retry prompt names the previous attempt's failure.
-- `pas validate --workdir` reads the same `pas.toml` as `pas run`.
-- `pas validate` and `pas run` warn (`node_model`) when a node sets `model`,
+- `hka validate --workdir` reads the same `.harmonik-attractor/config.toml`
+  as `hka run`.
+- `hka validate` and `hka run` warn (`node_model`) when a node sets `model`,
   a graph attribute that does nothing there; the node attribute is
   `llm_model`.
 
@@ -56,7 +58,8 @@ All notable changes to harmonik-attractor (formerly PAS) are documented here.
     (`$XDG_STATE_HOME/harmonik-attractor`), trust store `~/.config/pas` →
     `~/.config/harmonik-attractor`;
   - run branches `pas/run/<run-id>` → `hka/run/<run-id>`; attempt commit
-    subjects `pas(<run-id>)` → `hka(<run-id>)`, trailers `Pas-*` → `Hka-*`;
+    subjects `pas(<run-id>)` → `hka(<run-id>)`, trailers `Pas-*` →
+    `Hka-*`;
     fallback commit identity `PAS <pas@localhost>` →
     `harmonik-attractor <hka@localhost>`;
   - worktree lock `pas-run.lock` → `harmonik-attractor-run.lock`;
@@ -64,6 +67,7 @@ All notable changes to harmonik-attractor (formerly PAS) are documented here.
     `pas prompt file v1` → `hka prompt file v1`;
   - `templates/pas.md` → `templates/harmonik-attractor.md`; the docs,
     README, help text and messages say harmonik-attractor / `hka`.
+  Releases up to 0.11.0 below use the old `pas` names.
 - **No cross-session tools.** The built-in `claude` profile passes
   `--disallowedTools` for Claude's session tools that reach outside the Run
   (`SendMessage`, `ListAgents`, `Workflow`, `RemoteTrigger`,
@@ -75,7 +79,7 @@ All notable changes to harmonik-attractor (formerly PAS) are documented here.
   Claude Code session's identity variables.
 - The default `env.remove` list also strips `GEMINI_API_KEY` and
   `GOOGLE_API_KEY`, like the Anthropic and OpenAI keys.
-- **Chained phases.** In directory mode (`pas run <dir>`, `pas launch`)
+- **Chained phases.** In directory mode (`hka run <dir>`, `hka launch`)
   each phase is still its own Run, but phase N+1's branch starts at phase
   N's final commit instead of `--base`, so it sees phase N's edits. Phase 1
   starts at `--base`; a resumed batch keeps the chain.
@@ -93,8 +97,9 @@ All notable changes to harmonik-attractor (formerly PAS) are documented here.
   retrying after N attempts").
 - A Codex run with no agent message, or with a non-zero exit, is no longer
   a success.
-- A `pas` killed mid-attempt keeps the agent's session on resume, and a
-  session the agent never created is started again with the same id.
+- A `harmonik-attractor` killed mid-attempt keeps the agent's session on
+  resume, and a session the agent never created is started again with the
+  same id.
 - "Context from prior pipeline steps" is listed in key order, so the same
   context gives the same prompt on every run.
 - The no-cost warning (`PROVIDER_COST_UNTRACKED`) follows the profile's

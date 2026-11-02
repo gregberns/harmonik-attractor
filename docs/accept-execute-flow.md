@@ -1,5 +1,9 @@
 # Accept & Execute Flow
 
+> **Historical design.** This flow describes the earlier PAS Web app
+> (Leptos + Axum), which no longer exists. The Monitor
+> (`crates/attractor-monitor`) replaced it.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  BROWSER (WASM)                                                     │
