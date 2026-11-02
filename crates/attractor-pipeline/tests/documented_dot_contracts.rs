@@ -79,7 +79,7 @@ fn authoritative_markdown_dot_examples_compile_with_canonical_semantics() {
         "docs/guide.md",
         "docs/cli-reference.md",
         "docs/task-verification.md",
-        "templates/pas.md",
+        "templates/harmonik-attractor.md",
     ];
 
     let mut checked = 0;
@@ -198,11 +198,11 @@ fn maintained_docs_do_not_advertise_stale_claude_only_or_validation_contracts() 
             "Required for nodes resolved to `codergen`.",
         ),
         (
-            "templates/pas.md",
+            "templates/harmonik-attractor.md",
             "Claude is asked to output one of the labels",
         ),
         (
-            "templates/pas.md",
+            "templates/harmonik-attractor.md",
             "Detailed instructions for what Claude should do in this step.",
         ),
         (
@@ -316,11 +316,11 @@ fn maintained_docs_do_not_advertise_stale_claude_only_or_validation_contracts() 
             "Required whenever the resolved handler consumes a provider.",
         ),
         (
-            "templates/pas.md",
+            "templates/harmonik-attractor.md",
             "By default, a diamond without a prompt is pass-through",
         ),
         (
-            "templates/pas.md",
+            "templates/harmonik-attractor.md",
             "Detailed instructions for what the selected provider should do in this step.",
         ),
         (
@@ -336,7 +336,7 @@ fn maintained_docs_do_not_advertise_stale_claude_only_or_validation_contracts() 
             "`diamond` with explicit `type=\"codergen\"`",
         ),
         (
-            "templates/pas.md",
+            "templates/harmonik-attractor.md",
             "Explicit `type=\"codergen\"` is the exception",
         ),
         (
@@ -388,7 +388,7 @@ fn task_verification_distinguishes_plan_binding_from_runtime_handler_failures() 
 
     assert!(
         source.contains(
-            "Before execution, PAS verifies that every handler required by the compiled plan is registered"
+            "Before execution, harmonik-attractor verifies that every handler required by the compiled plan is registered"
         ),
         "task verification must document pre-execution handler registry binding"
     );
@@ -473,7 +473,7 @@ fn provider_guide_matches_the_tested_gemini_invocation_contract() {
         "provider guide must document Gemini's actual approval and prompt arguments"
     );
     assert!(
-        source.contains("PAS does not pass a `--sandbox` flag to Gemini"),
+        source.contains("harmonik-attractor does not pass a `--sandbox` flag to Gemini"),
         "provider guide must state the Gemini sandbox-flag boundary"
     );
     assert!(
@@ -509,7 +509,7 @@ fn unsupported_parallel_topology_is_documented_truthfully() {
     let required = [
         (
             "README.md",
-            "PAS rejects multi-edge `component` fan-out and every fan-in node during semantic compilation.",
+            "harmonik-attractor rejects multi-edge `component` fan-out and every fan-in node during semantic compilation.",
         ),
         (
             "README.md",
@@ -760,7 +760,7 @@ fn cli_info_docs_describe_resolved_execution_semantics() {
 
     assert!(
         source.contains("a list of all nodes with their resolved kind, handler, and provider"),
-        "CLI reference must describe the semantic fields emitted by pas info"
+        "CLI reference must describe the semantic fields emitted by hka info"
     );
     assert!(
         !source.contains("a list of all nodes with their shapes and types"),

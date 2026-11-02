@@ -1,6 +1,6 @@
-# Task Verification in PAS
+# Task Verification in harmonik-attractor
 
-How PAS verifies that pipeline nodes (agent tasks) actually completed — and completed correctly. Verification is layered, moving from basic execution checks to deep logic validation.
+How harmonik-attractor verifies that pipeline nodes (agent tasks) actually completed — and completed correctly. Verification is layered, moving from basic execution checks to deep logic validation.
 
 ---
 
@@ -10,7 +10,7 @@ The first layer binds compiled semantics to the available handlers, then verifie
 the transport-level execution handshake. When the engine dispatches a task to a
 bound handler, it expects a well-formed `Outcome` response.
 
-- **Plan Binding:** Before execution, PAS verifies that every handler required by the compiled plan is registered and still declares the provider capability used at compilation. An unavailable handler or changed provider capability is a `ValidationError` before any handler runs.
+- **Plan Binding:** Before execution, harmonik-attractor verifies that every handler required by the compiled plan is registered and still declares the provider capability used at compilation. An unavailable handler or changed provider capability is a `ValidationError` before any handler runs.
 - **Handler Execution:** After successful plan binding, a handler execution failure is a `HandlerError`; handler identity is not re-derived from node attributes during dispatch.
 - **Typed Provider Handlers:** A provider-consuming custom handler exposes a `ProviderNodeHandler` through `NodeHandler::provider_handler`. Provider capability is derived from that typed executor, whose required method receives the normalized `ResolvedNode`; it cannot opt in to provider use while inheriting raw-node dispatch.
 - **Timeout / Budget Guards:** The engine enforces a compiled timeout around every handler attempt. Each attempt consumes `max_steps`, and `max_budget_usd` is checked throughout execution.
@@ -64,7 +64,7 @@ When a goal gate fails, the engine looks for a retry target in this order:
 4. **Graph `fallback_retry_target`** — graph-level fallback
 5. **No target found** → `GoalGateUnsatisfied` error (pipeline aborts)
 
-Every retry target must resolve to a non-terminal node. PAS rejects an exit-node target before execution because returning directly to the exit cannot change an unsatisfied gate.
+Every retry target must resolve to a non-terminal node. harmonik-attractor rejects an exit-node target before execution because returning directly to the exit cannot change an unsatisfied gate.
 
 ### Example
 
@@ -89,7 +89,7 @@ If `test` fails, the pipeline loops back to `implement`. On the next pass, `impl
 
 ## 4. Conditional Edge Routing (Multi-Path Validation)
 
-Instead of binary pass/fail, PAS supports **condition-based routing** that lets the pipeline take different verification paths based on node outcomes or context values.
+Instead of binary pass/fail, harmonik-attractor supports **condition-based routing** that lets the pipeline take different verification paths based on node outcomes or context values.
 
 ### Edge conditions
 
@@ -131,13 +131,13 @@ node 'check' outcome fail matched no outgoing edge (conditions: outcome=success)
 
 There is no fallback to the first edge. The node's `StageCompleted` (with its
 real status) is journalled first; then the error goes to `PipelineFailed` and
-`pas run`'s stderr. For a non-`fail` outcome this deliberately diverges from the
+`hka run`'s stderr. For a non-`fail` outcome this deliberately diverges from the
 upstream Attractor spec (lines 390-392), which ends the run normally: edges
 that match nothing are a graph mistake to report, not a success. A node with
 no outgoing edges at all ends the run as before (or errors, for `fail`).
 
 After this error, or "still retrying" above, the checkpoint still names the
-stopped node with its attempts used, so running the same `pas run` command
+stopped node with its attempts used, so running the same `hka run` command
 again reports "Max retries exhausted for node '<id>'". Use `--fresh` to start
 over.
 

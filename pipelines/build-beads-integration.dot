@@ -24,7 +24,7 @@ Find the first ready (unblocked, open) child task of epic attractor-asr.
 
 If you find one:
 - Run: bd update <task-id> --status=in_progress
-- Write the task ID and full description to .pas/current_task.md
+- Write the task ID and full description to .harmonik-attractor/current_task.md
 - Respond with MORE on the last line
 
 If all child tasks are closed (no more ready tasks for this epic):
@@ -39,7 +39,7 @@ If all child tasks are closed (no more ready tasks for this epic):
         llm_provider="claude"
         label="Investigate"
         allowed_tools="Read,Grep,Glob,Bash(bd:*),Bash(cargo:*),Bash(ls:*)"
-        prompt="Read .pas/current_task.md to get the current task ID and description.
+        prompt="Read .harmonik-attractor/current_task.md to get the current task ID and description.
 Run bd show <task-id> to get full details.
 
 This is a Rust project at /Volumes/qwiizlab/projects/attractor with this structure:
@@ -61,7 +61,7 @@ Investigate the codebase to understand what needs to change for this specific ta
 - Understand the current code structure
 - Identify exactly what needs to change
 
-Write your findings to .pas/investigation.md including:
+Write your findings to .harmonik-attractor/investigation.md including:
 - Files to modify (with full paths)
 - Current behavior/code to change
 - Required changes with specifics
@@ -76,7 +76,7 @@ Write your findings to .pas/investigation.md including:
         shape="box"
         llm_provider="claude"
         label="Implement"
-        prompt="Read .pas/current_task.md for the task and .pas/investigation.md for the plan.
+        prompt="Read .harmonik-attractor/current_task.md for the task and .harmonik-attractor/investigation.md for the plan.
 
 Implement the changes described. This is a Rust project — follow existing code patterns and conventions.
 
@@ -101,7 +101,7 @@ Keep changes minimal and focused on the task requirements."
         shape="box"
         llm_provider="claude"
         label="Build & Test"
-        prompt="Read .pas/current_task.md to understand what was changed.
+        prompt="Read .harmonik-attractor/current_task.md to understand what was changed.
 
 Run the build and test suite:
 1. cargo build --workspace  (must compile cleanly)
@@ -112,7 +112,7 @@ Run the build and test suite:
 6. If the task created a template file, verify it exists and has content
 
 If tests or build fail, fix the issues and re-run until green.
-Write the results to .pas/test-results.md"
+Write the results to .harmonik-attractor/test-results.md"
     ]
 
     // =========================================================================
@@ -123,12 +123,12 @@ Write the results to .pas/test-results.md"
         llm_provider="claude"
         label="Verify"
         node_type="conditional"
-        prompt="Read .pas/current_task.md for the task requirements.
+        prompt="Read .harmonik-attractor/current_task.md for the task requirements.
 Check the changes:
 1. Review the git diff for this task's changes
 2. Verify cargo build --workspace succeeds
 3. Verify cargo test --workspace succeeds
-4. Read .pas/test-results.md for test outcomes
+4. Read .harmonik-attractor/test-results.md for test outcomes
 5. Check that the task's description requirements are fully met
 
 If everything looks good, respond with PASS on the last line.
@@ -142,7 +142,7 @@ If there are problems, respond with FAIL on the last line."
         shape="box"
         llm_provider="claude"
         label="Fix Issues"
-        prompt="Read .pas/current_task.md and .pas/investigation.md for context.
+        prompt="Read .harmonik-attractor/current_task.md and .harmonik-attractor/investigation.md for context.
 The verification step found problems. Fix any:
 - Compilation errors
 - Failing tests
@@ -160,7 +160,7 @@ Re-run cargo build --workspace && cargo test --workspace after fixing."
         llm_provider="claude"
         label="Close Task"
         allowed_tools="Bash(bd:*),Bash(git:*)"
-        prompt="Read .pas/current_task.md to get the task ID.
+        prompt="Read .harmonik-attractor/current_task.md to get the task ID.
 1. Stage the relevant changed files (be specific, don't use git add -A):
    - For template tasks: git add templates/<filename>
    - For CLI tasks: git add crates/attractor-cli/src/main.rs

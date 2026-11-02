@@ -1,6 +1,6 @@
 # Attractor DOT Dialect Reference
 
-Attractor pipelines use a **strict subset** of the Graphviz DOT language with custom extensions. This document is the authoritative reference for what the `attractor-dot` parser accepts. Code that generates DOT for attractor (including `pas generate`) must conform to these rules.
+Attractor pipelines use a **strict subset** of the Graphviz DOT language with custom extensions. This document is the authoritative reference for what the `attractor-dot` parser accepts. Code that generates DOT for attractor (including `hka generate`) must conform to these rules.
 
 ## Grammar
 
@@ -54,7 +54,7 @@ supports typed scalar values. Quote values for `shape`, `type`, `node_type`,
 `handler`, `prompt`, `llm_provider`, `agent`, `reasoning_effort`, `class`,
 `classes`, `stylesheet`, and
 `model_stylesheet`. A non-string value such as `shape=123` or `prompt=true` is
-an `InvalidAttributeType` compilation error; PAS does not discard it and infer
+an `InvalidAttributeType` compilation error; harmonik-attractor does not discard it and infer
 an executable default.
 
 ### Strings
@@ -192,7 +192,7 @@ The grammar above defines what **parses**. This section defines what the attract
 
 ### Unsupported execution topology
 
-The parser and semantic classifier recognize `component`/`parallel` and `tripleoctagon`/`fan_in` spellings, but recognition does not imply fork/join support. PAS follows exactly one successor per execution step and has no branch-result merge state.
+The parser and semantic classifier recognize `component`/`parallel` and `tripleoctagon`/`fan_in` spellings, but recognition does not imply fork/join support. harmonik-attractor follows exactly one successor per execution step and has no branch-result merge state.
 
 - A resolved parallel node with zero or one outgoing edge compiles as sequential compatibility.
 - A resolved parallel node with more than one outgoing edge fails semantic compilation. Authored edges are counted individually, even when several name the same target.
@@ -208,8 +208,8 @@ These failures use the node-scoped `unsupported_execution_topology` rule and occ
 | `prompt` | string | -- | Task sent to the selected provider CLI. Its presence makes a conditional LLM-backed; explicit `type="codergen"` does so even without a prompt. |
 | `shape` | string | -- | Node shape (see table above) |
 | `type` | string | auto | Handler override: `"codergen"`, `"conditional"`, `"tool"`, `"parallel"`, `"fan_in"`, `"quality"`, `"wait.human"`, `"beads.select"`, `"beads.close"` (see [Beads handlers](#beads-handlers)); fan-in and manager roles are recognized but rejected |
-| `agent` | string | -- | The [agent profile](cli-reference.md#agent-profiles-agentsname-in-pastoml) the node runs with, e.g. `"claude"` or a profile from `pas.toml`. Satisfies the provider requirement. With `llm_provider` too, `agent` wins. Node attribute only (not a stylesheet property). |
-| `llm_model` | string | profile `model`, else graph `model` | Model override: `"haiku"`, `"sonnet"`, `"opus"`, or full model ID. For an agent node the order is node `llm_model`, the profile's `model`, the graph's `model`. On a node, write `llm_model`, not `model`: `model` is a graph attribute and does nothing on a node, so `pas validate` and `pas run` warn (`node_model`). |
+| `agent` | string | -- | The [agent profile](cli-reference.md#agent-profiles-agentsname-in-harmonik-attractorconfigtoml) the node runs with, e.g. `"claude"` or a profile from `.harmonik-attractor/config.toml`. Satisfies the provider requirement. With `llm_provider` too, `agent` wins. Node attribute only (not a stylesheet property). |
+| `llm_model` | string | profile `model`, else graph `model` | Model override: `"haiku"`, `"sonnet"`, `"opus"`, or full model ID. For an agent node the order is node `llm_model`, the profile's `model`, the graph's `model`. On a node, write `llm_model`, not `model`: `model` is a graph attribute and does nothing on a node, so `hka validate` and `hka run` warn (`node_model`). |
 | `llm_provider` | string | -- | Required whenever the resolved handler consumes a provider. Not needed when `agent` is set. Values: `"claude"`, `"codex"`, `"gemini"`; aliases: `anthropic`, `openai`, `google` (case-insensitive). `claude` runs the agent profile `claude`. |
 | `reasoning_effort` | string | profile `reasoning` | Reasoning level, filled into the profile's `reasoning_args` (built-in `claude`: `--effort <level>`). An error on a profile without `reasoning_args` (the built-in `codex` and `gemini` have none). Also accepted in a stylesheet. |
 | `allowed_tools` | string | all | Claude-only tool list, e.g. `"Read,Grep,Glob"` or `"Bash(git:*)"`; rejected outside Claude-backed codergen nodes |
@@ -249,7 +249,7 @@ compilation fails with a typed `ConflictingAttributeAliases` diagnostic.
 
 ## Canonical semantic compilation
 
-After parsing and DOT-default resolution, PAS normalizes aliases, applies stylesheets,
+After parsing and DOT-default resolution, harmonik-attractor normalizes aliases, applies stylesheets,
 expands prompt variables, and compiles one immutable `ExecutionPlan`. Validation,
 preflight, handler dispatch, provider selection, start/exit recognition, and execution
 all consume that plan. They do not independently reinterpret shape or provider strings.
@@ -257,7 +257,7 @@ all consume that plan. They do not independently reinterpret shape or provider s
 Runtime compilation is fail-closed. Unknown shapes without an explicit registered
 handler, unknown handlers/providers, conflicting role signals, missing providers on
 `codergen` nodes, and ambiguous start/exit cardinality prevent execution before logs,
-checkpoints, handlers, or provider CLIs start. `pas generate` and `pas scaffold` may
+checkpoints, handlers, or provider CLIs start. `hka generate` and `hka scaffold` may
 insert an explicit Claude provider into generated source, then recompile it strictly.
 A registered custom handler may use an omitted or otherwise unknown custom shape; it
 cannot override a known built-in role shape without producing
@@ -288,7 +288,7 @@ pick_task -> done      [label="DONE", condition="preferred_label=DONE"]
 
 Any other known shape is a `ConflictingRoleSignals` error. A `beads.select` node
 without `epic` fails compilation with the node-scoped `attribute_required` rule.
-`pas validate` and `pas run` (except `--dry-run`) also report one node-scoped
+`hka validate` and `hka run` (except `--dry-run`) also report one node-scoped
 `beads_available` error per Beads node when `bd` is not on `PATH`, so the Run fails
 before it starts. Pipelines without Beads nodes never look at `PATH`.
 
@@ -320,7 +320,7 @@ work_step [
     llm_provider="claude"
     label="Implement Feature"
     timeout=900s
-    prompt="Implement the feature described in .pas/current_task.md"
+    prompt="Implement the feature described in .harmonik-attractor/current_task.md"
 ]
 
 verify_step [
@@ -388,7 +388,7 @@ commit_changes [
 
 ## Validation Rules
 
-`pas validate <file>` first compiles canonical semantics, then applies nine
+`hka validate <file>` first compiles canonical semantics, then applies nine
 structural checks. The enforced contract is:
 
 Canonical compilation requires one start and exit; compatible role signals and

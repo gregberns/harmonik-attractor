@@ -14,9 +14,13 @@ templates and `.dot` prompts that mention the old names. The project is
 listing every renamed surface. Leave finished plans and the CHANGELOG's
 history as they are.
 
+Also (captain's ruling 2026-11-02): the fallback commit identity
+`PAS <pas@localhost>` (crates/attractor-pipeline/src/run_commits.rs) becomes
+`harmonik-attractor <hka@localhost>`.
+
 **Blocked by:** 27
 
 **Status:** open
 
-- [ ] `grep -rnw 'pas\|PAS' docs README.md AGENTS.md` finds only history
-- [ ] The doc-pinning tests still pass
+- [x] `grep -rnw 'pas\|PAS' docs README.md AGENTS.md` finds only history
+- [x] The doc-pinning tests still pass

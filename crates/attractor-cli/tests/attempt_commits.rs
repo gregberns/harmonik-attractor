@@ -190,7 +190,7 @@ fn a_pas_folder_in_the_worktree_is_never_committed() {
 #[test]
 fn a_repo_without_an_identity_still_gets_attempt_commits() {
     // The helper's repo sets no user.name/user.email (its own commits pass
-    // `-c`), and pas runs with the global and system config ignored.
+    // `-c`), and harmonik-attractor runs with the global and system config ignored.
     let fake = FakeAgent::new();
     assert_success(
         &fake,
@@ -199,7 +199,7 @@ fn a_repo_without_an_identity_still_gets_attempt_commits() {
 
     let commits = engine_commits(&fake);
     assert_eq!(commits.len(), 1, "{commits:#?}");
-    assert_eq!(commits[0].author, "PAS <pas@localhost>");
+    assert_eq!(commits[0].author, "harmonik-attractor <hka@localhost>");
 }
 
 #[test]

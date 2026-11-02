@@ -117,7 +117,12 @@ pub(crate) async fn commit_attempt(
     let mut args: Vec<&str> = Vec::new();
     // A fixed identity when the repository has none (design §3).
     if !has_identity(root).await {
-        args.extend(["-c", "user.name=PAS", "-c", "user.email=pas@localhost"]);
+        args.extend([
+            "-c",
+            "user.name=harmonik-attractor",
+            "-c",
+            "user.email=hka@localhost",
+        ]);
     }
     // None of the repository's hooks run (Q40; --no-verify alone leaves
     // prepare-commit-msg and post-commit), and attempt commits are never

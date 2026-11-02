@@ -13,9 +13,9 @@ const BRANCH_PREFIX: &str = "hka/run/";
 
 /// The base of a new Run's branch when `--base` is not given.
 pub(crate) const DEFAULT_BASE: &str = "HEAD";
-/// The project folder: the config, and the run data PAS keeps there.
+/// The project folder: the config, and the run data harmonik-attractor keeps there.
 pub(crate) const PROJECT_DIR: &str = attractor_quality::PROJECT_DIR;
-/// The `.gitignore` PAS writes in the project folder and a worktree root:
+/// The `.gitignore` harmonik-attractor writes in the project folder and a worktree root:
 /// everything but the config, which stays committable.
 const PROJECT_GITIGNORE: &str = "*\n!config.toml\n";
 
@@ -429,7 +429,7 @@ pub(crate) fn remove_worktree(dir: &Path, worktree: &Path) -> Result<(), Worktre
 }
 
 /// Write `<dir>/.gitignore` ([`PROJECT_GITIGNORE`]) unless the file exists,
-/// so git ignores the run data PAS keeps there but not `config.toml` (also
+/// so git ignores the run data harmonik-attractor keeps there but not `config.toml` (also
 /// used for a worktree root).
 pub(crate) fn ensure_project_gitignore(dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;

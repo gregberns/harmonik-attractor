@@ -1,16 +1,16 @@
-# PAS — Pascal's Discrete Attractor
+# harmonik-attractor
 
 A DOT-based pipeline runner for AI workflows. Define multi-step agent pipelines as Graphviz digraphs, then run them with built-in tool use, multi-provider LLM support, and checkpoint/resume.
 
 These loops don't just handle failure — they create iterative refinement. A pipeline can produce progressively better output across multiple passes without any single component knowing about "quality improvement." The retry system handles transient failures, context accumulation builds knowledge, and goal gates enforce standards. Together they produce convergent behavior toward a quality threshold that no individual loop implements.
 
 <p align="center">
-  <img src="docs/pipeline-overview.svg" alt="How PAS Works" width="800"/>
+  <img src="docs/pipeline-overview.svg" alt="How harmonik-attractor Works" width="800"/>
 </p>
 
 ### How verification works
 
-PAS doesn't just run tasks — it verifies them. Six layers of checks ensure that every pipeline node actually did what it was supposed to do, from static analysis before any LLM call to runtime proof-of-work at the exit gate.
+harmonik-attractor doesn't just run tasks — it verifies them. Six layers of checks ensure that every pipeline node actually did what it was supposed to do, from static analysis before any LLM call to runtime proof-of-work at the exit gate.
 
 <p align="center">
   <img src="docs/verification-deep-dive.svg" alt="Verification Deep Dive" width="800"/>
@@ -39,9 +39,9 @@ OS-confined `CommandRunner`.
 
 ## Overview
 
-PAS lets you describe AI workflows as directed graphs using DOT syntax. Each node is a step (LLM call, tool use, or human gate) and edges define the flow with optional conditions. The engine handles execution, edge selection, retries, goal enforcement, and cost tracking.
+harmonik-attractor lets you describe AI workflows as directed graphs using DOT syntax. Each node is a step (LLM call, tool use, or human gate) and edges define the flow with optional conditions. The engine handles execution, edge selection, retries, goal enforcement, and cost tracking.
 
-PAS rejects multi-edge `component` fan-out and every fan-in node during semantic compilation. A `component` node with at most one outgoing edge remains available as sequential compatibility. True fork/join execution is not supported yet.
+harmonik-attractor rejects multi-edge `component` fan-out and every fan-in node during semantic compilation. A `component` node with at most one outgoing edge remains available as sequential compatibility. True fork/join execution is not supported yet.
 
 ```dot
 digraph CodeReview {
@@ -58,15 +58,15 @@ digraph CodeReview {
 
 ## Codergen Provider Integration
 
-PAS's `codergen` handler runs each agent node as a local agent CLI process,
+harmonik-attractor's `codergen` handler runs each agent node as a local agent CLI process,
 chosen by an **agent profile**: Claude Code, Codex, Gemini, or the Pi coding
 agent (for OpenAI-compatible providers). A Claude-backed node can use your
 existing Claude subscription with no separate API key.
 
 The built-in profiles `claude`, `codex` and `gemini` need no setup; define
-your own (or override a built-in) under `[agents.<name>]` in `pas.toml`:
+your own (or override a built-in) under `[agents.<name>]` in `.harmonik-attractor/config.toml`:
 command, args, model and reasoning flags, session forms, environment, timeout
-and rate-limit window. See [Agent profiles](docs/cli-reference.md#agent-profiles-agentsname-in-pastoml).
+and rate-limit window. See [Agent profiles](docs/cli-reference.md#agent-profiles-agentsname-in-harmonik-attractorconfigtoml).
 Each handler normalizes its agent's output into one outcome and feeds that
 context forward to downstream nodes. Dollar cost and turn counts are recorded
 when the agent reports them.
@@ -76,7 +76,7 @@ when the agent reports them.
 | Attribute | Description |
 |-----------|-------------|
 | `prompt` | Optional task prompt sent to the agent; validation warns when both it and a descriptive label are absent |
-| `agent` | The agent profile to run (built-in or from `pas.toml`) |
+| `agent` | The agent profile to run (built-in or from `.harmonik-attractor/config.toml`) |
 | `llm_provider` | `"claude"`, `"codex"`, or `"gemini"`: shorthand for that built-in profile. An agent node needs `agent` or `llm_provider` |
 | `llm_model` | Model override (e.g. `"sonnet"`, `"haiku"`, `"opus"`) |
 | `reasoning_effort` | Reasoning level, filled into the profile's `reasoning_args` |
@@ -91,10 +91,10 @@ therefore requires `agent` or `llm_provider`.
 
 ## Features
 
-- **Explicit local agent execution** -- Each `codergen` node selects the agent profile it runs: Claude Code, Codex, Gemini or Pi, as built in or defined in `pas.toml`
+- **Explicit local agent execution** -- Each `codergen` node selects the agent profile it runs: Claude Code, Codex, Gemini or Pi, as built in or defined in `.harmonik-attractor/config.toml`
 - **DOT pipeline definitions** -- Standard Graphviz digraph syntax with typed attributes (strings, integers, floats, booleans, durations)
 - **Direct pipeline generation** -- Pass a PRD and/or spec file to generate a self-contained .dot pipeline (no external issue tracker required)
-- **End-to-end launch** -- `pas launch <docs/>` discovers spec+PRD pairs, generates pipelines, validates, and runs them sequentially in one command
+- **End-to-end launch** -- `hka launch <docs/>` discovers spec+PRD pairs, generates pipelines, validates, and runs them sequentially in one command
 - **Planning workflow** -- Generate PRD and spec documents from templates or AI prompts, decompose specs into beads issues, scaffold pipelines from epics
 - **Beads integration** -- Decompose specs into epics and tasks, scaffold pipelines from beads epics, close issues as pipeline nodes complete
 - **Multi-provider LLM support** -- OpenAI, Anthropic, and Gemini adapters with unified request/response types
@@ -116,7 +116,7 @@ therefore requires `agent` or `llm_provider`.
 ./install.sh
 ```
 
-This builds a release binary and installs it to `~/.local/bin/pas`.
+This builds release binaries and installs `harmonik-attractor` and its short name `hka` to `~/.local/bin`.
 
 Or install via cargo:
 
@@ -129,31 +129,31 @@ cargo install --path crates/attractor-cli --features monitor
 ### Run a pipeline
 
 ```sh
-pas run pipeline.dot --workdir ./my-project
+hka run pipeline.dot --workdir ./my-project
 ```
 
 ### Validate a pipeline
 
 ```sh
-pas validate pipeline.dot
+hka validate pipeline.dot
 ```
 
 ### Inspect a pipeline
 
 ```sh
-pas info pipeline.dot
+hka info pipeline.dot
 ```
 
 ### Dry run (no LLM calls)
 
 ```sh
-pas run pipeline.dot --dry-run
+hka run pipeline.dot --dry-run
 ```
 
 ### Launch end-to-end from a docs directory
 
 ```sh
-pas launch docs/implementation/ -w .
+hka launch docs/implementation/ -w .
 ```
 
 Discovers all `*-spec.md` files in the directory, pairs each with a `*-prd.md` if present, generates `.dot` pipelines, validates them all, then runs them sequentially. Use zero-padded prefixes to control order (`phase-01-spec.md`, `phase-02-spec.md`).
@@ -162,58 +162,58 @@ Discovers all `*-spec.md` files in the directory, pairs each with a `*-prd.md` i
 
 ```sh
 # Spec only
-pas generate spec.md
+hka generate spec.md
 
 # PRD + spec (positional)
-pas generate prd.md spec.md
+hka generate prd.md spec.md
 
 # PRD + spec (named flags)
-pas generate --prd prd.md --spec spec.md
+hka generate --prd prd.md --spec spec.md
 
 # Custom output path
-pas generate spec.md -o pipelines/my-feature.dot
+hka generate spec.md -o pipelines/my-feature.dot
 ```
 
 ### Planning workflow (PRD → Spec → Beads → Pipeline)
 
 ```sh
 # Generate a PRD from a prompt
-pas plan --prd --from-prompt "Add user authentication with OAuth2"
+hka plan --prd --from-prompt "Add user authentication with OAuth2"
 
 # Or copy the blank template and edit manually
-pas plan --spec
+hka plan --spec
 
 # Decompose a spec into beads epic + tasks
-pas decompose .pas/spec.md
+hka decompose .harmonik-attractor/spec.md
 
 # Scaffold a pipeline from the beads epic
-pas scaffold <EPIC_ID>
+hka scaffold <EPIC_ID>
 
 # Run the generated pipeline
-pas run pipelines/<EPIC_ID>.dot -w .
+hka run pipelines/<EPIC_ID>.dot -w .
 ```
 
 There's also a meta-pipeline that chains the full workflow end-to-end:
 
 ```sh
-pas run templates/plan-to-execute.dot -w .
+hka run templates/plan-to-execute.dot -w .
 ```
 
-## PAS Monitor
+## harmonik-attractor Monitor
 
-`pas monitor` serves a local web UI (loopback only) that shows every Run on the machine, controls them, and turns uploaded Plans into an Epic and/or Pipeline. It needs a build with `--features monitor` (`./install.sh` does this).
+`hka monitor` serves a local web UI (loopback only) that shows every Run on the machine, controls them, and turns uploaded Plans into an Epic and/or Pipeline. It needs a build with `--features monitor` (`./install.sh` does this).
 
 ```sh
-pas monitor            # then open http://127.0.0.1:7777
-pas monitor --port 8080 --open
+hka monitor            # then open http://127.0.0.1:7777
+hka monitor --port 8080 --open
 ```
 
-- Runs started with `pas run` appear automatically via their Run Journal and the Run Index.
+- Runs started with `hka run` appear automatically via their Run Journal and the Run Index.
 - Human Gates can be answered, and Runs stopped or killed, from the UI.
 - Plans (`.md`/`.txt` files) become a Proposal, Epic and Pipeline in reviewed or one-click mode.
-- Terminal equivalents: `pas runs`, `pas answer`, `pas stop`, `pas kill`.
+- Terminal equivalents: `hka runs`, `hka answer`, `hka stop`, `hka kill`.
 
-State lives under `PAS_STATE_DIR` (default `~/.local/state/pas`). See [docs/cli-reference.md](docs/cli-reference.md#monitor--serve-the-monitor-web-ui).
+State lives under `HKA_STATE_DIR` (default `~/.local/state/harmonik-attractor`). See [docs/cli-reference.md](docs/cli-reference.md#monitor--serve-the-monitor-web-ui).
 
 ## Documentation
 
@@ -227,14 +227,14 @@ State lives under `PAS_STATE_DIR` (default `~/.local/state/pas`). See [docs/cli-
 - Planning workflow (PRD → spec → beads → pipeline)
 - Beads integration for issue-driven development
 - Writing effective prompts and controlling costs
-- Adding PAS to your project
+- Adding harmonik-attractor to your project
 
 ## Environment Variables
 
 There is no implicit runtime provider. Every node whose resolved handler consumes a provider must
 select `claude`, `codex`, or `gemini` with `llm_provider`. Claude-backed nodes
 use your local Claude Code installation and run on your Claude subscription:
-PAS removes `ANTHROPIC_API_KEY` and the other provider keys from the agent's
+harmonik-attractor removes `ANTHROPIC_API_KEY` and the other provider keys from the agent's
 environment (see [cli-reference.md](docs/cli-reference.md#what-a-claude-agent-process-gets)).
 Codex- and Gemini-backed nodes use their respective local CLI authentication.
 
@@ -246,7 +246,7 @@ export ANTHROPIC_API_KEY=...
 export GEMINI_API_KEY=...
 ```
 
-Set `PAS_STATE_DIR` to relocate the Run Index and Monitor Plan workspaces (default `$XDG_STATE_HOME/pas`, else `~/.local/state/pas`).
+Set `HKA_STATE_DIR` to relocate the Run Index and Monitor Plan workspaces (default `$XDG_STATE_HOME/harmonik-attractor`, else `~/.local/state/harmonik-attractor`).
 
 ## Crate Structure
 
@@ -264,9 +264,9 @@ Set `PAS_STATE_DIR` to relocate the Run Index and Monitor Plan workspaces (defau
 | `attractor-handler-gemini` | The `gemini` handler: Gemini CLI with `json`/`stream-json` output (probed with `--help`) and its failure table |
 | `attractor-handler-pi` | The `pi` handler: the Pi coding agent in JSON mode for OpenAI-compatible providers, its per-invocation `models.json` and its failure table |
 | `attractor-pipeline` | Pipeline graph, engine, handlers, validation, stylesheets |
-| `attractor-cli` | CLI binary — `pas` (`run`, `validate`, `info`, `plan`, `decompose`, `scaffold`, `generate`, `init`, `trust`, `launch`, `runs`, `answer`, `stop`, `kill`, `monitor`) |
+| `attractor-cli` | CLI binary — `harmonik-attractor` (`run`, `validate`, `info`, `plan`, `decompose`, `scaffold`, `generate`, `init`, `trust`, `launch`, `runs`, `answer`, `stop`, `kill`, `monitor`) |
 | `attractor-journal` | Run Journal, Run folder layout and Run Index |
-| `attractor-monitor` | The Monitor web UI (`pas monitor`); reads journals and spawns `pas` |
+| `attractor-monitor` | The Monitor web UI (`hka monitor`); reads journals and spawns `harmonik-attractor` |
 
 ## Reference
 

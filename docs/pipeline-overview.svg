@@ -27,7 +27,7 @@
   <rect width="900" height="700" rx="12" fill="#0f172a"/>
 
   <!-- Title -->
-  <text x="450" y="38" text-anchor="middle" fill="#f1f5f9" font-size="20" font-weight="700">How PAS Works</text>
+  <text x="450" y="38" text-anchor="middle" fill="#f1f5f9" font-size="20" font-weight="700">How harmonik-attractor Works</text>
   <text x="450" y="58" text-anchor="middle" fill="#94a3b8" font-size="13">Two paths to a running pipeline — choose the one that fits</text>
 
   <!-- ═══════════════════════════════════════════════ -->
@@ -46,11 +46,11 @@
   <!-- Arrow 1 to 2 -->
   <line x1="259" y1="139" x2="293" y2="139" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)"/>
 
-  <!-- pas generate -->
+  <!-- hka generate -->
   <rect x="299" y="108" width="200" height="62" rx="8" fill="#14532d" stroke="#16a34a" stroke-width="1"/>
   <text x="399" y="131" text-anchor="middle" fill="#dcfce7" font-size="13" font-weight="500">Generate Pipeline</text>
-  <text x="399" y="149" text-anchor="middle" fill="#4ade80" font-size="10" font-family="'SF Mono', 'Fira Code', monospace">pas generate spec.md</text>
-  <text x="399" y="164" text-anchor="middle" fill="#86efac" font-size="9">or: pas launch</text>
+  <text x="399" y="149" text-anchor="middle" fill="#4ade80" font-size="10" font-family="'SF Mono', 'Fira Code', monospace">hka generate spec.md</text>
+  <text x="399" y="164" text-anchor="middle" fill="#86efac" font-size="9">or: hka launch</text>
 
   <!-- Arrow 2 to 3 -->
   <line x1="503" y1="139" x2="537" y2="139" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)"/>
@@ -78,7 +78,7 @@
   <!-- Step 1: Craft PRD -->
   <rect x="100" y="246" width="155" height="64" rx="8" fill="#0c4a6e" stroke="#0ea5e9" stroke-width="1"/>
   <text x="177" y="268" text-anchor="middle" fill="#e0f2fe" font-size="12" font-weight="500">Craft PRD</text>
-  <text x="177" y="286" text-anchor="middle" fill="#7dd3fc" font-size="10" font-family="'SF Mono', 'Fira Code', monospace">pas plan --prd</text>
+  <text x="177" y="286" text-anchor="middle" fill="#7dd3fc" font-size="10" font-family="'SF Mono', 'Fira Code', monospace">hka plan --prd</text>
   <text x="177" y="302" text-anchor="middle" fill="#94a3b8" font-size="9">You + Claude</text>
 
   <!-- Arrow PRD to Spec -->
@@ -87,7 +87,7 @@
   <!-- Step 2: Craft Spec -->
   <rect x="283" y="246" width="155" height="64" rx="8" fill="#0c4a6e" stroke="#0ea5e9" stroke-width="1"/>
   <text x="360" y="268" text-anchor="middle" fill="#e0f2fe" font-size="12" font-weight="500">Craft Spec</text>
-  <text x="360" y="286" text-anchor="middle" fill="#7dd3fc" font-size="10" font-family="'SF Mono', 'Fira Code', monospace">pas plan --spec</text>
+  <text x="360" y="286" text-anchor="middle" fill="#7dd3fc" font-size="10" font-family="'SF Mono', 'Fira Code', monospace">hka plan --spec</text>
   <text x="360" y="302" text-anchor="middle" fill="#94a3b8" font-size="9">You + Claude</text>
 
   <!-- Arrow Spec to Decompose -->
@@ -96,7 +96,7 @@
   <!-- Step 3: Decompose -->
   <rect x="466" y="246" width="155" height="64" rx="8" fill="#451a03" stroke="#f59e0b" stroke-width="1"/>
   <text x="543" y="268" text-anchor="middle" fill="#fef3c7" font-size="12" font-weight="500">Decompose</text>
-  <text x="543" y="286" text-anchor="middle" fill="#fcd34d" font-size="10" font-family="'SF Mono', 'Fira Code', monospace">pas decompose</text>
+  <text x="543" y="286" text-anchor="middle" fill="#fcd34d" font-size="10" font-family="'SF Mono', 'Fira Code', monospace">hka decompose</text>
   <text x="543" y="302" text-anchor="middle" fill="#94a3b8" font-size="9">Spec to beads tasks</text>
 
   <!-- Arrow Decompose to Scaffold -->
@@ -105,8 +105,8 @@
   <!-- Step 4: Scaffold Pipeline -->
   <rect x="649" y="246" width="155" height="64" rx="8" fill="#0c4a6e" stroke="#0ea5e9" stroke-width="1"/>
   <text x="726" y="268" text-anchor="middle" fill="#e0f2fe" font-size="12" font-weight="500">Scaffold Pipeline</text>
-  <text x="726" y="286" text-anchor="middle" fill="#7dd3fc" font-size="10" font-family="'SF Mono', 'Fira Code', monospace">pas scaffold</text>
-  <text x="726" y="302" text-anchor="middle" fill="#94a3b8" font-size="9">PAS CLI</text>
+  <text x="726" y="286" text-anchor="middle" fill="#7dd3fc" font-size="10" font-family="'SF Mono', 'Fira Code', monospace">hka scaffold</text>
+  <text x="726" y="302" text-anchor="middle" fill="#94a3b8" font-size="9">harmonik-attractor CLI</text>
 
   <!-- Produces row -->
   <text x="177" y="326" text-anchor="middle" fill="#64748b" font-size="9" font-weight="600">PRODUCES</text>
@@ -126,11 +126,11 @@
   <text x="726" y="348" text-anchor="middle" fill="#93c5fd" font-size="10" font-family="'SF Mono', 'Fira Code', monospace">pipeline.dot</text>
 
   <!-- ═══════════════════════════════════════════════ -->
-  <!-- Convergence: pas run                            -->
+  <!-- Convergence: hka run                            -->
   <!-- ═══════════════════════════════════════════════ -->
 
   <line x1="450" y1="385" x2="450" y2="418" stroke="#a78bfa" stroke-width="2.5" marker-end="url(#arrow-purple)"/>
-  <text x="480" y="405" fill="#a78bfa" font-size="12" font-weight="600" font-family="'SF Mono', 'Fira Code', monospace">pas run</text>
+  <text x="480" y="405" fill="#a78bfa" font-size="12" font-weight="600" font-family="'SF Mono', 'Fira Code', monospace">hka run</text>
 
   <!-- ═══════════════════════════════════════════════ -->
   <!-- EXECUTION ENGINE                                -->

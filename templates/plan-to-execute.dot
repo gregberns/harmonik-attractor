@@ -27,14 +27,14 @@ Using the PRD template structure (see templates/prd-template.md):
 - Out of Scope
 - References
 
-Write the complete PRD to .pas/prd.md in markdown format."
+Write the complete PRD to .harmonik-attractor/prd.md in markdown format."
     ]
 
     // --- Review PRD ---
     review_prd [
         shape="hexagon"
         label="Review PRD"
-        prompt="Review the generated PRD at .pas/prd.md
+        prompt="Review the generated PRD at .harmonik-attractor/prd.md
 
 Does the PRD clearly capture:
 - What problem we're solving?
@@ -52,7 +52,7 @@ Respond with 'continue' to proceed to spec generation, or 'reject' to regenerate
         llm_provider="claude"
         label="Generate Spec"
         allowed_tools="Read,Write"
-        prompt="Read the PRD from .pas/prd.md
+        prompt="Read the PRD from .harmonik-attractor/prd.md
 
 Using the Technical Specification template structure (see templates/spec-template.md):
 - Title and metadata (Status: Draft, PRD link)
@@ -65,14 +65,14 @@ Using the Technical Specification template structure (see templates/spec-templat
 - Testing Strategy (unit, integration, E2E, manual tests)
 - Rollback Plan (steps to revert, verification)
 
-Write the complete spec to .pas/spec.md in markdown format."
+Write the complete spec to .harmonik-attractor/spec.md in markdown format."
     ]
 
     // --- Review Spec ---
     review_spec [
         shape="hexagon"
         label="Review Spec"
-        prompt="Review the generated Technical Specification at .pas/spec.md
+        prompt="Review the generated Technical Specification at .harmonik-attractor/spec.md
 
 Does the spec clearly describe:
 - How the feature will be architecturally implemented?
@@ -90,7 +90,7 @@ Respond with 'continue' to proceed to task decomposition, or 'reject' to regener
         llm_provider="claude"
         label="Decompose to Beads"
         allowed_tools="Read,Write,Bash(bd:*)"
-        prompt="Read the spec from .pas/spec.md
+        prompt="Read the spec from .harmonik-attractor/spec.md
 
 Parse the Implementation Phases section and create beads tasks:
 1. Create a beads epic: bd create --type=epic --title='[Feature Name] Epic' --priority=2
@@ -101,7 +101,7 @@ Parse the Implementation Phases section and create beads tasks:
 3. For each task in each Phase:
    - Create beads task: bd create --type=task --title='[Task description]' --priority=2
    - Add dependency: bd dep add <task-id> <phase-epic>
-4. Write the root epic ID to .pas/epic_id.txt
+4. Write the root epic ID to .harmonik-attractor/epic_id.txt
 5. Sync beads: bd sync"
     ]
 
@@ -109,10 +109,10 @@ Parse the Implementation Phases section and create beads tasks:
     scaffold [
         shape="parallelogram"
         label="Scaffold Pipeline"
-        prompt="Read the epic ID from .pas/epic_id.txt
+        prompt="Read the epic ID from .harmonik-attractor/epic_id.txt
 
 Use sed to replace EPIC_ID in the epic-runner template:
-sed 's/EPIC_ID/<epic-id>/g' templates/epic-runner.dot > .pas/pipeline.dot
+sed 's/EPIC_ID/<epic-id>/g' templates/epic-runner.dot > .harmonik-attractor/pipeline.dot
 
 This creates a ready-to-run pipeline that executes all beads tasks."
     ]
@@ -121,7 +121,7 @@ This creates a ready-to-run pipeline that executes all beads tasks."
     validate_pipeline [
         shape="parallelogram"
         label="Validate Pipeline"
-        prompt="Run: pas validate .pas/pipeline.dot
+        prompt="Run: hka validate .harmonik-attractor/pipeline.dot
 
 Check for errors:
 - Missing nodes
@@ -136,7 +136,7 @@ If valid, proceed to execution. If invalid, fix the pipeline or respond with FAI
     execute_pipeline [
         shape="parallelogram"
         label="Execute Pipeline"
-        prompt="Run: pas run .pas/pipeline.dot -w .
+        prompt="Run: hka run .harmonik-attractor/pipeline.dot -w .
 
 This executes the full pipeline:
 - Picks next ready task

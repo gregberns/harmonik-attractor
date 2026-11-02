@@ -42,7 +42,7 @@ functional programming to it.
   decision Q53); the existing tests use other seams and stay:
   1. the agent registry's `run` with a fake agent: start event, files,
      environment, failure table, kill;
-  2. `pas run` end to end with a fake: routing, retries, commits in the
+  2. `hka run` end to end with a fake: routing, retries, commits in the
      worktree, stop and resume, run-folder contents.
   Pure core functions are also tested directly with values. Don't test
   private helpers or assert on call order.
@@ -50,7 +50,7 @@ functional programming to it.
   print scripted output for a named scenario. No test may need a real
   agent, an API key or a subscription.
 - **`bd`.** Tests that need a real Beads workspace skip with a notice
-  when `bd` is not on `PATH`; set `PAS_REQUIRE_BD=1` to make them fail
+  when `bd` is not on `PATH`; set `HKA_REQUIRE_BD=1` to make them fail
   instead (so a machine that has `bd` can't skip them silently).
 - **Bug fixes start red.** Write the failing test that shows the bug, then
   fix it.

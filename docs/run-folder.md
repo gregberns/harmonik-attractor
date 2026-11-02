@@ -1,9 +1,9 @@
 # The Run Folder
 
-What `pas run` writes to disk for each Run: every file, its format, who
+What `hka run` writes to disk for each Run: every file, its format, who
 writes it and when, and its version field. Tools that watch a Run (the
-Monitor, `pas runs`, scripts, other agents) read these files. This page is
-the contract between `pas` and those readers.
+Monitor, `hka runs`, scripts, other agents) read these files. This page is
+the contract between `harmonik-attractor` and those readers.
 
 ## What the run folder is for
 
@@ -15,7 +15,7 @@ it to decide anything, with three exceptions:
 - `control/stop` is an input. The engine polls for it between stages.
 - `answers/` is an input. A waiting Human Gate polls for its answer file.
 
-To set up a resume, `pas run` also reads its own bookkeeping back:
+To set up a resume, `hka run` also reads its own bookkeeping back:
 `run.json` for the worktree and branch, and `events.jsonl` for the next
 attempt number and `seq`. It never routes on them.
 
@@ -31,17 +31,17 @@ argument (for example an MCP server token inside `--mcp-config` or
 `--settings` JSON from `[codergen.claude]`) appears in it.
 
 The worktree and the branch are **not** in the run folder. A Run works in
-`<worktree-root>/<run-id>` (default `<project-root>/.pas/worktrees/<run-id>`)
+`<worktree-root>/<run-id>` (default `<project-root>/.harmonik-attractor/worktrees/<run-id>`)
 on branch `hka/run/<run-id>`; `run.json` and `final.json` record both. See
 [Worktree and branch](cli-reference.md#worktree-and-branch).
 
 ## Rules for readers
 
 - Readers ignore event types they don't know, and fields they don't know,
-  in every file. `pas`'s own journal reader keeps an unknown event type as
+  in every file. `harmonik-attractor`'s own journal reader keeps an unknown event type as
   a raw line and skips it.
 - Check the version field (`v`, `schema_version`, or the first line of a
-  prompt file) before reading the rest. `pas`'s journal reader refuses a
+  prompt file) before reading the rest. `harmonik-attractor`'s journal reader refuses a
   line whose `v` is not 1.
 - A file can be missing: a Run that crashed or was refused writes less.
   `console.log` exists only for Runs the Monitor started.
@@ -50,7 +50,7 @@ on branch `hka/run/<run-id>`; `run.json` and `final.json` record both. See
 
 ## Layout
 
-The logs folder (`<logs>`) is `.pas/logs/` under the directory `pas run`
+The logs folder (`<logs>`) is `.harmonik-attractor/logs/` under the directory `hka run`
 was started in. Each Pipeline gets its own folder in it, `<stem>-<hash>`:
 the `.dot` file's stem and the FNV-1a 32-bit hash of its canonical path, as
 eight hex digits. With `--logs <dir>`, `<dir>` is the Pipeline folder.
@@ -62,7 +62,7 @@ eight hex digits. With `--logs <dir>`, `<dir>` is the Pipeline folder.
   runs/<run-id>/                           the Run folder
     run.json                               Run metadata
     events.jsonl                           Run Journal
-    console.log                            pas run output (Monitor starts only)
+    console.log                            hka run output (Monitor starts only)
     final.json                             end-of-run report
     transcripts/<inv>.jsonl                agent stdout
     transcripts/<inv>.stderr.log           agent stderr
@@ -83,7 +83,7 @@ ID, the same form, one per Model Invocation (each agent call, so each retry
 gets a new one). `<question-id>` is `q-<node>-<n>`, 1 to 128 characters of
 `[A-Za-z0-9_-]`.
 
-`<state>` is the PAS state folder: `$HKA_STATE_DIR`, else
+`<state>` is the harmonik-attractor state folder: `$HKA_STATE_DIR`, else
 `$XDG_STATE_HOME/harmonik-attractor`, else `~/.local/state/harmonik-attractor`. It is machine-wide, not
 per Pipeline.
 
@@ -91,12 +91,12 @@ per Pipeline.
 
 | Path (from `<logs>`) | Format | Written by, when | Appended or replaced | Version |
 |---|---|---|---|---|
-| `<stem>-<hash>/checkpoint.json` | pretty JSON | `pas run`, before each node attempt, after each node and before a stop; deleted when the Pipeline completes and by `--fresh` | replaced (temp file, fsync, rename) | `schema_version` (3) |
-| `<stem>-<hash>/run.lock` | JSON `{"pid":…,"run_id":…}` | `pas run`, when the Attempt starts; `flock`ed until it ends | contents replaced; the file stays | none |
-| `<stem>-<hash>/runs/<run-id>/run.json` | pretty JSON | `pas run`, once, when a new Run starts; never rewritten on resume | written once (temp file, rename) | `v` (1) |
-| `<stem>-<hash>/runs/<run-id>/events.jsonl` | JSON Lines | `pas run`, through the Attempt, all Attempts in one file | appended | `v` (1) on every line |
-| `<stem>-<hash>/runs/<run-id>/console.log` | text | the Monitor, when it starts or resumes a Run: stdout and stderr of that `pas run` | appended | none |
-| `<stem>-<hash>/runs/<run-id>/final.json` | pretty JSON | `pas run`, at the end of each Attempt, after `AttemptEnded`; not after SIGKILL | replaced (temp file, rename) | `v` (1) |
+| `<stem>-<hash>/checkpoint.json` | pretty JSON | `hka run`, before each node attempt, after each node and before a stop; deleted when the Pipeline completes and by `--fresh` | replaced (temp file, fsync, rename) | `schema_version` (3) |
+| `<stem>-<hash>/run.lock` | JSON `{"pid":…,"run_id":…}` | `hka run`, when the Attempt starts; `flock`ed until it ends | contents replaced; the file stays | none |
+| `<stem>-<hash>/runs/<run-id>/run.json` | pretty JSON | `hka run`, once, when a new Run starts; never rewritten on resume | written once (temp file, rename) | `v` (1) |
+| `<stem>-<hash>/runs/<run-id>/events.jsonl` | JSON Lines | `hka run`, through the Attempt, all Attempts in one file | appended | `v` (1) on every line |
+| `<stem>-<hash>/runs/<run-id>/console.log` | text | the Monitor, when it starts or resumes a Run: stdout and stderr of that `hka run` | appended | none |
+| `<stem>-<hash>/runs/<run-id>/final.json` | pretty JSON | `hka run`, at the end of each Attempt, after `AttemptEnded`; not after SIGKILL | replaced (temp file, rename) | `v` (1) |
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.jsonl` | the agent's stdout, as written (`stream-json` lines for `claude -p`, JSONL for `codex exec --json`, `json`/`stream-json` for Gemini) | the agent process runner, created when the agent process starts, streamed while it runs | created once, then appended | none (the provider's format) |
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.stderr.log` | text | the agent process runner, as above, for stderr | created once, then appended | none |
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.<n>.jsonl` | spawn `n`'s stdout (`n` from 2), when a rate-limited Claude agent waited and re-spawned within the invocation | the agent process runner, as for spawn 1 | created once, then appended | none (the provider's format) |
@@ -104,10 +104,10 @@ per Pipeline.
 | `<stem>-<hash>/runs/<run-id>/transcripts/<inv>.prompt.txt` | text, see below | the agent registry (`Agents::run`), before the handler is called | written once | first line `hka prompt file v1` |
 | `<stem>-<hash>/runs/<run-id>/pi-sessions/` | Pi's own session files | Pi (`--session-dir`), for `pi` profiles | Pi's | none (Pi's format) |
 | `<stem>-<hash>/runs/<run-id>/pi-agent/<inv>/models.json`, `settings.json` | JSON, mode 0600, in a 0700 folder | the `pi` handler, before Pi starts; the folder is removed when the invocation ends | written once (created 0600) | none (Pi's format) |
-| `<stem>-<hash>/runs/<run-id>/answers/<question-id>.json` | JSON, one line | `pas answer`, the Monitor (through `pas answer`), or `pas run`'s terminal prompt | written once; the first writer wins | `v` (1) |
-| `<stem>-<hash>/runs/<run-id>/answers/<question-id>.json.rejected` | as found | `pas run`, when an answer file is complete but unusable (wrong question, unknown choice, not JSON) | renamed; replaces an older one | as found |
-| `<stem>-<hash>/runs/<run-id>/control/stop` | JSON, one line | `pas stop` or the Monitor; removed by `pas run` at the start of the next Attempt | written once; a repeat is a no-op | `v` (1) |
-| `runs.jsonl` (in `<state>`) | JSON Lines | `pas run`, once, when a new Run starts (not on resume), under `flock`, fsynced | appended | `v` (1) on every line |
+| `<stem>-<hash>/runs/<run-id>/answers/<question-id>.json` | JSON, one line | `hka answer`, the Monitor (through `hka answer`), or `hka run`'s terminal prompt | written once; the first writer wins | `v` (1) |
+| `<stem>-<hash>/runs/<run-id>/answers/<question-id>.json.rejected` | as found | `hka run`, when an answer file is complete but unusable (wrong question, unknown choice, not JSON) | renamed; replaces an older one | as found |
+| `<stem>-<hash>/runs/<run-id>/control/stop` | JSON, one line | `hka stop` or the Monitor; removed by `hka run` at the start of the next Attempt | written once; a repeat is a no-op | `v` (1) |
+| `runs.jsonl` (in `<state>`) | JSON Lines | `hka run`, once, when a new Run starts (not on resume), under `flock`, fsynced | appended | `v` (1) on every line |
 
 ### `checkpoint.json`
 
@@ -135,7 +135,7 @@ names the Run it resumes. Source:
 
 ### `run.lock` and the Worktree lock
 
-`run.lock` is the Pipeline lock: a second `pas run` of the same Pipeline
+`run.lock` is the Pipeline lock: a second `hka run` of the same Pipeline
 exits with code 5. The Worktree lock is `harmonik-attractor-run.lock` in the Run worktree's
 git dir (`<repo>/.git/worktrees/<run-id>/harmonik-attractor-run.lock`), **not** in the run
 folder. Both hold `{"pid":…,"run_id":…}`; the OS releases them when the
@@ -159,7 +159,7 @@ Each line is one Event:
 ```
 
 `seq` increases across all Attempts of the Run, from 1. `ts` has
-millisecond precision. `attempt` is the Attempt (one `pas run` process)
+millisecond precision. `attempt` is the Attempt (one `hka run` process)
 that wrote the line. The writer fsyncs after `AttemptEnded` and
 `HumanInputRequested`, and otherwise at least every 5 seconds. A torn last
 line, left by a killed process, is cut off when the next Attempt opens the
@@ -195,7 +195,7 @@ prompt:
 The prompt goes last because it spans lines. Environment variable values
 never appear, and neither does the prompt's text inside the argv section.
 The file is written before the agent starts, so an invocation that fails to
-launch still has one. Writing it is observability: if it fails, `pas` logs
+launch still has one. Writing it is observability: if it fails, `harmonik-attractor` logs
 a warning and runs the agent anyway.
 
 ### Transcripts and stderr logs
@@ -218,7 +218,7 @@ node that runs again continues its session from it. `pi-agent/<inv>/` is
 Pi's `PI_CODING_AGENT_DIR` for one invocation: `models.json` holds the
 provider settings and the API key, so the folder is mode 0700 and both
 files are created mode 0600, and the folder is removed when the invocation
-ends, however it ends. Only a SIGKILL of `pas` can leave one behind; delete
+ends, however it ends. Only a SIGKILL of `harmonik-attractor` can leave one behind; delete
 it by hand. Readers should not read `pi-agent/`.
 
 ### `answers/<question-id>.json`
@@ -239,15 +239,15 @@ reader sees half a file. Source: `crates/attractor-journal/src/answer.rs`.
 
 `source` is `cli` or `monitor`. The Run notices the file between stages,
 journals `StopRequested`, saves its checkpoint and ends the Attempt as
-`stopped`. Re-running the same `pas run` command resumes it.
+`stopped`. Re-running the same `hka run` command resumes it.
 
 ### `runs.jsonl` (the Run Index)
 
 ```json
-{"v":1,"run_id":"0192...","started_at":"2026-09-24T10:00:00Z","workdir":"/abs/repo","pipeline_path":"/abs/repo/p.dot","run_dir":"/abs/repo/.pas/logs/p-1a2b3c4d/runs/0192..."}
+{"v":1,"run_id":"0192...","started_at":"2026-09-24T10:00:00Z","workdir":"/abs/repo","pipeline_path":"/abs/repo/p.dot","run_dir":"/abs/repo/.harmonik-attractor/logs/p-1a2b3c4d/runs/0192..."}
 ```
 
-It never stores a status: `pas runs` derives status from the journal. A
+It never stores a status: `hka runs` derives status from the journal. A
 Run whose `run_dir` is gone is shown as missing. Lines that don't parse
 are skipped. Source: `crates/attractor-journal/src/index.rs`.
 
@@ -262,7 +262,7 @@ is the field-level reference.
 | [`RunStarted`](../crates/attractor-journal/tests/golden/journal/RunStarted.jsonl) | Once, when a new Run starts (not on resume); the first line. |
 | [`AttemptStarted`](../crates/attractor-journal/tests/golden/journal/AttemptStarted.jsonl) | At the start of every Attempt, the first and each resume. |
 | [`AttemptEnded`](../crates/attractor-journal/tests/golden/journal/AttemptEnded.jsonl) | When an Attempt ends, with `reason`. Never written when the process is killed; its absence marks a crashed Attempt. |
-| [`Heartbeat`](../crates/attractor-journal/tests/golden/journal/Heartbeat.jsonl) | Every 30 seconds while an Attempt runs, with the `pas` pid. |
+| [`Heartbeat`](../crates/attractor-journal/tests/golden/journal/Heartbeat.jsonl) | Every 30 seconds while an Attempt runs, with the `harmonik-attractor` pid. |
 | [`PipelineStarted`](../crates/attractor-journal/tests/golden/journal/PipelineStarted.jsonl) | When the engine starts walking the graph, in every Attempt. |
 | [`PipelineCompleted`](../crates/attractor-journal/tests/golden/journal/PipelineCompleted.jsonl) | When the graph reaches its exit node and its goal gates pass. |
 | [`PipelineFailed`](../crates/attractor-journal/tests/golden/journal/PipelineFailed.jsonl) | When the Attempt fails with an error (not for a stop). |

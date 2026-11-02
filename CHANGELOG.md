@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to PAS are documented here.
+All notable changes to harmonik-attractor (formerly PAS) are documented here.
 
 ## Unreleased
 
@@ -42,6 +42,28 @@ All notable changes to PAS are documented here.
 
 ### Changed
 
+- **Renamed: `pas` is now `harmonik-attractor`, with `hka` as a short
+  name.** No old name is read or kept as an alias:
+  - binary `pas` → `harmonik-attractor` and `hka` (both installed);
+  - config `pas.toml` → `.harmonik-attractor/config.toml`;
+  - run folder `.pas/` (logs, worktrees, agent files) →
+    `.harmonik-attractor/`, whose `.gitignore` keeps `config.toml`
+    committable;
+  - environment variables `PAS_*` → `HKA_*` (`HKA_RUN_ID`, `HKA_NODE_ID`,
+    `HKA_ATTEMPT`, `HKA_INVOCATION_ID`, `HKA_SESSION_ID`,
+    `HKA_STATE_DIR`, `HKA_TRUST_THIS`, ...);
+  - state folder `~/.local/state/pas` → `~/.local/state/harmonik-attractor`
+    (`$XDG_STATE_HOME/harmonik-attractor`), trust store `~/.config/pas` →
+    `~/.config/harmonik-attractor`;
+  - run branches `pas/run/<run-id>` → `hka/run/<run-id>`; attempt commit
+    subjects `pas(<run-id>)` → `hka(<run-id>)`, trailers `Pas-*` → `Hka-*`;
+    fallback commit identity `PAS <pas@localhost>` →
+    `harmonik-attractor <hka@localhost>`;
+  - worktree lock `pas-run.lock` → `harmonik-attractor-run.lock`;
+    `run.json`'s `pas_version` → `hka_version`; prompt-file header
+    `pas prompt file v1` → `hka prompt file v1`;
+  - `templates/pas.md` → `templates/harmonik-attractor.md`; the docs,
+    README, help text and messages say harmonik-attractor / `hka`.
 - **No cross-session tools.** The built-in `claude` profile passes
   `--disallowedTools` for Claude's session tools that reach outside the Run
   (`SendMessage`, `ListAgents`, `Workflow`, `RemoteTrigger`,

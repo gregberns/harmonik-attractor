@@ -1,10 +1,10 @@
 # Example `pi` agent profiles: DeepSeek, Z.ai's GLM and a hosted Qwen, run
-# through the Pi coding agent (`pi`, Node 22.19+; PAS uses whatever version is
-# installed). Copy the profiles you want into your project's `pas.toml` and
+# through the Pi coding agent (`pi`, Node 22.19+; harmonik-attractor uses whatever version is
+# installed). Copy the profiles you want into your project's `.harmonik-attractor/config.toml` and
 # select one with `agent="<name>"` on a node.
 #
 # Each profile names the environment variable that holds its API key
-# (`api_key_env`). PAS reads it from its own environment (or the profile's
+# (`api_key_env`). harmonik-attractor reads it from its own environment (or the profile's
 # `env.set`), writes it into a private models.json in the run folder for the
 # invocation, and never puts it on pi's command line or in pi's environment.
 # See docs/cli-reference.md, "The pi mechanism".

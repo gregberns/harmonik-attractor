@@ -1,6 +1,6 @@
-# PAS User Guide
+# harmonik-attractor User Guide
 
-PAS (Pascal's Discrete Attractor) is a pipeline runner for AI workflows. You define pipelines as DOT (Graphviz) digraphs. Provider-backed nodes run in their explicitly selected local Claude Code, Codex, or Gemini CLI; other nodes may route, execute tools, or wait for input without starting an LLM. The engine handles traversal, branching, retries, quality gates, and cost tracking.
+harmonik-attractor (`hka` for short) is a pipeline runner for AI workflows. You define pipelines as DOT (Graphviz) digraphs. Provider-backed nodes run in their explicitly selected local Claude Code, Codex, or Gemini CLI; other nodes may route, execute tools, or wait for input without starting an LLM. The engine handles traversal, branching, retries, quality gates, and cost tracking.
 
 ## Table of Contents
 
@@ -41,7 +41,7 @@ cd /path/to/connect-the-bots
 ./install.sh
 ```
 
-This builds a release binary and installs it to `~/.local/bin/pas`.
+This builds release binaries and installs `harmonik-attractor` and its short name `hka` to `~/.local/bin`.
 
 ### Create a pipeline
 
@@ -65,19 +65,19 @@ digraph Hello {
 ### Run it
 
 ```bash
-pas run hello.dot -w /path/to/your/project
+hka run hello.dot -w /path/to/your/project
 ```
 
 ### Other commands
 
 ```bash
-pas validate hello.dot   # Check for errors without running
-pas info hello.dot       # Show structure (nodes, edges, goal)
-pas plan --prd           # Generate a PRD template
-pas plan --spec          # Generate a spec template
-pas generate spec.md     # Generate pipeline .dot from spec
-pas decompose spec.md   # Decompose spec into beads tasks
-pas scaffold <EPIC_ID>   # Scaffold pipeline from beads epic
+hka validate hello.dot   # Check for errors without running
+hka info hello.dot       # Show structure (nodes, edges, goal)
+hka plan --prd           # Generate a PRD template
+hka plan --spec          # Generate a spec template
+hka generate spec.md     # Generate pipeline .dot from spec
+hka decompose spec.md   # Decompose spec into beads tasks
+hka scaffold <EPIC_ID>   # Scaffold pipeline from beads epic
 ```
 
 ---
@@ -139,7 +139,7 @@ digraph PipelineName {
 
 ### Parallel and fan-in compatibility
 
-PAS executes one successor per step; it does not implement fork/join execution or branch-result merging. A `component` node (or `type="parallel"`) therefore compiles only with zero or one outgoing edge, where it acts as sequential pass-through compatibility. A component with multiple outgoing edges fails with `unsupported_execution_topology`, including multiple authored edges that target the same node.
+harmonik-attractor executes one successor per step; it does not implement fork/join execution or branch-result merging. A `component` node (or `type="parallel"`) therefore compiles only with zero or one outgoing edge, where it acts as sequential pass-through compatibility. A component with multiple outgoing edges fails with `unsupported_execution_topology`, including multiple authored edges that target the same node.
 
 Every `tripleoctagon`, `type="fan_in"`, or `type="parallel.fan_in"` node fails with the same blocking diagnostic, regardless of its incoming or outgoing edge count. Linearize the workflow until branch execution and deterministic merging are supported end to end.
 
@@ -164,14 +164,14 @@ Every `tripleoctagon`, `type="fan_in"`, or `type="parallel.fan_in"` node fails w
 
 ### Claude settings isolation for codergen
 
-Claude-backed `codergen` nodes use a PAS-owned isolation mode by default. PAS invokes Claude Code with `--safe-mode`, `--strict-mcp-config`, and `--disable-slash-commands` so normal Claude subscription auth still works while personal hooks, skills, plugins, MCP servers, and ambient Claude Code settings are suppressed as much as Claude allows without literal bare mode.
+Claude-backed `codergen` nodes use a harmonik-attractor-owned isolation mode by default. harmonik-attractor invokes Claude Code with `--safe-mode`, `--strict-mcp-config`, `--disable-slash-commands`, and `--disallowedTools` with the session tools that reach outside the Run (see [the `claude` profile](cli-reference.md#agent-profiles-agentsname-in-harmonik-attractorconfigtoml)), so normal Claude subscription auth still works while personal hooks, skills, plugins, MCP servers, and ambient Claude Code settings are suppressed as much as Claude allows without literal bare mode.
 
 The default mode is `subscription_bare`. Two opt-ins exist:
 
 - `strict_bare` uses Claude's literal `--bare` for maximum reproducibility, but requires API-key/auth-helper auth rather than normal subscription OAuth/keychain auth.
 - `inherit` loads explicit Claude `setting_sources` and may run personal hooks/settings. Use it only when you want that leakage.
 
-Configure the default for a repo in `pas.toml`:
+Configure the default for a repo in `.harmonik-attractor/config.toml`:
 
 ```toml
 [codergen.claude]
@@ -180,17 +180,17 @@ setting_sources = ["user"]           # only for inherit
 settings_json = "{\"enabledPlugins\":{}}"
 tools = "Read,Edit"
 agents_json = "{}"
-plugin_dirs = [".pas/claude-plugin"]
+plugin_dirs = [".harmonik-attractor/claude-plugin"]
 mcp_config_json = "{}"
 ```
 
 Or override per run:
 
 ```bash
-pas run pipeline.dot -w . --codergen-claude-settings-mode inherit --codergen-claude-setting-sources user
+hka run pipeline.dot -w . --codergen-claude-settings-mode inherit --codergen-claude-setting-sources user
 ```
 
-CLI flags override `pas.toml`. `--settings`-style PAS-owned config does not imply inheritance; user-scope Claude Code config is only loaded in `inherit` mode.
+CLI flags override `.harmonik-attractor/config.toml`. `--settings`-style harmonik-attractor-owned config does not imply inheritance; user-scope Claude Code config is only loaded in `inherit` mode.
 
 ### Tool nodes (parallelogram)
 
@@ -434,7 +434,7 @@ String, number, and boolean graph attributes are available as `${attribute_name}
 
 ## Validation Rules
 
-Run `pas validate pipeline.dot` to compile canonical semantics and run structural lint rules:
+Run `hka validate pipeline.dot` to compile canonical semantics and run structural lint rules:
 
 | Rule | Severity | What it checks |
 |------|----------|----------------|
@@ -471,7 +471,7 @@ If the node has outgoing edges and none applies, the run stops with `node '<id>'
 
 ## Differences from the Attractor spec
 
-PAS follows the upstream [Attractor spec](https://github.com/strongdm/attractor)
+harmonik-attractor follows the upstream [Attractor spec](https://github.com/strongdm/attractor)
 except where routing would hide a graph mistake:
 
 - **No matching edge stops the run, whatever the outcome.** When a node has
@@ -589,10 +589,10 @@ digraph FixBug {
         allowed_tools="Read,Grep,Glob",
         prompt="Read the session configuration and authentication middleware.
 Find where the timeout is set. Check for hardcoded values vs config.
-Write findings to .pas/investigation.md"]
+Write findings to .harmonik-attractor/investigation.md"]
 
     implement [shape="box", label="Implement Fix",
-        prompt="Based on .pas/investigation.md, fix the session timeout.
+        prompt="Based on .harmonik-attractor/investigation.md, fix the session timeout.
 Change the hardcoded 300 to use the SESSION_TIMEOUT_SECONDS env var with a default of 1800.
 Only modify the necessary files."]
 
@@ -634,7 +634,7 @@ Run: bd sync --flush-only"]
 
 ## Planning Workflow
 
-PAS includes a full planning-to-execution workflow that bridges structured documents to beads issue tracking to pipeline execution.
+harmonik-attractor includes a full planning-to-execution workflow that bridges structured documents to beads issue tracking to pipeline execution.
 
 ### The flow
 
@@ -642,17 +642,17 @@ PAS includes a full planning-to-execution workflow that bridges structured docum
 write PRD → review → write spec → review → decompose → scaffold → validate → execute
 ```
 
-The **PRD** captures *what and why* (goals, user stories, requirements). The **spec** captures *how* (architecture, file changes, implementation phases). The spec's phases become beads issues, which become a PAS pipeline.
+The **PRD** captures *what and why* (goals, user stories, requirements). The **spec** captures *how* (architecture, file changes, implementation phases). The spec's phases become beads issues, which become a harmonik-attractor pipeline.
 
 ### Step 1: Generate documents
 
 ```bash
 # Generate a PRD from a one-line description
-pas plan --prd --from-prompt "Add real-time notifications via WebSockets"
+hka plan --prd --from-prompt "Add real-time notifications via WebSockets"
 
 # Or copy the blank template for manual editing
-pas plan --prd
-pas plan --spec
+hka plan --prd
+hka plan --spec
 ```
 
 Templates are in `templates/prd-template.md` and `templates/spec-template.md`. The PRD template includes sections for overview, goals, user stories, functional requirements, constraints, risks, and success criteria. The spec template includes architecture overview, file changes, implementation phases, configuration, testing strategy, and rollback plan.
@@ -661,10 +661,10 @@ Templates are in `templates/prd-template.md` and `templates/spec-template.md`. T
 
 ```bash
 # Preview the beads commands that would be created
-pas decompose .pas/spec.md --dry-run
+hka decompose .harmonik-attractor/spec.md --dry-run
 
 # Create the epic and tasks
-pas decompose .pas/spec.md
+hka decompose .harmonik-attractor/spec.md
 ```
 
 This reads the spec's `## Implementation Phases` section and creates:
@@ -678,23 +678,23 @@ To decompose several documents as one Plan, pass `--plan a.md --plan b.txt` inst
 
 ```bash
 # Generate a pipeline from the beads epic
-pas scaffold <EPIC_ID>
+hka scaffold <EPIC_ID>
 
 # Validate it
-pas validate pipelines/<EPIC_ID>.dot
+hka validate pipelines/<EPIC_ID>.dot
 
 # Run it
-pas run pipelines/<EPIC_ID>.dot -w .
+hka run pipelines/<EPIC_ID>.dot -w .
 ```
 
-The scaffold command uses the `epic-runner` template, which loops through all child tasks of the epic: pick task → investigate → implement → test → verify → commit and push → close → next task. PAS claims and closes each Task through its `beads.select` and `beads.close` nodes; see [`scaffold`](cli-reference.md#scaffold--generate-pipeline-from-beads-epic).
+The scaffold command uses the `epic-runner` template, which loops through all child tasks of the epic: pick task → investigate → implement → test → verify → commit and push → close → next task. harmonik-attractor claims and closes each Task through its `beads.select` and `beads.close` nodes; see [`scaffold`](cli-reference.md#scaffold--generate-pipeline-from-beads-epic).
 
 ### Meta-pipeline (fully automated)
 
 There's a meta-pipeline at `templates/plan-to-execute.dot` that chains the full workflow with human review gates:
 
 ```bash
-pas run templates/plan-to-execute.dot -w .
+hka run templates/plan-to-execute.dot -w .
 ```
 
 This pipeline:
@@ -715,7 +715,7 @@ Use `hexagon` nodes to pause for human input:
 review [
     shape="hexagon"
     label="Review Changes"
-    prompt="Review the PRD at .pas/prd.md.
+    prompt="Review the PRD at .harmonik-attractor/prd.md.
 Respond 'continue' to proceed or 'reject' to regenerate."
 ]
 
@@ -723,35 +723,35 @@ review -> next_step [label="continue"]
 review -> regenerate [label="reject", condition="preferred_label=reject"]
 ```
 
-The choices are the outgoing edge labels. `pas run` takes the first valid answer from either place:
+The choices are the outgoing edge labels. `hka run` takes the first valid answer from either place:
 
 - **The terminal**, only when stdin is a TTY: type a choice's number or its label. Anything else asks again.
-- **An answer file** at `<logs>/runs/<run-id>/answers/<question-id>.json`, checked every second. The question ID is in the Run Journal's `HumanInputRequested` Event and in the message `pas run` prints to stderr when stdin is not a TTY. A file whose choice is not offered is moved to `<question-id>.json.rejected` and the gate keeps waiting:
+- **An answer file** at `<logs>/runs/<run-id>/answers/<question-id>.json`, checked every second. The question ID is in the Run Journal's `HumanInputRequested` Event and in the message `hka run` prints to stderr when stdin is not a TTY. A file whose choice is not offered is moved to `<question-id>.json.rejected` and the gate keeps waiting:
 
   ```json
   {"v":1,"question_id":"q-review-1","choice":"continue","source":"cli","answered_at":"2026-09-24T10:00:00Z"}
   ```
 
-`pas answer <run-id> <question-id> <choice>` writes this file for you; see the [CLI reference](cli-reference.md#answer--answer-a-waiting-human-gate).
+`hka answer <run-id> <question-id> <choice>` writes this file for you; see the [CLI reference](cli-reference.md#answer--answer-a-waiting-human-gate).
 
-Piped stdin (`echo 1 | pas run ...`) no longer answers a gate. If the Run is killed while it waits, resuming it asks the same question again.
+Piped stdin (`echo 1 | hka run ...`) no longer answers a gate. If the Run is killed while it waits, resuming it asks the same question again.
 
-To stop a Run cleanly between stages, use `pas stop <run-id>`; see the [CLI reference](cli-reference.md#stop--stop-an-active-run-after-its-current-stage). A Run waiting at a Human Gate ignores it until the gate is answered.
+To stop a Run cleanly between stages, use `hka stop <run-id>`; see the [CLI reference](cli-reference.md#stop--stop-an-active-run-after-its-current-stage). A Run waiting at a Human Gate ignores it until the gate is answered.
 
-To end a Run immediately, use `pas kill <run-id> [--grace 20s]`; see the [CLI reference](cli-reference.md#kill--end-an-active-run-now). Unlike `pas stop`, it does not wait for the current stage: it sends SIGTERM, then SIGKILL after the grace period, and only if the Run's PID holds its lock. Resume with the same `pas run` command.
+To end a Run immediately, use `hka kill <run-id> [--grace 20s]`; see the [CLI reference](cli-reference.md#kill--end-an-active-run-now). Unlike `hka stop`, it does not wait for the current stage: it sends SIGTERM, then SIGKILL after the grace period, and only if the Run's PID holds its lock. Resume with the same `hka run` command.
 
 ---
 
 ## Integrating with Beads
 
-PAS pipelines work well with [beads](https://github.com/Dicklesworthstone/beads_viewer) for issue tracking.
+harmonik-attractor pipelines work well with [beads](https://github.com/Dicklesworthstone/beads_viewer) for issue tracking.
 
 ### Workflow
 
 1. **Find work:** `bd ready` shows issues with no blockers
 2. **Review:** `bd show <issue-id>` to get full context
-3. **Create pipeline:** Write a `.dot` file referencing the issue in the `goal`, or use `pas scaffold <epic-id>`
-4. **Run:** `pas run pipelines/fix-issue.dot -w .`
+3. **Create pipeline:** Write a `.dot` file referencing the issue in the `goal`, or use `hka scaffold <epic-id>`
+4. **Run:** `hka run pipelines/fix-issue.dot -w .`
 5. **The pipeline closes the issue** in its final node
 
 ### Referencing issues
@@ -768,10 +768,10 @@ Use `scaffold` to generate a pipeline that iterates through all tasks in a beads
 
 ```bash
 # Create pipeline from epic
-pas scaffold my-epic-id
+hka scaffold my-epic-id
 
 # Run it — loops through all child tasks automatically
-pas run pipelines/my-epic-id.dot -w .
+hka run pipelines/my-epic-id.dot -w .
 ```
 
 The generated pipeline follows this loop for each task:
@@ -807,10 +807,10 @@ The `allowed_tools="Bash(bd:*),Bash(git:*)"` restricts this node to only run bea
 For a complete workflow from requirements to running code, see [Planning Workflow](#planning-workflow). The `plan`, `decompose`, and `scaffold` commands chain together:
 
 ```bash
-pas plan --spec --from-prompt "Add feature X"   # Generate spec
-pas decompose .pas/spec.md                 # Create beads tasks
-pas scaffold <EPIC_ID>                           # Generate pipeline
-pas run pipelines/<EPIC_ID>.dot -w .             # Execute
+hka plan --spec --from-prompt "Add feature X"   # Generate spec
+hka decompose .harmonik-attractor/spec.md                 # Create beads tasks
+hka scaffold <EPIC_ID>                           # Generate pipeline
+hka run pipelines/<EPIC_ID>.dot -w .             # Execute
 ```
 
 ---
@@ -826,7 +826,7 @@ echo "*.dot" >> .gitignore  # Optional: exclude pipeline files from git
 
 ### 2. Add instructions to AGENTS.md
 
-Copy the template from `templates/pas.md` in the PAS repo and append it to your project's `AGENTS.md` or `CLAUDE.md`. This teaches Claude Code how to create and run pipelines when you ask it to.
+Copy the template from `templates/harmonik-attractor.md` in the harmonik-attractor repo and append it to your project's `AGENTS.md` or `CLAUDE.md`. This teaches Claude Code how to create and run pipelines when you ask it to.
 
 After adding the template, you can say things like:
 
@@ -836,25 +836,27 @@ After adding the template, you can say things like:
 
 Claude Code will read the instructions, look up the issue, and generate a `.dot` file.
 
-### 3. Set up an alias
+### 3. Put it on your PATH
 
 ```bash
 # In your shell profile
-alias pas='~/.local/bin/pas'
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Then run pipelines with:
 
 ```bash
-pas run pipelines/my-feature.dot -w .
+hka run pipelines/my-feature.dot -w .
 ```
 
-### 4. Add .pas to .gitignore
+### 4. Keep run data out of git
 
-Pipeline nodes write intermediate files to `.pas/`:
+Pipeline nodes write intermediate files to `.harmonik-attractor/`. A Run
+writes `.harmonik-attractor/.gitignore`, so git ignores everything there
+except `config.toml`. To say the same in your own `.gitignore`:
 
 ```bash
-echo ".pas/" >> .gitignore
+printf '.harmonik-attractor/*\n!.harmonik-attractor/config.toml\n' >> .gitignore
 ```
 
 ---
@@ -870,13 +872,13 @@ context instead of assuming prior conversation state.
 - **Be specific about file paths.** `"Edit mlb_fantasy_jobs/app/tasks/processors.py"` not `"Edit the processor file"`.
 - **Include exact commands.** `"Run: cd mlb_fantasy_jobs && uv run pytest tests/ -x -v -k sync"` not `"Run the tests"`.
 - **One concern per node.** Investigation, implementation, and testing should be separate nodes.
-- **Tell the provider to write durable output.** `"Write your findings to .pas/analysis.md"` — otherwise only the captured result flows forward.
+- **Tell the provider to write durable output.** `"Write your findings to .harmonik-attractor/analysis.md"` — otherwise only the captured result flows forward.
 - **Reference the goal.** The pipeline `goal` is injected automatically, but reinforcing key details in the prompt helps.
 
 ### Don't
 
 - **Don't combine investigation and implementation.** Read-only first, then edit.
-- **Don't assume context.** Each provider invocation is independent. Pass information via files (`.pas/`) or context keys.
+- **Don't assume context.** Each provider invocation is independent. Pass information via files (`.harmonik-attractor/`) or context keys.
 - **Don't leave prompts vague.** `"Fix the bug"` gives the selected provider too little context. Include the file, function, and expected behavior.
 
 ### Context flow between nodes
@@ -884,8 +886,8 @@ context instead of assuming prior conversation state.
 Each node's result is stored as `{node_id}.result` in the pipeline context and injected into subsequent nodes' prompts under "Context from prior pipeline steps." For large outputs, prefer writing to files:
 
 ```dot
-investigate [prompt="...Write findings to .pas/findings.md"]
-implement  [prompt="Read .pas/findings.md for context, then..."]
+investigate [prompt="...Write findings to .harmonik-attractor/findings.md"]
+implement  [prompt="Read .harmonik-attractor/findings.md for context, then..."]
 ```
 
 Context contains workflow data only. An immutable typed `RunConfiguration`
@@ -900,7 +902,7 @@ state and are not persisted into Context.
 
 ## Multi-Provider Support
 
-Every node whose resolved handler consumes a provider must resolve an explicit provider from its node attributes, DOT defaults, or stylesheet. `pas generate` and `pas scaffold` insert Claude explicitly when needed. Hand-written runtime pipelines have no implicit provider fallback.
+Every node whose resolved handler consumes a provider must resolve an explicit provider from its node attributes, DOT defaults, or stylesheet. `hka generate` and `hka scaffold` insert Claude explicitly when needed. Hand-written runtime pipelines have no implicit provider fallback.
 
 ### Supported providers
 
@@ -956,23 +958,23 @@ digraph Pipeline {
 
 Each provider runs through its built-in agent profile (`claude`, `codex`, `gemini`), whose handler knows the CLI's flags and output format:
 
-- **Claude** (`claude-p`): Uses `--output-format stream-json --verbose` and `-p` for the prompt. Returns streaming JSON events; PAS uses the final `result` event.
-- **Codex** (`codex-exec`): Uses `codex exec --json --yolo --skip-git-repo-check --cd <workdir>` (on a retry or revisit, `codex exec resume <thread-id> --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox`) with the prompt as the last, positional argument. Returns streaming JSONL events; PAS extracts the last completed agent-message item.
-- **Gemini** (`gemini`): Uses `--output-format json --approval-mode yolo` with the prompt as a positional argument, last. When the profile's command with `--help` lists `stream-json` (Gemini CLI 0.11.0 and later), PAS passes `--output-format stream-json` in place of `json`. PAS does not pass a `--sandbox` flag to Gemini. Returns structured JSON, or streaming JSON events from which PAS joins the assistant messages.
+- **Claude** (`claude-p`): Uses `--output-format stream-json --verbose` and `-p` for the prompt. Returns streaming JSON events; harmonik-attractor uses the final `result` event.
+- **Codex** (`codex-exec`): Uses `codex exec --json --yolo --skip-git-repo-check --cd <workdir>` (on a retry or revisit, `codex exec resume <thread-id> --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox`) with the prompt as the last, positional argument. Returns streaming JSONL events; harmonik-attractor extracts the last completed agent-message item.
+- **Gemini** (`gemini`): Uses `--output-format json --approval-mode yolo` with the prompt as a positional argument, last. When the profile's command with `--help` lists `stream-json` (Gemini CLI 0.11.0 and later), harmonik-attractor passes `--output-format stream-json` in place of `json`. harmonik-attractor does not pass a `--sandbox` flag to Gemini. Returns structured JSON, or streaming JSON events from which harmonik-attractor joins the assistant messages.
 
-Every agent runs with stdin from `/dev/null` and the profile's environment: the default `env.remove` strips provider API keys (including `OPENAI_API_KEY`), so agents bill the logged-in subscription. See [Agent profiles](cli-reference.md#agent-profiles-agentsname-in-pastoml).
+Every agent runs with stdin from `/dev/null` and the profile's environment: the default `env.remove` strips provider API keys (including `OPENAI_API_KEY`), so agents bill the logged-in subscription. See [Agent profiles](cli-reference.md#agent-profiles-agentsname-in-harmonik-attractorconfigtoml).
 
-During `pas run`, every agent invocation's raw stdout is also copied, line by line as it arrives, to a Transcript at `runs/<run-id>/transcripts/<invocation-id>.jsonl` in the Pipeline's log folder, and its stderr the same way to `transcripts/<invocation-id>.stderr.log`.
+During `hka run`, every agent invocation's raw stdout is also copied, line by line as it arrives, to a Transcript at `runs/<run-id>/transcripts/<invocation-id>.jsonl` in the Pipeline's log folder, and its stderr the same way to `transcripts/<invocation-id>.stderr.log`.
 
-When an agent process starts, before any of its output reaches the Transcript, PAS appends an `LlmStarted` Event: `invocation_id`, `spawn` (1 for the first process of the invocation), `node_id`, `attempt` (from 1), `profile` (e.g. `claude`, `codex`), the requested `model` (left out when none), `host`, `pid` and `pgid` of the agent process, the `session_id` it was started with, and the `transcript` and `stderr` paths relative to the Run folder. To find which node and process a growing Transcript belongs to, look up the `LlmStarted` with the same `invocation_id` (the Transcript's file name). An agent that cannot be started records no `LlmStarted`. `LlmInvoked`'s `provider` is the profile name.
+When an agent process starts, before any of its output reaches the Transcript, harmonik-attractor appends an `LlmStarted` Event: `invocation_id`, `spawn` (1 for the first process of the invocation), `node_id`, `attempt` (from 1), `profile` (e.g. `claude`, `codex`), the requested `model` (left out when none), `host`, `pid` and `pgid` of the agent process, the `session_id` it was started with, and the `transcript` and `stderr` paths relative to the Run folder. To find which node and process a growing Transcript belongs to, look up the `LlmStarted` with the same `invocation_id` (the Transcript's file name). An agent that cannot be started records no `LlmStarted`. `LlmInvoked`'s `provider` is the profile name.
 
 On a timeout or a stop, an agent gets TERM, its profile's `kill_grace` (built-in 10 s), then KILL. A stopped invocation's `LlmInvoked` has status `timeout`.
 
 ### Adding an agent handler
 
-An agent mechanism is one crate implementing `AgentHandler` from `attractor-agent-handler` (see `attractor-handler-codex-exec` for a small one): `mechanism()` names it, `argv()` adds the handler's own flags to the profile's argv, `run()` starts the process (through `attractor-agent-process`'s `run_local`) and classifies its end with a failure table (`Completed`, `Reported`, `Timeout`, `Crash`, `NoResult`, `Launch`), and `transcript_usage()` reads tokens and cost from its output. Register it with one line in `handlers()` in `crates/attractor-cli/src/agents.rs`, and add a profile with `mechanism = "<name>"`, built in (`agents.toml`) or in a project's `pas.toml`.
+An agent mechanism is one crate implementing `AgentHandler` from `attractor-agent-handler` (see `attractor-handler-codex-exec` for a small one): `mechanism()` names it, `argv()` adds the handler's own flags to the profile's argv, `run()` starts the process (through `attractor-agent-process`'s `run_local`) and classifies its end with a failure table (`Completed`, `Reported`, `Timeout`, `Crash`, `NoResult`, `Launch`), and `transcript_usage()` reads tokens and cost from its output. Register it with one line in `handlers()` in `crates/attractor-cli/src/agents.rs`, and add a profile with `mechanism = "<name>"`, built in (`agents.toml`) or in a project's `.harmonik-attractor/config.toml`.
 
-When the provider process exits, fails, or times out, PAS appends one `LlmInvoked` Event for that invocation to the Run Journal (`runs/<run-id>/events.jsonl`). It records the provider (`claude`, `codex` or `gemini`), the requested model (the node's `llm_model`, else the graph's `model`; left out when neither is set), the model, input and output tokens, and cost that the provider's output reported (each left out when unknown), `duration_ms`, the Transcript path relative to the Run folder, and a `status` of `success`, `failed` or `timeout`. A dry run, or a provider CLI that cannot be started, records no `LlmInvoked`.
+When the provider process exits, fails, or times out, harmonik-attractor appends one `LlmInvoked` Event for that invocation to the Run Journal (`runs/<run-id>/events.jsonl`). It records the provider (`claude`, `codex` or `gemini`), the requested model (the node's `llm_model`, else the graph's `model`; left out when neither is set), the model, input and output tokens, and cost that the provider's output reported (each left out when unknown), `duration_ms`, the Transcript path relative to the Run folder, and a `status` of `success`, `failed` or `timeout`. A dry run, or a provider CLI that cannot be started, records no `LlmInvoked`.
 
 ### CLI not found
 
@@ -1055,7 +1057,7 @@ The engine follows one edge at a time. If a node has multiple outgoing edges wit
 
 ### Goal gate loops forever
 
-If a goal gate node keeps failing, its retry edge can revisit the graph. Node `max_retries` does not cap graph traversal; it only controls retryable handler attempts within one visit. Use `max_steps` to bound goal-gate and back-edge loops, and choose a non-terminal retry target that can change the outcome. PAS rejects retry targets that resolve to an exit node.
+If a goal gate node keeps failing, its retry edge can revisit the graph. Node `max_retries` does not cap graph traversal; it only controls retryable handler attempts within one visit. Use `max_steps` to bound goal-gate and back-edge loops, and choose a non-terminal retry target that can change the outcome. harmonik-attractor rejects retry targets that resolve to an exit node.
 
 ### Unsupported execution attributes
 
@@ -1064,5 +1066,5 @@ Canonical non-web compilation rejects `reasoning_effort` on nodes without an age
 ### Intermediate results are lost
 
 Node outputs are in-memory. If you need to persist them:
-1. Tell the node to write files: `"Write your analysis to .pas/report.md"`
-2. The CLI prints total cost but not individual node results (check `.pas/` for written files)
+1. Tell the node to write files: `"Write your analysis to .harmonik-attractor/report.md"`
+2. The CLI prints total cost but not individual node results (check `.harmonik-attractor/` for written files)

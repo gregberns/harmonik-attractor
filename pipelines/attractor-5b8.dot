@@ -1,6 +1,6 @@
 digraph EpicRunner {
     label="Process all tasks in an epic"
-    goal="Implement all child tasks of epic attractor-5b8: pas init + quality handler (SPEC-005). Implement the pas init subcommand, pas.toml manifest schema, walk-up resolution, direnv-style trust model, quality pipeline handler with sequential stage execution + telemetry, loop control + checkpoint integration, and preflight warning when pas.toml is missing. See docs/plans/2026-05-29-feat-pas-init-quality-handler-plan.md for full design."
+    goal="Implement all child tasks of epic attractor-5b8: hka init + quality handler (SPEC-005). Implement the hka init subcommand, .harmonik-attractor/config.toml manifest schema, walk-up resolution, direnv-style trust model, quality pipeline handler with sequential stage execution + telemetry, loop control + checkpoint integration, and preflight warning when .harmonik-attractor/config.toml is missing. See docs/plans/2026-05-29-feat-pas-init-quality-handler-plan.md for full design."
     model="sonnet"
 
     start [shape="Mdiamond"]
@@ -22,7 +22,7 @@ Find the first ready (unblocked, open) child task of epic attractor-5b8.
 
 If you find one:
 - Run: bd update <task-id> --status=in_progress
-- Write the task ID and full description to .pas/current_task.md
+- Write the task ID and full description to .harmonik-attractor/current_task.md
 - Respond with MORE on the last line
 
 If all child tasks are closed (no more ready tasks for this epic):
@@ -35,7 +35,7 @@ If all child tasks are closed (no more ready tasks for this epic):
         llm_provider="claude"
         label="Investigate"
         allowed_tools="Read,Grep,Glob,Bash(bd:*),Bash(cargo:*),Bash(ls:*),Bash(fd:*),Bash(rg:*)"
-        prompt="Read .pas/current_task.md to get the current task ID and description.
+        prompt="Read .harmonik-attractor/current_task.md to get the current task ID and description.
 Run bd show <task-id> to get full details.
 
 This is a Rust workspace at /Volumes/qwiizlab/projects/pascals-discrete-attractor:
@@ -51,7 +51,7 @@ Investigate the codebase to understand what needs to change:
 - Understand the current behavior
 - Identify what needs to change
 
-Write your findings to .pas/investigation.md including:
+Write your findings to .harmonik-attractor/investigation.md including:
 - Files to modify
 - Current behavior
 - Required changes
@@ -64,7 +64,7 @@ Write your findings to .pas/investigation.md including:
         llm_provider="claude"
         label="Implement"
         allowed_tools="Read,Write,Edit,Grep,Glob,Bash(cargo:*),Bash(git:*),Bash(bd:*),Bash(fd:*),Bash(rg:*)"
-        prompt="Read .pas/current_task.md for the task and .pas/investigation.md for the plan.
+        prompt="Read .harmonik-attractor/current_task.md for the task and .harmonik-attractor/investigation.md for the plan.
 Read docs/plans/2026-05-29-feat-pas-init-quality-handler-plan.md for the detailed phase spec, research insights, and acceptance criteria for this task.
 
 Implement the changes described. Follow existing code patterns and conventions in this Rust workspace.
@@ -78,14 +78,14 @@ Use tokio::process::Command (not std::process::Command) for any process spawning
         llm_provider="claude"
         label="Run Tests"
         allowed_tools="Read,Bash(cargo:*),Bash(bd:*)"
-        prompt="Read .pas/current_task.md to understand what was changed.
+        prompt="Read .harmonik-attractor/current_task.md to understand what was changed.
 Run the relevant test suite:
   cargo test -p <affected-crate>
   cargo clippy -p <affected-crate> -- -D warnings
   cargo fmt --check
 
 If tests fail, fix the issues and re-run until green.
-Write the test results to .pas/test-results.md"
+Write the test results to .harmonik-attractor/test-results.md"
     ]
 
     // --- Verify ---
@@ -95,11 +95,11 @@ Write the test results to .pas/test-results.md"
         label="Verify"
         node_type="conditional"
         allowed_tools="Read,Bash(cargo:*),Bash(git:*)"
-        prompt="Read .pas/current_task.md for the task requirements.
+        prompt="Read .harmonik-attractor/current_task.md for the task requirements.
 Check the changes:
 1. Review the git diff
 2. Verify cargo clippy passes with no warnings
-3. Verify tests pass (read .pas/test-results.md)
+3. Verify tests pass (read .harmonik-attractor/test-results.md)
 4. Check that the task's acceptance criteria are met (from bd show <task-id>)
 
 If everything looks good, respond with PASS on the last line.
@@ -111,7 +111,7 @@ If there are problems, respond with FAIL on the last line."
         llm_provider="claude"
         label="Fix Issues"
         allowed_tools="Read,Write,Edit,Bash(cargo:*),Bash(bd:*)"
-        prompt="Read .pas/current_task.md and .pas/investigation.md for context.
+        prompt="Read .harmonik-attractor/current_task.md and .harmonik-attractor/investigation.md for context.
 The verification step found problems. Fix any failing tests, lint errors, or unmet acceptance criteria.
 Re-run cargo test and cargo clippy after fixing."
     ]
@@ -122,7 +122,7 @@ Re-run cargo test and cargo clippy after fixing."
         llm_provider="claude"
         label="Close Task"
         allowed_tools="Bash(bd:*),Bash(git:*)"
-        prompt="Read .pas/current_task.md to get the task ID.
+        prompt="Read .harmonik-attractor/current_task.md to get the task ID.
 1. Stage changes: git add -A
 2. Commit with a descriptive message referencing the task ID
 3. Close the task: bd close <task-id> --reason='Implemented successfully'

@@ -1,20 +1,20 @@
 ---
 
-## PAS Pipeline System
+## harmonik-attractor Pipeline System
 
-This project uses **PAS** (Pascal's Discrete Attractor) — a DOT-based pipeline runner that executes multi-step AI workflows. Each pipeline is a `.dot` file whose task nodes explicitly select a Claude Code, Codex, or Gemini CLI provider. Pipelines live in `pipelines/`.
+This project uses **harmonik-attractor** (`hka`) — a DOT-based pipeline runner that executes multi-step AI workflows. Each pipeline is a `.dot` file whose task nodes explicitly select a Claude Code, Codex, or Gemini CLI provider. Pipelines live in `pipelines/`.
 
 ### Running a pipeline
 
 ```bash
 # Validate before running
-pas validate pipelines/my-pipeline.dot
+hka validate pipelines/my-pipeline.dot
 
 # Run with working directory set to this repo
-pas run pipelines/my-pipeline.dot -w .
+hka run pipelines/my-pipeline.dot -w .
 
 # Inspect structure
-pas info pipelines/my-pipeline.dot
+hka info pipelines/my-pipeline.dot
 ```
 
 ### Creating a pipeline
@@ -92,7 +92,7 @@ start → investigate → implement → write_tests → run_tests → verify
                                                                 └─ FAIL → fixup ──→ verify (loop)
 ```
 
-1. **investigate** — Read-only. `allowed_tools="Read,Grep,Glob"`. Understand the code before touching it. Write findings to `.pas/`.
+1. **investigate** — Read-only. `allowed_tools="Read,Grep,Glob"`. Understand the code before touching it. Write findings to `.harmonik-attractor/`.
 2. **implement** — Make the code changes. Keep the prompt specific with file paths and exact requirements.
 3. **write_tests** — Write tests matching existing project patterns. Reference specific test directories.
 4. **run_tests** — Execute tests. Prompt should include the exact test command (e.g. `uv run pytest tests/ -k sync`).
@@ -102,44 +102,44 @@ start → investigate → implement → write_tests → run_tests → verify
 
 ### Key rules for prompts
 
-- **Be specific.** Include file paths, function names, and exact commands. Provider CLI subprocesses have no prior pipeline-step context beyond the prompt and accumulated PAS context.
+- **Be specific.** Include file paths, function names, and exact commands. Provider CLI subprocesses have no prior pipeline-step context beyond the prompt and accumulated harmonik-attractor context.
 - **One concern per node.** Don't combine investigation and implementation.
-- **Write output files.** If a node generates a report or analysis, tell it to write to `.pas/filename.md`.
+- **Write output files.** If a node generates a report or analysis, tell it to write to `.harmonik-attractor/filename.md`.
 - **Reference the beads issue** in the `goal=` attribute so every node has context.
 - **Use read-only tools for investigation.** `allowed_tools="Read,Grep,Glob"` prevents premature edits.
 - **Include test commands.** Don't say "run tests" — say `cd mlb_fantasy_jobs && uv run pytest tests/ -x -v -k sync_player`.
 
 ### Planning workflow (PRD → Spec → Beads → Pipeline)
 
-PAS includes commands to go from requirements to running pipeline:
+harmonik-attractor includes commands to go from requirements to running pipeline:
 
 ```bash
 # Generate a PRD or spec from a description
-pas plan --prd --from-prompt "Add feature X"
-pas plan --spec --from-prompt "Add feature X"
+hka plan --prd --from-prompt "Add feature X"
+hka plan --spec --from-prompt "Add feature X"
 
 # Or copy blank templates for manual editing
-pas plan --prd
-pas plan --spec
+hka plan --prd
+hka plan --spec
 
 # Generate a pipeline directly from spec (no beads required)
-pas generate spec.md
-pas generate prd.md spec.md
+hka generate spec.md
+hka generate prd.md spec.md
 
 # Or decompose spec into beads epic + tasks
-pas decompose .pas/spec.md
+hka decompose .harmonik-attractor/spec.md
 
 # Scaffold pipeline from the beads epic
-pas scaffold <EPIC_ID>
+hka scaffold <EPIC_ID>
 
 # Run it
-pas run pipelines/<EPIC_ID>.dot -w .
+hka run pipelines/<EPIC_ID>.dot -w .
 ```
 
 There's also a meta-pipeline that chains the full workflow with human review gates:
 
 ```bash
-pas run templates/plan-to-execute.dot -w .
+hka run templates/plan-to-execute.dot -w .
 ```
 
 ### Example

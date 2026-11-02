@@ -1,4 +1,4 @@
-# Zero framework cognition in PAS
+# Zero framework cognition in harmonik-attractor
 
 Adapted from harmonik-v3's `docs/concepts/zero-framework-cognition.md`
 (Steve Yegge's principle): the framework contains no cognition. All

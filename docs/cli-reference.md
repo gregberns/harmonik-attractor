@@ -3,7 +3,7 @@
 ## Synopsis
 
 ```
-pas [OPTIONS] <COMMAND>
+hka [OPTIONS] <COMMAND>
 ```
 
 ## Global Options
@@ -23,7 +23,7 @@ pipeline. Each provider-backed `codergen` node starts its explicitly selected
 local Claude Code, Codex, or Gemini CLI.
 
 ```
-pas run <PIPELINE> [OPTIONS]
+hka run <PIPELINE> [OPTIONS]
 ```
 
 #### Arguments
@@ -37,26 +37,26 @@ pas run <PIPELINE> [OPTIONS]
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--workdir <DIR>` | `-w` | current directory | The source directory. In a git repository the Run works in its own worktree (see [Worktree and branch](#worktree-and-branch)), in the same subdirectory as `--workdir`; file paths in prompts are relative to it. |
-| `--logs <DIR>` | `-l` | `.pas/logs` | Directory for log output. |
+| `--logs <DIR>` | `-l` | `.harmonik-attractor/logs` | Directory for log output. |
 | `--base <REF>` | — | `HEAD` | Commit, branch or tag a new Run's branch starts at. Ignored on resume. |
-| `--worktree-root <DIR>` | — | `[run] worktree_root` in `pas.toml`, else `<project-root>/.pas/worktrees` | Folder for the Runs' worktrees; each Run's is `<DIR>/<run-id>`. Relative to the current directory. Ignored on resume. |
+| `--worktree-root <DIR>` | — | `[run] worktree_root` in `.harmonik-attractor/config.toml`, else `<project-root>/.harmonik-attractor/worktrees` | Folder for the Runs' worktrees; each Run's is `<DIR>/<run-id>`. Relative to the current directory. Ignored on resume. |
 | `--dry-run` | — | false | Parse and validate the pipeline without executing provider processes or tools; no cost is incurred. |
-| `--max-budget-usd <AMOUNT>` | — | $200 | Maximum tracked spend across all nodes. Pipeline aborts with an error if exceeded. Codex and Gemini CLI calls report no dollar cost and therefore do not count toward this limit; use `--max-steps` to bound them. Before it starts, `pas run` warns (`PROVIDER_COST_UNTRACKED`) once per such handler, counting every node whose profile uses it, whatever the profile's name (a `codex-api` profile that inherits `codex` counts). |
+| `--max-budget-usd <AMOUNT>` | — | $200 | Maximum tracked spend across all nodes. Pipeline aborts with an error if exceeded. Codex and Gemini CLI calls report no dollar cost and therefore do not count toward this limit; use `--max-steps` to bound them. Before it starts, `hka run` warns (`PROVIDER_COST_UNTRACKED`) once per such handler, counting every node whose profile uses it, whatever the profile's name (a `codex-api` profile that inherits `codex` counts). |
 | `--max-steps <COUNT>` | — | 200 | Maximum number of node executions before aborting. Prevents runaway loops. A 6-node pipeline that loops 3 times = 18 steps. |
 | `--fresh` | — | false | Discard any saved checkpoint and start from the beginning. By default, re-running the same command resumes from the last completed node. |
 | `--codergen-claude-settings-mode <MODE>` | — | `subscription-bare` | Claude settings mode for `codergen` nodes: `subscription-bare`, `strict-bare`, or `inherit`. |
 | `--codergen-claude-setting-sources <LIST>` | — | — | Comma-separated Claude setting sources for `inherit` mode (`user,project,local`). Required when inheriting. |
-| `--codergen-claude-settings <JSON_OR_FILE>` | — | — | PAS-owned Claude settings JSON or file path for `codergen` nodes. Does not imply user settings inheritance. |
+| `--codergen-claude-settings <JSON_OR_FILE>` | — | — | harmonik-attractor-owned Claude settings JSON or file path for `codergen` nodes. Does not imply user settings inheritance. |
 | `--codergen-claude-tools <TOOLS>` | — | Claude default | Explicit Claude built-in tool surface for `codergen` nodes, e.g. `Read,Edit` or `""` to disable built-ins. |
-| `--codergen-claude-agents <JSON>` | — | — | PAS-owned Claude agents JSON for `codergen` nodes. |
-| `--codergen-claude-plugin-dir <DIR>` | — | — | PAS-owned Claude plugin directory for `codergen` nodes. Repeatable. |
+| `--codergen-claude-agents <JSON>` | — | — | harmonik-attractor-owned Claude agents JSON for `codergen` nodes. |
+| `--codergen-claude-plugin-dir <DIR>` | — | — | harmonik-attractor-owned Claude plugin directory for `codergen` nodes. Repeatable. |
 | `--codergen-claude-mcp-config <JSON_OR_FILE>` | — | none | Explicit MCP config for `codergen` nodes. `--strict-mcp-config` remains enabled. |
 | `--run-id <UUID>` | — | generated (UUID v7) | Use this Run ID instead of generating one. Must be a UUID; anything else is rejected. The Monitor passes it so it knows the ID before the Run starts. |
 | `--json` | — | false | Print `{"v":1,"ok":true,"run_id","run_dir"}` as the first stdout line once the Run folder exists, and the Run's [`final.json`](#end-of-run-finaljson) object as the last stdout line when the Run ends (success, failure, stop or SIGTERM); all other output goes to stderr. A setup failure before the first line prints only `{"v":1,"ok":false,"error":…}`. |
 | `--allow-test-agents` | — | false | Allow agent profiles marked `test_only` (the test fakes). Without it, a pipeline using one fails before it starts, naming the node. |
 | `--allow-shared-workdir` | — | false | Start even if another process is working in this Run's worktree. Each Run has its own worktree, so this only matters when the same Run is resumed twice at once (e.g. with another `--logs`). The Run records `shared_workdir: true` in its `RunStarted` event when it actually shares the worktree. |
 
-PAS resolves each run-control field independently using `caller > manifest > permitted graph defaults > built-ins`.
+harmonik-attractor resolves each run-control field independently using `caller > manifest > permitted graph defaults > built-ins`.
 Graph defaults are permitted only for workflow semantics and the quality node's
 `max_fix_iterations`; graphs cannot author global `dry_run`, `workdir`,
 `max_steps`, `max_budget_usd`, `quality_disabled`,
@@ -73,23 +73,23 @@ iterations, and Claude `subscription_bare` isolation. A node-level
 
 When `--workdir` is inside a git repository, each Run works in its own git worktree on its own branch, and the main checkout is never changed:
 
-- **Branch:** `pas/run/<run-id>`, started at `--base` (default `HEAD`). An unknown or unborn base is refused with exit 1 (`invalid_base`) before any branch or worktree is created.
-- **Worktree:** `<worktree-root>/<run-id>`. The root is `--worktree-root`, else `[run] worktree_root` in `pas.toml` (relative to the `pas.toml`'s folder), else `<project-root>/.pas/worktrees`, where the project root is `git rev-parse --show-toplevel` of `--workdir`:
+- **Branch:** `hka/run/<run-id>`, started at `--base` (default `HEAD`). An unknown or unborn base is refused with exit 1 (`invalid_base`) before any branch or worktree is created.
+- **Worktree:** `<worktree-root>/<run-id>`. The root is `--worktree-root`, else `[run] worktree_root` in `.harmonik-attractor/config.toml` (relative to the `.harmonik-attractor/config.toml`'s folder), else `<project-root>/.harmonik-attractor/worktrees`, where the project root is `git rev-parse --show-toplevel` of `--workdir`:
 
   ```toml
   [run]
-  worktree_root = "../pas-worktrees"
+  worktree_root = "../hka-worktrees"
   ```
 
-- **Subdirectory:** if `--workdir` is a subdirectory of the repository, agents and tool nodes run in the same subdirectory of the worktree. `pas.toml` is still read from the source checkout.
-- **Dirty checkout:** uncommitted changes and untracked files in the main checkout (outside `.pas/`) are not in the worktree. A new Run still starts, and prints a warning that is also recorded in `run.json` and the `RunStarted` event's `warnings`.
-- **`.pas/.gitignore`:** a new Run writes a `.gitignore` containing `*` in `<project-root>/.pas` (default worktree root), in a custom worktree root, and in the `.pas` folder of the default logs (when `--logs` is not given), so `git status` in the main checkout stays clean and pas's own files never count as uncommitted changes. An existing `.gitignore` there is never changed.
-- **Resume:** re-running the command resumes in the worktree and branch recorded in `run.json`, whatever `--base`, `--worktree-root` or `pas.toml` now say; each differing setting prints a warning. `run.json` is not rewritten.
+- **Subdirectory:** if `--workdir` is a subdirectory of the repository, agents and tool nodes run in the same subdirectory of the worktree. `.harmonik-attractor/config.toml` is still read from the source checkout.
+- **Dirty checkout:** uncommitted changes and untracked files in the main checkout (outside `.harmonik-attractor/`) are not in the worktree. A new Run still starts, and prints a warning that is also recorded in `run.json` and the `RunStarted` event's `warnings`.
+- **`.harmonik-attractor/.gitignore`:** a new Run writes a `.gitignore` containing `*` and `!config.toml` in `<project-root>/.harmonik-attractor` (default worktree root), in a custom worktree root, and in the `.harmonik-attractor` folder of the default logs (when `--logs` is not given), so `git status` in the main checkout shows no run data and run data never counts as uncommitted changes, while `config.toml` stays committable. An existing `.gitignore` there is never changed.
+- **Resume:** re-running the command resumes in the worktree and branch recorded in `run.json`, whatever `--base`, `--worktree-root` or `.harmonik-attractor/config.toml` now say; each differing setting prints a warning. `run.json` is not rewritten.
 - **`--fresh`** starts a new Run with a new worktree and branch. The old worktree and branch stay; removing them is not done yet.
-- **Attempt commits:** after every attempt of every node except start and exit nodes, whatever its result, PAS commits everything in the worktree except `.pas/` (`git add -A -- . ':(exclude).pas'`, then `git commit --allow-empty --no-verify` with `core.hooksPath=/dev/null`, so none of the repository's hooks run, and with `commit.gpgsign=false`: attempt commits are never signed, since signing could prompt or fail in an unattended Run). The agent's own commits during the attempt stay, with PAS's commit on top. The message is `pas(<run-id>): <node> attempt <n> (<status>)` with the trailers `Pas-Run`, `Pas-Node`, `Pas-Attempt`, `Pas-Status` (`success`, `fail`, `retry` or `interrupted`), for a failure `Pas-Failure-Class` (`reported`, `timeout`, `crash`, `no_result` or `launch`), and `Pas-Session` (the agent session id the agent reported) for an agent attempt; an `interrupted` commit has it when the id was known before the agent started (see Agent sessions). If the repository has no `user.name`/`user.email`, the commit is made as `PAS <pas@localhost>`. A Run outside a worktree (not a git repository, or `--dry-run`) makes no commits. If an attempt can't be committed, the Run stops with `node '<id>' attempt <n>: could not commit the attempt: ...`; the changes stay in the worktree and a resume commits them as `interrupted`.
-- **Interrupted attempts:** if `pas` ended during an attempt (killed, crashed, or stopped with SIGTERM), a resume first commits what that attempt left (`Pas-Status: interrupted`), when the worktree has changes or the agent committed during it, even if the node has no attempts left. The node's next attempt is told so in its prompt: `Your previous attempt was interrupted; its changes since <start> are recorded in commit <sha>. Review git diff <start> before continuing.`, where `<start>` is the worktree's commit when the interrupted attempt began. An interrupted attempt still counts toward `max_retries`, except one ended by a stop (SIGTERM), which does not. Attempt numbers (`Pas-Attempt`, `PAS_ATTEMPT`) never repeat within a visit of a node: the attempt after an interrupted attempt 1 is attempt 2, whether or not attempt 1 counted.
+- **Attempt commits:** after every attempt of every node except start and exit nodes, whatever its result, harmonik-attractor commits everything in the worktree except `.harmonik-attractor/` (`git add -A -- . ':(exclude).harmonik-attractor'`, then `git commit --allow-empty --no-verify` with `core.hooksPath=/dev/null`, so none of the repository's hooks run, and with `commit.gpgsign=false`: attempt commits are never signed, since signing could prompt or fail in an unattended Run). The agent's own commits during the attempt stay, with harmonik-attractor's commit on top. The message is `hka(<run-id>): <node> attempt <n> (<status>)` with the trailers `Hka-Run`, `Hka-Node`, `Hka-Attempt`, `Hka-Status` (`success`, `fail`, `retry` or `interrupted`), for a failure `Hka-Failure-Class` (`reported`, `timeout`, `crash`, `no_result` or `launch`), and `Hka-Session` (the agent session id the agent reported) for an agent attempt; an `interrupted` commit has it when the id was known before the agent started (see Agent sessions). If the repository has no `user.name`/`user.email`, the commit is made as `harmonik-attractor <hka@localhost>`. A Run outside a worktree (not a git repository, or `--dry-run`) makes no commits. If an attempt can't be committed, the Run stops with `node '<id>' attempt <n>: could not commit the attempt: ...`; the changes stay in the worktree and a resume commits them as `interrupted`.
+- **Interrupted attempts:** if `harmonik-attractor` ended during an attempt (killed, crashed, or stopped with SIGTERM), a resume first commits what that attempt left (`Hka-Status: interrupted`), when the worktree has changes or the agent committed during it, even if the node has no attempts left. The node's next attempt is told so in its prompt: `Your previous attempt was interrupted; its changes since <start> are recorded in commit <sha>. Review git diff <start> before continuing.`, where `<start>` is the worktree's commit when the interrupted attempt began. An interrupted attempt still counts toward `max_retries`, except one ended by a stop (SIGTERM), which does not. Attempt numbers (`Hka-Attempt`, `HKA_ATTEMPT`) never repeat within a visit of a node: the attempt after an interrupted attempt 1 is attempt 2, whether or not attempt 1 counted.
 - **The previous failure in the prompt:** when an agent node runs again after its last finished attempt failed, its prompt gets one note after the `Task (...)` line naming that failure's class and reason: `The previous attempt timed out after 600 s.`, `The previous attempt failed (reported): <the agent's own error text>`, `The previous attempt failed (crash): <the crash message>`, or `The previous attempt asked to be retried: <notes>`. The reason keeps its last 2000 bytes. The note applies to whichever attempt of the node comes next: a retry, a loop back through an edge (a reported failure is never retried, so it re-runs only through an edge such as `work -> work [condition="outcome=fail"]`), or the first attempt after a resume. A run after a success gets none, a stopped attempt changes nothing, and no other node's prompt sees it. With 07's interrupted note too, the failure note comes first. Retry rules don't change.
-- **End of run:** when the Run succeeds, its worktree is removed (`git worktree remove`) and its branch stays, so the result is `git log pas/run/<run-id>`. A worktree with uncommitted changes outside `.pas/`, or one another process is working in (`--allow-shared-workdir`), is kept instead, with a warning in `final.json`. A failed or stopped Run keeps both the worktree and the branch, for a resume or a look. The branch is never deleted.
+- **End of run:** when the Run succeeds, its worktree is removed (`git worktree remove`) and its branch stays, so the result is `git log hka/run/<run-id>`. A worktree with uncommitted changes outside `.harmonik-attractor/`, or one another process is working in (`--allow-shared-workdir`), is kept instead, with a warning in `final.json`. A failed or stopped Run keeps both the worktree and the branch, for a resume or a look. The branch is never deleted.
 - **Directory mode:** each `.dot` file (a phase) is its own Run with its own worktree and branch. Phase 1's branch starts at `--base`; each later phase's branch starts at the previous phase's final commit (its branch, recorded as the phase's `base`), so a phase sees every earlier phase's committed edits. See [Directory mode](#directory-mode).
 - **Not a git repository** (or `git` not on `PATH`), or **`--dry-run`:** the Run works in `--workdir` itself, as before; outside git it prints a `not a git repository` warning.
 
@@ -99,14 +99,14 @@ When `--workdir` is inside a git repository, each Run works in its own git workt
 
 Each Attempt holds two exclusive, non-blocking `flock` locks until it ends. Both lock files contain `{"pid":…,"run_id":…}` for the Run that holds them.
 
-- **Pipeline lock:** `run.lock` in the Pipeline's logs folder. A second `pas run` of the same Pipeline exits with code 5: `error: pipeline already running (pid 1234, run 0192...)`. `--allow-shared-workdir` does not override this.
-- **Worktree lock:** `pas-run.lock` in the Run's worktree's git dir (`<repo>/.git/worktrees/<run-id>/pas-run.lock`). Since each Run has its own worktree, two Pipelines in one repository both start. A second process working in the same Run's worktree (the same `--run-id` under another `--logs`) exits with code 6 and names the other Run, unless `--allow-shared-workdir` is passed. Outside a git repository, or without `git` on `PATH`, only the Pipeline lock is taken.
+- **Pipeline lock:** `run.lock` in the Pipeline's logs folder. A second `hka run` of the same Pipeline exits with code 5: `error: pipeline already running (pid 1234, run 0192...)`. `--allow-shared-workdir` does not override this.
+- **Worktree lock:** `harmonik-attractor-run.lock` in the Run's worktree's git dir (`<repo>/.git/worktrees/<run-id>/harmonik-attractor-run.lock`). Since each Run has its own worktree, two Pipelines in one repository both start. A second process working in the same Run's worktree (the same `--run-id` under another `--logs`) exits with code 6 and names the other Run, unless `--allow-shared-workdir` is passed. Outside a git repository, or without `git` on `PATH`, only the Pipeline lock is taken.
 
-The Pipeline lock is taken before the checkpoint is read and before any branch or worktree is created; the Worktree lock is taken once the Run's worktree exists. A refused Run creates no Run folder or Run Index entry. With `--json`, the refusal is printed as `{"v":1,"ok":false,"error":{"code":"pipeline_locked"|"worktree_locked","message":…}}`. The OS releases both locks when the process exits, even after `kill -9`, so no cleanup is needed. A Pipeline whose stages call `pas run` in the same worktree needs `--allow-shared-workdir` on the inner `pas run`.
+The Pipeline lock is taken before the checkpoint is read and before any branch or worktree is created; the Worktree lock is taken once the Run's worktree exists. A refused Run creates no Run folder or Run Index entry. With `--json`, the refusal is printed as `{"v":1,"ok":false,"error":{"code":"pipeline_locked"|"worktree_locked","message":…}}`. The OS releases both locks when the process exits, even after `kill -9`, so no cleanup is needed. A Pipeline whose stages call `hka run` in the same worktree needs `--allow-shared-workdir` on the inner `hka run`.
 
 #### Run folder layout
 
-Every Run writes a Run Journal under its Pipeline's logs folder and registers in the Run Index (`$PAS_STATE_DIR/runs.jsonl`, see [Environment](#environment)):
+Every Run writes a Run Journal under its Pipeline's logs folder and registers in the Run Index (`$HKA_STATE_DIR/runs.jsonl`, see [Environment](#environment)):
 
 ```
 <logs>/<stem>-<hash>/          the Pipeline folder
@@ -128,18 +128,18 @@ Every file and event, its format, when it is written and its version field: [run
 
 #### End of run: `final.json`
 
-Every end the `pas run` process lives through writes `runs/<run-id>/final.json` (atomically: a temp file, then a rename), after `AttemptEnded`: success, failure, a stop between stages, and SIGTERM (exit 143). A SIGKILL writes none. Each Attempt overwrites it, so it describes the latest end. With `--json` the same object, on one line, is the last stdout line.
+Every end the `hka run` process lives through writes `runs/<run-id>/final.json` (atomically: a temp file, then a rename), after `AttemptEnded`: success, failure, a stop between stages, and SIGTERM (exit 143). A SIGKILL writes none. Each Attempt overwrites it, so it describes the latest end. With `--json` the same object, on one line, is the last stdout line.
 
 ```json
 {
   "v": 1,
   "run_id": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b",
   "status": "failed",
-  "branch": "pas/run/0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b",
+  "branch": "hka/run/0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b",
   "base": "HEAD",
   "base_sha": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
   "final_commit": "9fceb02d0ae598e95dc970b74767f19372d61af8",
-  "worktree": "/repo/.pas/worktrees/0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b",
+  "worktree": "/repo/.harmonik-attractor/worktrees/0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b",
   "error": "Handler 'codergen' failed on node 'work': …",
   "warnings": []
 }
@@ -175,37 +175,37 @@ Prints:
 
 | Code | Meaning |
 |------|---------|
-| 0 | Pipeline completed successfully, or a stop request (`pas stop`) ended the Run between stages |
+| 0 | Pipeline completed successfully, or a stop request (`hka stop`) ended the Run between stages |
 | 1 | Pipeline failed (validation error, handler error, goal gate unsatisfied, or quality loop exhausted) |
-| 2 | `pas.toml` found but not trusted — run `pas trust add` or set `PAS_TRUST_THIS=1` |
+| 2 | `.harmonik-attractor/config.toml` found but not trusted — run `hka trust add` or set `HKA_TRUST_THIS=1` |
 | 5 | The Pipeline is already running (another Run holds its Pipeline lock) |
 | 6 | Another process is working in this Run's git worktree and `--allow-shared-workdir` was not passed |
 
 #### Quality manifest warnings
 
-If a pipeline contains a `quality` node but no `pas.toml` is found in the working directory tree, `pas run` emits a `[WARN]` preflight diagnostic and continues. Stages will use the node's `quality_checks` attribute as a fallback; the manifest-driven stage list (`[quality.stages]`) is unavailable.
+If a pipeline contains a `quality` node but no `.harmonik-attractor/config.toml` is found in the working directory tree, `hka run` emits a `[WARN]` preflight diagnostic and continues. Stages will use the node's `quality_checks` attribute as a fallback; the manifest-driven stage list (`[quality.stages]`) is unavailable.
 
-To suppress the warning, run `pas init` in your project root to generate a `pas.toml`.
+To suppress the warning, run `hka init` in your project root to generate a `.harmonik-attractor/config.toml`.
 
 #### Provider CLI versions
 
 `codergen` nodes read each provider's streaming output. These are the minimum
 supported provider CLI versions:
 
-| Provider CLI | Minimum supported version | Output flag PAS passes | What PAS reads from the stream |
+| Provider CLI | Minimum supported version | Output flag harmonik-attractor passes | What harmonik-attractor reads from the stream |
 |--------------|---------------------------|------------------------|--------------------------------|
 | Claude Code (`claude`) | 2.1.282 | `--output-format stream-json --verbose` | Final text, actual model, input and output tokens, cost |
 | Codex CLI (`codex`) | 0.151.0 | `exec --json` | Final text, input and output tokens. Codex reports no model name and no cost. |
 | Pi (`pi`) | Not pinned: whatever `pi` is installed (needs Node 22.19+); built against 1.0.3 | `--mode json` (from the profile) | Final text, actual model, input and output tokens, cost |
 | Gemini CLI (`gemini`) | 0.11.0 for `stream-json`; older versions use `json` | `--output-format stream-json`, or `--output-format json` when `gemini --help` does not list `stream-json` | Final text, actual model, input and output tokens. Gemini reports no cost. |
 
-- The Claude Code and Codex CLI minimums are the versions PAS was verified
+- The Claude Code and Codex CLI minimums are the versions harmonik-attractor was verified
   against. Older versions may work but are not supported.
 - Gemini CLI 0.11.0 is the first release with `--output-format stream-json`.
-  PAS runs the profile's whole command with `--help` once per command per
-  `pas` process to check for it, as it runs the agent: in the workdir, with
+  harmonik-attractor runs the profile's whole command with `--help` once per command per
+  `harmonik-attractor` process to check for it, as it runs the agent: in the workdir, with
   the agent's environment, stdin from `/dev/null`, in its own process group
-  (killed after 10 s). If the check fails for any reason, PAS uses
+  (killed after 10 s). If the check fails for any reason, harmonik-attractor uses
   `--output-format json`.
 - Input tokens include cached prompt tokens for every provider.
 - A value the provider does not report is recorded as unknown. A missing value
@@ -213,17 +213,17 @@ supported provider CLI versions:
 
 #### Claude settings isolation for `codergen`
 
-Claude-backed `codergen` nodes run in PAS-controlled isolation by default. PAS passes Claude Code `--safe-mode`, `--strict-mcp-config`, and `--disable-slash-commands` so subscription auth still works while personal hooks, skills, plugins, MCP servers, and other ambient Claude Code customizations are suppressed as much as Claude allows without literal bare mode.
+Claude-backed `codergen` nodes run in harmonik-attractor-controlled isolation by default. harmonik-attractor passes Claude Code `--safe-mode`, `--strict-mcp-config`, `--disable-slash-commands`, and `--disallowedTools` with the session tools that reach outside the Run, so subscription auth still works while personal hooks, skills, plugins, MCP servers, and other ambient Claude Code customizations are suppressed as much as Claude allows without literal bare mode.
 
 Modes:
 
 | Mode | Claude behavior | Auth impact |
 |------|-----------------|-------------|
-| `subscription-bare` | Default. Uses `--safe-mode` plus PAS-owned explicit settings/tools/agents/plugins/MCP when configured. | Works with normal Claude subscription auth. |
+| `subscription-bare` | Default. Uses `--safe-mode` plus harmonik-attractor-owned explicit settings/tools/agents/plugins/MCP when configured. | Works with normal Claude subscription auth. |
 | `strict-bare` | Uses Claude's literal `--bare`. Strongest isolation. | Requires API-key/auth-helper-compatible Claude auth; normal subscription OAuth/keychain auth is not read. |
 | `inherit` | Does not pass `--safe-mode` or `--bare`; loads explicit `--setting-sources`. | Personal hooks/settings may run. Opt in loudly. |
 
-Equivalent `pas.toml` config:
+Equivalent `.harmonik-attractor/config.toml` config:
 
 ```toml
 [codergen.claude]
@@ -232,23 +232,23 @@ setting_sources = ["user"]           # only for inherit
 settings_json = "{\"enabledPlugins\":{}}"
 tools = "Read,Edit"
 agents_json = "{}"
-plugin_dirs = [".pas/claude-plugin"]
+plugin_dirs = [".harmonik-attractor/claude-plugin"]
 mcp_config_json = "{}"
 ```
 
-CLI flags override the corresponding `pas.toml` field for the current run;
+CLI flags override the corresponding `.harmonik-attractor/config.toml` field for the current run;
 unset CLI fields continue to inherit their individual manifest values.
 
 These settings are added to the end of the `claude` profile's `args` (below),
 before `inherit_from` is resolved, so a profile that inherits from `claude`
 gets them too. The argv is the same as before profiles existed.
 
-#### Agent profiles (`[agents.<name>]` in `pas.toml`)
+#### Agent profiles (`[agents.<name>]` in `.harmonik-attractor/config.toml`)
 
 A codergen node runs through a named **agent profile**: `agent="<profile>"`
 on the node, or `llm_provider`, which names a built-in profile:
 `claude`/`anthropic` is `claude`, `codex`/`openai` is `codex`,
-`gemini`/`google` is `gemini`. PAS ships these three in its built-in
+`gemini`/`google` is `gemini`. harmonik-attractor ships these three in its built-in
 `agents.toml`:
 
 | Profile | Mechanism (handler) | Command and args | The handler adds |
@@ -279,7 +279,7 @@ args = ["--dangerously-skip-permissions", "--strict-mcp-config",
 A model is added as `--model <model>` for all three; only `claude` takes a
 reasoning level (`--effort <level>`). Every agent node runs the same way:
 stdin is `/dev/null`, the environment is the profile's (below; the
-`PAS_*` ids are added), stdout and stderr go to the Run's `transcripts/`,
+`HKA_*` ids are added), stdout and stderr go to the Run's `transcripts/`,
 and a timeout or stop gets TERM, `kill_grace`, then KILL. `LlmInvoked`
 records the profile name as `provider`.
 
@@ -306,7 +306,7 @@ output that isn't Codex JSONL) it fails as no result.
 > ```
 >
 > Never put a key in `env.set`: its values are literal and committed with
-> `pas.toml`, so they land in git and in every Run's worktree.
+> `.harmonik-attractor/config.toml`, so they land in git and in every Run's worktree.
 
 #### The `pi` mechanism
 
@@ -314,7 +314,7 @@ The `pi` handler runs the Pi coding agent (`pi --mode json`) against an
 OpenAI-compatible provider: DeepSeek, Z.ai's GLM, or your own hosted
 model. There is no built-in `pi` profile; copy the ones you need from
 [`docs/examples/pi-agents.toml`](examples/pi-agents.toml) (`deepseek`,
-`glm`, `qwen`) into `pas.toml`. A `pi` profile takes four more fields:
+`glm`, `qwen`) into `.harmonik-attractor/config.toml`. A `pi` profile takes four more fields:
 
 | Field | Meaning |
 |-------|---------|
@@ -323,7 +323,7 @@ model. There is no built-in `pi` profile; copy the ones you need from
 | `api_key_env` | The environment variable holding the API key. |
 | `limits` | `{ context = <tokens>, max_output = <tokens> }`: the model's limits, for a provider Pi doesn't know. Without it Pi uses the provider's own model list. |
 
-`model` is required too, and `pas validate` refuses a `pi` profile without
+`model` is required too, and `hka validate` refuses a `pi` profile without
 `provider` or `model`, with `model_args` (the handler passes the model
 itself), or with a zero limit. Another mechanism refuses these four fields.
 
@@ -334,22 +334,22 @@ reasoning args (`--thinking <level>`), then the handler's `--model
 continues a Pi session, so `pi` profiles resume with no resume form and
 default to `fidelity="full"`.
 
-**The API key.** PAS reads the variable `api_key_env` names from the
+**The API key.** harmonik-attractor reads the variable `api_key_env` names from the
 profile's `env.set`, else its own environment; naming it lets it through
 even when `env.remove` lists it (the default list has `OPENAI_API_KEY`).
-PAS writes the key into a `models.json` in a per-invocation
+harmonik-attractor writes the key into a `models.json` in a per-invocation
 `PI_CODING_AGENT_DIR` in the run folder (`pi-agent/<inv>/`, folder 0700,
 files created 0600), with a `settings.json` holding Pi's retry settings
 (see [Rate limits](#rate-limits)), and removes the folder when the
 invocation ends. The key is never on Pi's command line (where `ps`
 shows it) and never in its environment: the variable is removed from it. A
 named variable that is unset or empty fails the node to launch
-("API key variable <NAME> is not set") without starting Pi. If `pas` itself
+("API key variable <NAME> is not set") without starting Pi. If `harmonik-attractor` itself
 is killed with SIGKILL, the folder and its key stay in the run folder until
 you delete them. Pi also gets `PI_TELEMETRY=0`, `PI_OFFLINE=1` and
 `PI_SKIP_VERSION_CHECK=1`.
 
-**Outcomes.** Pi exits 0 even when the provider fails, so PAS reads the last
+**Outcomes.** Pi exits 0 even when the provider fails, so harmonik-attractor reads the last
 assistant message's `stopReason`: `stop` completes with its text; `error`
 or `aborted` fails as reported, with Pi's `errorMessage`; any other reason
 (`toolUse`, `length`, or a new one) fails as no result, naming it. No
@@ -362,31 +362,31 @@ session by default (design §1):
 
 - **Thread:** a node's session is recorded under its thread key, its
   `thread_id` or else its node id; nodes with one `thread_id` share it, and
-  must use the same profile (`pas validate` refuses a thread shared across
+  must use the same profile (`hka validate` refuses a thread shared across
   profiles, since one agent can't resume another's session). The
   map lives in `checkpoint.json` (`agent_sessions`), so it survives a stop
   and a resume.
 - **Fidelity:** `fidelity="full"` (the default when the profile can resume)
   continues the thread's recorded session; `fidelity="fresh"` starts a new
   one every time. A profile that can't resume (`gemini`) defaults to
-  `fresh`, and `fidelity="full"` on it fails `pas validate`.
-  `pas validate` lists each agent node's effective fidelity.
-- **Ids:** PAS mints a session id for a new session (`{session_id}`,
-  `PAS_SESSION_ID`) and records the id the agent reports: Claude's
+  `fresh`, and `fidelity="full"` on it fails `hka validate`.
+  `hka validate` lists each agent node's effective fidelity.
+- **Ids:** harmonik-attractor mints a session id for a new session (`{session_id}`,
+  `HKA_SESSION_ID`) and records the id the agent reports: Claude's
   `session_id`, Codex's `thread_id` (Codex can't be given an id); Pi
-  keeps the id PAS passes. It shows
+  keeps the id harmonik-attractor passes. It shows
   in `LlmStarted.session_id`, `LlmInvoked.agent_session_id` and
-  `continued`, and the `Pas-Session` trailer of the attempt commit.
+  `continued`, and the `Hka-Session` trailer of the attempt commit.
 - **Kept across a kill:** when the session id is known before the agent
-  starts (a continued session, Claude's `--session-id`, Pi), PAS writes it
-  to `checkpoint.json` first, so after `pas` is killed mid-attempt the
+  starts (a continued session, Claude's `--session-id`, Pi), harmonik-attractor writes it
+  to `checkpoint.json` first, so after `harmonik-attractor` is killed mid-attempt the
   resume continues that session and the interrupted commit carries its
-  `Pas-Session`. Codex's `thread_id` is known only once Codex reports it:
-  a Codex attempt `pas` never finished loses it, and the node's next
+  `Hka-Session`. Codex's `thread_id` is known only once Codex reports it:
+  a Codex attempt `harmonik-attractor` never finished loses it, and the node's next
   attempt continues the thread's earlier session, or starts a new one.
   When the killed attempt started a new session, the resume reads its
   transcripts (every spawn's): if the agent named the session there (Claude's init line), the
-  next attempt continues it; if not (`pas` died before the agent created
+  next attempt continues it; if not (`harmonik-attractor` died before the agent created
   it), the next attempt starts it again with `--session-id` and the same
   id. The remaining edge: a kill after Claude created the session but
   before its init line reached the transcript; Claude then refuses the
@@ -407,9 +407,9 @@ session by default (design §1):
   a crash. The map keeps the dead id, so a fail edge looping back to the
   node fails the same way, until the Run's step limit: route a not-found
   failure to a node with `fidelity="fresh"` or a different `thread_id`, or
-  start over with `pas run --fresh`.
+  start over with `hka run --fresh`.
 
-A project replaces a profile by name, or adds one, in `pas.toml`:
+A project replaces a profile by name, or adds one, in `.harmonik-attractor/config.toml`:
 
 ```toml
 [agents.claude-opus]
@@ -436,18 +436,18 @@ test_only = true
 | `kill_grace` | How long to wait after TERM before KILL, on timeout or stop (built-in `10s`). |
 | `rate_limit_window` | How long a rate-limited invocation may keep waiting and re-spawning, from its first rate limit, on top of its timeout (built-in `2m`; `"0s"` turns waiting off). See [Rate limits](#rate-limits). |
 | `env.remove` | Variables removed from the agent's environment, on top of the calling session's identity, which is always removed (below). |
-| `env.set` | Variables set in the agent's environment, after `env.remove`; the `PAS_*` ids are set last. Values are literal and committed with `pas.toml`: never secrets. |
-| `test_only` | Refused unless `pas run` / `pas validate` get `--allow-test-agents`. |
+| `env.set` | Variables set in the agent's environment, after `env.remove`; the `HKA_*` ids are set last. Values are literal and committed with `.harmonik-attractor/config.toml`: never secrets. |
+| `test_only` | Refused unless `hka run` / `hka validate` get `--allow-test-agents`. |
 | `inherit_from` | Another profile to take every field this one leaves unset from. |
 
-Resolution: a `pas.toml` profile replaces the built-in profile of the same
+Resolution: a `.harmonik-attractor/config.toml` profile replaces the built-in profile of the same
 name whole. Then `inherit_from` is followed field by field: a field the
 profile sets replaces the parent's whole value (lists are not merged).
 Last, the built-in defaults fill any field still unset: `timeout = "10m"`,
 `kill_grace = "10s"`, `rate_limit_window = "2m"` and the `env.remove` list
 below. An unknown field, an
 unknown or cyclic `inherit_from`, a missing `mechanism` or `command`, or a
-bad duration fails `pas run` and `pas validate`, naming the profile.
+bad duration fails `hka run` and `hka validate`, naming the profile.
 
 > **Warning.** A profile that sets its own `env.remove` replaces the default
 > list, so `ANTHROPIC_API_KEY` then reaches the agent unless the profile
@@ -460,8 +460,8 @@ bad duration fails `pas run` and `pas validate`, naming the profile.
 > ```
 
 **The calling session's identity.** Whatever a profile's `env.remove`
-says, PAS always strips the identity of the Claude Code or hk3 session that
-ran `pas`, so an agent's `hk3 crew` command doesn't act as that session and
+says, harmonik-attractor always strips the identity of the Claude Code or hk3 session that
+ran `harmonik-attractor`, so an agent's `hk3 crew` command doesn't act as that session and
 a child `claude` stays messageable: `CLAUDECODE`, `CLAUDE_PID`,
 `CLAUDE_EFFORT`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_SESSION_ID`,
 `CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN`,
@@ -475,7 +475,7 @@ names on purpose. The prompt file's env names show what the agent got.
 
 On a node, `llm_model` beats the profile's `model`, which beats the graph's
 `model`; `reasoning_effort` beats the profile's `reasoning`; `timeout` beats
-the profile's `timeout`. `pas run` and `pas validate` check every profile a
+the profile's `timeout`. `hka run` and `hka validate` check every profile a
 pipeline uses before anything starts, and name the node: an unknown profile,
 a reasoning level on a profile without `reasoning_args`, or a `test_only`
 profile without `--allow-test-agents`.
@@ -491,14 +491,14 @@ error and either the last `rate_limit_event` line's status is neither
 error (`errors`, else `result`) says "rate limit", "usage limit" or `429`
 (as a whole word). An error subtype without `is_error`, such as running out
 of turns, is never read as a rate limit by its text, which is the model's
-own. PAS then waits:
+own. harmonik-attractor then waits:
 
 - until the event's `resetsAt`, when that is in the future;
 - 1 s, when `resetsAt` is now or past (the limit has already reset);
 - with no `resetsAt`, 5 s, doubling on each further spawn (5, 10, 20 s ...).
 
 Each wait is journaled as `LlmRateLimited` (`wait_s`, and `spawn`, the
-spawn that was limited). Then PAS spawns Claude again with the profile's
+spawn that was limited). Then harmonik-attractor spawns Claude again with the profile's
 resume form (`--resume <id>`), continuing the session, or, when the
 rate-limited spawn never reported its session (no init line), with the same
 `--session-id` again. Every spawn after the first writes its own
@@ -515,7 +515,7 @@ with "rate limited: <the agent's error>; waited <s> s over <n> spawns",
 which a fail edge can route on. A stop or cancel during a wait ends it at
 once. `rate_limit_window = "0s"` fails the first rate-limited spawn this way.
 
-**Pi (`pi`).** Pi retries a rate-limited request itself. PAS writes its
+**Pi (`pi`).** Pi retries a rate-limited request itself. harmonik-attractor writes its
 `settings.json` so that its retries cover the window (base delay 2 s,
 doubling; with `2m`, 6 retries, and a retry delay of at most the window),
 and lets a Pi invocation run for its timeout plus the window. A `"0s"`
@@ -524,10 +524,10 @@ window turns Pi's retries off.
 **Codex and Gemini** ignore the window: a rate-limited attempt fails as it
 did before.
 
-> **Unconfirmed assumptions.** These rest on what PAS could not check
+> **Unconfirmed assumptions.** These rest on what harmonik-attractor could not check
 > against a real rate limit:
 >
-> - Claude's `resetsAt` is in Unix seconds. If it is in milliseconds, PAS
+> - Claude's `resetsAt` is in Unix seconds. If it is in milliseconds, harmonik-attractor
 >   reads a reset far in the future, the wait doesn't fit the window, and
 >   the node fails as rate limited at once.
 > - A `rate_limit_event` with status `allowed_warning` means the request was
@@ -542,14 +542,14 @@ did before.
 
 ### `runs` — List Runs
 
-Lists every Run in the Run Index (`runs.jsonl` in `$PAS_STATE_DIR`, else
-`$XDG_STATE_HOME/pas`, else `~/.local/state/pas`) in start order, each with a
+Lists every Run in the Run Index (`runs.jsonl` in `$HKA_STATE_DIR`, else
+`$XDG_STATE_HOME/harmonik-attractor`, else `~/.local/state/harmonik-attractor`) in start order, each with a
 status derived from its Run Journal. The Index never stores a status.
-`pas runs` only reads: it takes no Run lock, so it never makes a starting
-`pas run` exit with 5 or 6.
+`hka runs` only reads: it takes no Run lock, so it never makes a starting
+`hka run` exit with 5 or 6.
 
 ```
-pas runs [--active] [--json]
+hka runs [--active] [--json]
 ```
 
 #### Options
@@ -594,7 +594,7 @@ With `--json`, stdout is exactly one object. Each Run is its Index entry
 plus `status`:
 
 ```json
-{"v":1,"ok":true,"runs":[{"v":1,"run_id":"0192...","started_at":"2026-09-24T10:00:00Z","workdir":"/abs/repo","pipeline_path":"/abs/pipelines/x.dot","run_dir":"/abs/repo/.pas/logs/x-1a2b3c4d/runs/0192...","status":"completed"}]}
+{"v":1,"ok":true,"runs":[{"v":1,"run_id":"0192...","started_at":"2026-09-24T10:00:00Z","workdir":"/abs/repo","pipeline_path":"/abs/pipelines/x.dot","run_dir":"/abs/repo/.harmonik-attractor/logs/x-1a2b3c4d/runs/0192...","status":"completed"}]}
 ```
 
 An empty or absent Index gives `{"v":1,"ok":true,"runs":[]}`. If the Index
@@ -612,20 +612,20 @@ exists but cannot be read, stdout is
 
 ### `answer` — Answer a waiting Human Gate
 
-Creates the answer file of a Human Gate question. The waiting `pas run` picks
+Creates the answer file of a Human Gate question. The waiting `hka run` picks
 it up, journals `HumanInputAnswered` with the file's `source`, and continues.
-`pas answer` finds the Run through the Run Index, takes no Run lock, and never
+`hka answer` finds the Run through the Run Index, takes no Run lock, and never
 writes the Run Journal.
 
 ```
-pas answer <run-id> <question-id> <choice> [--source cli|monitor] [--json]
+hka answer <run-id> <question-id> <choice> [--source cli|monitor] [--json]
 ```
 
 - `<question-id>` is the `question_id` of the Run's `HumanInputRequested` Event.
 - `<choice>` must equal one of that Event's `choices` (an edge label) exactly;
   numbers are not accepted.
 - `--source` (default `cli`) is recorded as the answer's source. `terminal` is
-  reserved for `pas run` itself.
+  reserved for `hka run` itself.
 
 The file is `<run-dir>/answers/<question-id>.json`, created exclusively, so the
 first answer wins and an existing file is never changed:
@@ -662,14 +662,14 @@ Error codes: `unknown_run`, `run_missing`, `unknown_question`,
 ### `stop` — Stop an active Run after its current stage
 
 ```
-pas stop <run-id> [--source cli|monitor] [--json]
+hka stop <run-id> [--source cli|monitor] [--json]
 ```
 
-Creates `<logs>/runs/<run-id>/control/stop`. The running `pas run` checks for the file before each stage. The stage in progress always finishes. Then the Run journals `StopRequested`, saves a checkpoint at the next node, journals `AttemptEnded` with reason `stopped`, and exits 0. Its status is `stopped`.
+Creates `<logs>/runs/<run-id>/control/stop`. The running `hka run` checks for the file before each stage. The stage in progress always finishes. Then the Run journals `StopRequested`, saves a checkpoint at the next node, journals `AttemptEnded` with reason `stopped`, and exits 0. Its status is `stopped`.
 
-Run the same `pas run` command again to resume. The resume starts at the next node without repeating the finished stage, and removes the stop file first. A stop file left over from an earlier Attempt never stops a new one. In directory mode a stopped pipeline halts the batch; rerun to resume it.
+Run the same `hka run` command again to resume. The resume starts at the next node without repeating the finished stage, and removes the stop file first. A stop file left over from an earlier Attempt never stops a new one. In directory mode a stopped pipeline halts the batch; rerun to resume it.
 
-`pas stop` never writes the journal and takes no lock. The stop file is JSON, `{"v":1,"source":"cli","requested_at":"..."}`; an unreadable file still stops the Run, with source `cli`. A second `pas stop` succeeds and leaves the first file unchanged.
+`hka stop` never writes the journal and takes no lock. The stop file is JSON, `{"v":1,"source":"cli","requested_at":"..."}`; an unreadable file still stops the Run, with source `cli`. A second `hka stop` succeeds and leaves the first file unchanged.
 
 A Run waiting at a Human Gate does not check for a stop until the gate is answered. If the Run ends between the status check and the file write, the stale file is removed by the next Attempt.
 
@@ -694,14 +694,14 @@ Success: `{"v":1,"ok":true,"run_id":"…","stop_path":"…","already_requested":
 ### `kill` — End an active Run now
 
 ```
-pas kill <run-id> [--grace <duration>] [--json]
+hka kill <run-id> [--grace <duration>] [--json]
 ```
 
-Ends a `running` Run immediately. `pas kill` takes the PID of the Run's last Heartbeat (else its `AttemptStarted`) and signals it only if that PID provably is the Run: the Pipeline lock (`run.lock`) must be held right now, and the lock file must name that PID and this Run. Otherwise it sends no signal and fails with `pid_not_lock_holder`. A Run that is not `running` fails with `not_active`, also without a signal.
+Ends a `running` Run immediately. `hka kill` takes the PID of the Run's last Heartbeat (else its `AttemptStarted`) and signals it only if that PID provably is the Run: the Pipeline lock (`run.lock`) must be held right now, and the lock file must name that PID and this Run. Otherwise it sends no signal and fails with `pid_not_lock_holder`. A Run that is not `running` fails with `not_active`, also without a signal.
 
-It sends SIGTERM to the Run's process group (only when the Run leads its group; otherwise to the PID alone). A `pas run` handles SIGTERM by stopping its current stage (an agent gets TERM, its profile's `kill_grace`, then KILL; other stage children are killed), journaling `AttemptEnded` with reason `stopped`, and exiting. If the process is still alive after `--grace`, `pas kill` sends SIGKILL to the Run and to the process groups of its child processes (provider CLIs and tool commands run in their own groups). A SIGKILLed Run writes no `AttemptEnded`, so its status becomes `crashed` once its Heartbeat is stale. The checkpoint of the last completed stage is kept: run the same `pas run` command again to resume, which repeats the stage that was in progress.
+It sends SIGTERM to the Run's process group (only when the Run leads its group; otherwise to the PID alone). A `hka run` handles SIGTERM by stopping its current stage (an agent gets TERM, its profile's `kill_grace`, then KILL; other stage children are killed), journaling `AttemptEnded` with reason `stopped`, and exiting. If the process is still alive after `--grace`, `hka kill` sends SIGKILL to the Run and to the process groups of its child processes (provider CLIs and tool commands run in their own groups). A SIGKILLed Run writes no `AttemptEnded`, so its status becomes `crashed` once its Heartbeat is stale. The checkpoint of the last completed stage is kept: run the same `hka run` command again to resume, which repeats the stage that was in progress.
 
-`pas kill` never writes the journal and takes no lock beyond a momentary probe. Use `pas stop` to end a Run cleanly after its current stage.
+`hka kill` never writes the journal and takes no lock beyond a momentary probe. Use `hka stop` to end a Run cleanly after its current stage.
 
 #### Options
 
@@ -726,7 +726,7 @@ Success: `{"v":1,"ok":true,"run_id":"…","pid":123,"signal":"SIGTERM","children
 Available only when built with `--features monitor` (`install.sh` does this).
 
 ```
-pas monitor [--port 7777] [--open]
+hka monitor [--port 7777] [--open]
 ```
 
 #### Options
@@ -744,9 +744,9 @@ binary and need no network.
 
 The Monitor observes Runs only through Run Journals and the Run Index, so a
 Run started in any terminal appears without configuration. It controls Runs
-with the same files `pas stop` and `pas answer` write. It plans and launches
-Runs by spawning the `pas` binary, never by linking the engine (ADR 0001,
-ADR 0002). Uploaded Plans are stored under `$PAS_STATE_DIR/plans/<plan-id>/`.
+with the same files `hka stop` and `hka answer` write. It plans and launches
+Runs by spawning the `harmonik-attractor` binary, never by linking the engine (ADR 0001,
+ADR 0002). Uploaded Plans are stored under `$HKA_STATE_DIR/plans/<plan-id>/`.
 A Plan runs in reviewed mode (Proposal, Epic, Pipeline, then Launch, each
 step confirmed) or one-click mode (all steps without pausing, stopping at the
 first failure). Without `--features monitor` the subcommand does not exist.
@@ -790,14 +790,14 @@ without it, each such node gets a `beads_available` error. A `beads.select` node
 without `epic` gets an `attribute_required` error.
 
 ```
-pas validate <PIPELINE> [--workdir <DIR>] [--allow-test-agents] [--json]
+hka validate <PIPELINE> [--workdir <DIR>] [--allow-test-agents] [--json]
 ```
 
 It also checks every agent profile the pipeline uses against the project of
-`--workdir` (`pas.toml` and the built-in profiles), the current directory
-by default, so it reads the same `pas.toml` as `pas run` with the same
+`--workdir` (`.harmonik-attractor/config.toml` and the built-in profiles), the current directory
+by default, so it reads the same `.harmonik-attractor/config.toml` as `hka run` with the same
 `--workdir`; see
-[Agent profiles](#agent-profiles-agentsname-in-pastoml). A `test_only`
+[Agent profiles](#agent-profiles-agentsname-in-harmonik-attractorconfigtoml). A `test_only`
 profile is an error unless `--allow-test-agents` is given.
 
 #### Arguments
@@ -805,7 +805,7 @@ profile is an error unless `--allow-test-agents` is given.
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `PIPELINE` | Yes | Path to the `.dot` pipeline file |
-| `--workdir <DIR>`, `-w` | No | The directory whose `pas.toml` is checked, as for `pas run` (default: the current directory) |
+| `--workdir <DIR>`, `-w` | No | The directory whose `.harmonik-attractor/config.toml` is checked, as for `hka run` (default: the current directory) |
 | `--allow-test-agents` | No | Allow agent profiles marked `test_only` |
 | `--json` | No | Print one JSON object on stdout instead of the human report |
 
@@ -851,7 +851,7 @@ If issues found:
 Displays the pipeline structure: name, goal, node count, edge count, start/exit nodes, and a list of all nodes with their resolved kind, handler, and provider.
 
 ```
-pas info <PIPELINE>
+hka info <PIPELINE>
 ```
 
 #### Arguments
@@ -885,7 +885,7 @@ Nodes:
 Creates a PRD (product requirements document) or technical specification from a template. Optionally uses Claude to generate content from a one-line description.
 
 ```
-pas plan [OPTIONS]
+hka plan [OPTIONS]
 ```
 
 #### Options
@@ -895,7 +895,7 @@ pas plan [OPTIONS]
 | `--prd` | One of `--prd`/`--spec` | — | Generate a PRD document |
 | `--spec` | One of `--prd`/`--spec` | — | Generate a technical specification |
 | `--from-prompt <DESC>` | No | — | Use Claude to generate the document from this description instead of copying the blank template |
-| `--output <PATH>` | No | `.pas/prd.md` or `.pas/spec.md` | Output file path |
+| `--output <PATH>` | No | `.harmonik-attractor/prd.md` or `.harmonik-attractor/spec.md` | Output file path |
 
 #### Output
 
@@ -905,13 +905,13 @@ Copies the template or generates content and writes to the output path. Prints n
 
 ```bash
 # Copy blank PRD template for manual editing
-pas plan --prd
+hka plan --prd
 
 # Generate a PRD from a description
-pas plan --prd --from-prompt "Add OAuth2 authentication with Google and GitHub providers"
+hka plan --prd --from-prompt "Add OAuth2 authentication with Google and GitHub providers"
 
 # Generate a spec to a custom path
-pas plan --spec --output docs/specs/auth-spec.md
+hka plan --spec --output docs/specs/auth-spec.md
 ```
 
 ---
@@ -921,10 +921,10 @@ pas plan --spec --output docs/specs/auth-spec.md
 Reads a technical specification file and uses Claude to generate beads CLI commands that create an epic, child tasks, and dependencies.
 
 ```
-pas decompose <SPEC_PATH> [OPTIONS]
-pas decompose --plan <FILE> [--plan <FILE> ...] [OPTIONS]
-pas decompose --from-proposal <FILE> [--json]
-pas decompose <SPEC_PATH> --validate <EPIC_ID>
+hka decompose <SPEC_PATH> [OPTIONS]
+hka decompose --plan <FILE> [--plan <FILE> ...] [OPTIONS]
+hka decompose --from-proposal <FILE> [--json]
+hka decompose <SPEC_PATH> --validate <EPIC_ID>
 ```
 
 Exactly one source is required: `SPEC_PATH`, one or more `--plan`, or `--from-proposal`. Combining them is a usage error (exit 2). `--validate` needs `SPEC_PATH` as its source.
@@ -961,13 +961,13 @@ Creates a beads epic with child tasks and dependencies. Prints the epic ID, task
 
 ```bash
 # Preview what would be created
-pas decompose .pas/spec.md --dry-run
+hka decompose .harmonik-attractor/spec.md --dry-run
 
 # Create the epic and tasks
-pas decompose .pas/spec.md
+hka decompose .harmonik-attractor/spec.md
 
 # Decompose a spec from a custom path
-pas decompose docs/specs/auth-spec.md
+hka decompose docs/specs/auth-spec.md
 ```
 
 ---
@@ -977,8 +977,8 @@ pas decompose docs/specs/auth-spec.md
 Uses Claude to convert a technical specification (and optional PRD) into a pipeline `.dot` file. Supports single-file and directory modes.
 
 ```
-pas generate [OPTIONS] <FILE>...
-pas generate <DIRECTORY>
+hka generate [OPTIONS] <FILE>...
+hka generate <DIRECTORY>
 ```
 
 #### Arguments
@@ -1005,14 +1005,14 @@ Success: `{"v":1,"ok":true,"pipeline_path":"/abs/path.dot"}`. Failure (exit 1): 
 
 **Single-file mode:**
 ```bash
-pas generate my-spec.md                    # Spec only
-pas generate my-prd.md my-spec.md          # PRD + spec (positional)
-pas generate --prd prd.md --spec spec.md   # PRD + spec (named)
+hka generate my-spec.md                    # Spec only
+hka generate my-prd.md my-spec.md          # PRD + spec (positional)
+hka generate --prd prd.md --spec spec.md   # PRD + spec (named)
 ```
 
 **Directory mode:**
 ```bash
-pas generate docs/implementation/
+hka generate docs/implementation/
 ```
 
 In directory mode, files ending in `-spec.md` are discovered and sorted lexically. Each spec is paired with a matching `-prd.md` if one exists (e.g. `auth-spec.md` pairs with `auth-prd.md`). One `.dot` pipeline is generated per spec.
@@ -1037,16 +1037,16 @@ Writes the pipeline to the output path, validates it, and prints node count and 
 
 ```bash
 # Generate from a spec
-pas generate docs/auth-spec.md
+hka generate docs/auth-spec.md
 
 # Generate with PRD for richer context
-pas generate docs/auth-prd.md docs/auth-spec.md
+hka generate docs/auth-prd.md docs/auth-spec.md
 
 # Generate all pipelines from a directory of specs
-pas generate docs/implementation/
+hka generate docs/implementation/
 
 # Then run it
-pas run pipelines/auth-spec.dot -w .
+hka run pipelines/auth-spec.dot -w .
 ```
 
 ---
@@ -1056,7 +1056,7 @@ pas run pipelines/auth-spec.dot -w .
 Creates a pipeline DOT file from a beads epic. The pipeline iterates through all child tasks of the epic, implementing each one.
 
 ```
-pas scaffold <EPIC_ID> [OPTIONS]
+hka scaffold <EPIC_ID> [OPTIONS]
 ```
 
 #### Arguments
@@ -1074,7 +1074,7 @@ pas scaffold <EPIC_ID> [OPTIONS]
 
 #### Output
 
-Generates a DOT pipeline file from the `epic-runner` template. `bd show <EPIC_ID>` supplies the goal text, and the `beads.select` node gets `epic="<id>"` using the ID `bd show` returned. The result is validated exactly as `pas validate` does (including the check that `bd` is on PATH), then the node count and validation status are printed.
+Generates a DOT pipeline file from the `epic-runner` template. `bd show <EPIC_ID>` supplies the goal text, and the `beads.select` node gets `epic="<id>"` using the ID `bd show` returned. The result is validated exactly as `hka validate` does (including the check that `bd` is on PATH), then the node count and validation status are printed.
 
 The scaffolded Pipeline loops over the Epic's child Tasks:
 
@@ -1084,7 +1084,7 @@ pick_task (beads.select) --MORE--> investigate → implement → run_tests → v
                          --BLOCKED--> blocked → done
 ```
 
-PAS claims and closes each Task itself; no prompt runs `bd`. `publish` is a prompt that commits the Task's files and pushes. `close_task` closes the Task only once its Run Commits are on the upstream branch; otherwise it fails and routes back to `publish`, bounded by `--max-steps`. A repository without an upstream branch therefore cannot close Tasks. `BLOCKED` (open Tasks remain but none are ready) ends the Run normally; the Run Journal records `TaskSelectionBlocked`.
+harmonik-attractor claims and closes each Task itself; no prompt runs `bd`. `publish` is a prompt that commits the Task's files and pushes. `close_task` closes the Task only once its Run Commits are on the upstream branch; otherwise it fails and routes back to `publish`, bounded by `--max-steps`. A repository without an upstream branch therefore cannot close Tasks. `BLOCKED` (open Tasks remain but none are ready) ends the Run normally; the Run Journal records `TaskSelectionBlocked`.
 
 With `--json`, stdout carries exactly one object and nothing else (notices and diagnostics go to stderr):
 
@@ -1109,16 +1109,16 @@ Without `--json`, validation errors are printed as a warning and the command sti
 
 ```bash
 # Scaffold a pipeline for an epic
-pas scaffold attractor-asr
+hka scaffold attractor-asr
 
 # Scaffold to a custom path
-pas scaffold attractor-asr --output pipelines/auth-feature.dot
+hka scaffold attractor-asr --output pipelines/auth-feature.dot
 
 # Machine-readable result
-pas scaffold attractor-asr --json
+hka scaffold attractor-asr --json
 
 # Then run it
-pas run pipelines/attractor-asr.dot -w .
+hka run pipelines/attractor-asr.dot -w .
 ```
 
 ---
@@ -1128,7 +1128,7 @@ pas run pipelines/attractor-asr.dot -w .
 Takes a directory of spec files, generates `.dot` pipelines from them, validates all of them, then runs them sequentially. Equivalent to running `generate` → `validate` → `run` on each pipeline in order.
 
 ```
-pas launch <DOCS_DIR> [OPTIONS]
+hka launch <DOCS_DIR> [OPTIONS]
 ```
 
 #### Arguments
@@ -1147,19 +1147,19 @@ pas launch <DOCS_DIR> [OPTIONS]
 | `--max-budget-usd <AMOUNT>` | — | $200 | Maximum tracked spend across all nodes in each pipeline. Codex and Gemini CLI calls do not report dollar cost and therefore do not count toward this limit. |
 | `--max-steps <COUNT>` | — | 200 | Maximum node executions per pipeline. |
 | `--fresh` | — | false | Ignore checkpoints and start each pipeline from scratch. |
-| `--codergen-claude-settings-mode <MODE>` | — | `subscription-bare` | Claude settings mode for generated pipelines' `codergen` nodes. Same semantics as `pas run`. |
+| `--codergen-claude-settings-mode <MODE>` | — | `subscription-bare` | Claude settings mode for generated pipelines' `codergen` nodes. Same semantics as `hka run`. |
 | `--codergen-claude-setting-sources <LIST>` | — | — | Comma-separated setting sources for `inherit` mode. |
-| `--codergen-claude-settings <JSON_OR_FILE>` | — | — | PAS-owned Claude settings JSON or file path for run-phase `codergen` nodes. |
+| `--codergen-claude-settings <JSON_OR_FILE>` | — | — | harmonik-attractor-owned Claude settings JSON or file path for run-phase `codergen` nodes. |
 | `--codergen-claude-tools <TOOLS>` | — | Claude default | Explicit Claude built-in tool surface for run-phase `codergen` nodes. |
-| `--codergen-claude-agents <JSON>` | — | — | PAS-owned Claude agents JSON for run-phase `codergen` nodes. |
-| `--codergen-claude-plugin-dir <DIR>` | — | — | PAS-owned Claude plugin directory for run-phase `codergen` nodes. Repeatable. |
+| `--codergen-claude-agents <JSON>` | — | — | harmonik-attractor-owned Claude agents JSON for run-phase `codergen` nodes. |
+| `--codergen-claude-plugin-dir <DIR>` | — | — | harmonik-attractor-owned Claude plugin directory for run-phase `codergen` nodes. Repeatable. |
 | `--codergen-claude-mcp-config <JSON_OR_FILE>` | — | none | Explicit MCP config for run-phase `codergen` nodes. |
 
 #### How it works
 
 1. **Generate** — discovers `*-spec.md` files in `DOCS_DIR`, pairs each with a `*-prd.md` if one exists (matched by replacing `-spec` with `-prd`), and generates one `.dot` pipeline per spec. Files are sorted lexically — use zero-padded prefixes to control order (`phase-01-spec.md`, `phase-02-spec.md`).
 2. **Validate** — runs all lint rules against every generated pipeline. Stops if any pipeline has errors.
-3. **Run** — executes each validated pipeline sequentially with checkpoint/resume, each phase starting from the previous phase's result, as in `pas run`'s [Directory mode](#directory-mode).
+3. **Run** — executes each validated pipeline sequentially with checkpoint/resume, each phase starting from the previous phase's result, as in `hka run`'s [Directory mode](#directory-mode).
 
 #### Exit codes
 
@@ -1172,34 +1172,34 @@ pas launch <DOCS_DIR> [OPTIONS]
 
 ```bash
 # Generate + validate + run all specs in docs/implementation/
-pas launch docs/implementation/ -w .
+hka launch docs/implementation/ -w .
 
 # With a budget cap (recommended for unattended runs)
-pas launch docs/implementation/ -w . --max-budget-usd 30.00
+hka launch docs/implementation/ -w . --max-budget-usd 30.00
 
 # Dry run to preview what would be generated and validated
-pas launch docs/implementation/ --dry-run
+hka launch docs/implementation/ --dry-run
 
 # Write generated .dot files to a custom directory
-pas launch docs/implementation/ -w . -o build/pipelines/
+hka launch docs/implementation/ -w . -o build/pipelines/
 ```
 
 ---
 
-### `init` — Initialise a `pas.toml` in your project
+### `init` — Initialise a `.harmonik-attractor/config.toml` in your project
 
-Detects the project toolchain from well-known config files (`Cargo.toml`, `pyproject.toml`, `package.json`, …) and writes a starter `pas.toml` to the nearest `.git` root.
+Detects the project toolchain from well-known config files (`Cargo.toml`, `pyproject.toml`, `package.json`, …) and writes a starter `.harmonik-attractor/config.toml` to the nearest `.git` root.
 
 ```
-pas init [OPTIONS]
+hka init [OPTIONS]
 ```
 
 #### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--workdir <DIR>` | `.` (current directory) | Directory to inspect for toolchain detection and to write `pas.toml`. |
-| `--force` | false | Overwrite an existing `pas.toml` and proceed even without a `.git` root. |
+| `--workdir <DIR>` | `.` (current directory) | Directory to inspect for toolchain detection and to write `.harmonik-attractor/config.toml`. |
+| `--force` | false | Overwrite an existing `.harmonik-attractor/config.toml` and proceed even without a `.git` root. |
 | `--non-interactive` | false | Never prompt; fail instead of asking questions. Suitable for CI. |
 | `--no-enrich` | false | Skip LLM enrichment for polyglot repos (always skipped in v1; reserved for future use). |
 | `--dry-run` | false | Print what would be written without touching the filesystem. |
@@ -1208,8 +1208,8 @@ pas init [OPTIONS]
 
 1. Walks up from `--workdir` to find the nearest `.git` root.
 2. Detects the primary toolchain by looking for `Cargo.toml`, `pyproject.toml`, `package.json`, `go.mod`, etc.
-3. In interactive mode, shows a preview of the generated `pas.toml` and asks for confirmation.
-4. Writes `pas.toml` with `[project]`, `[toolchain]`, and `[quality]` sections pre-populated for the detected language.
+3. In interactive mode, shows a preview of the generated `.harmonik-attractor/config.toml` and asks for confirmation.
+4. Writes `.harmonik-attractor/config.toml` with `[project]`, `[toolchain]`, and `[quality]` sections pre-populated for the detected language.
 
 #### Generated file layout
 
@@ -1240,37 +1240,37 @@ cmd = "cargo test"
 
 | Code | Meaning |
 |------|---------|
-| 0 | `pas.toml` written successfully (or `--dry-run` printed it) |
+| 0 | `.harmonik-attractor/config.toml` written successfully (or `--dry-run` printed it) |
 | 1 | Error writing the file |
 | 4 | No `.git` root found and `--force` not passed in non-interactive mode |
 
 #### Examples
 
 ```bash
-# Detect toolchain and write pas.toml interactively
-pas init
+# Detect toolchain and write .harmonik-attractor/config.toml interactively
+hka init
 
 # Dry-run: preview the generated file without writing it
-pas init --dry-run
+hka init --dry-run
 
 # CI-safe: non-interactive, fail if no .git root
-pas init --non-interactive
+hka init --non-interactive
 
 # Force-write even without a .git root (e.g. in a monorepo subdirectory)
-pas init --force
+hka init --force
 
 # Init for a project in a different directory
-pas init --workdir ~/projects/my-app
+hka init --workdir ~/projects/my-app
 ```
 
 ---
 
-### `trust` — Manage the pas.toml trust store
+### `trust` — Manage the .harmonik-attractor/config.toml trust store
 
-Controls which `pas.toml` manifests are trusted to run quality stages. The trust store lives at `$XDG_CONFIG_HOME/pas/trusted.json` (default: `~/.config/pas/trusted.json`).
+Controls which `.harmonik-attractor/config.toml` manifests are trusted to run quality stages. The trust store lives at `$XDG_CONFIG_HOME/harmonik-attractor/trusted.json` (default: `~/.config/harmonik-attractor/trusted.json`).
 
 ```
-pas trust <ACTION>
+hka trust <ACTION>
 ```
 
 #### Subcommands
@@ -1285,9 +1285,9 @@ pas trust <ACTION>
 
 | Variable | Value | Effect |
 |----------|-------|--------|
-| `PAS_TRUST_THIS` | `1` | Trust all manifests unconditionally (for development) |
-| `PAS_AGENT` | `1` | Non-interactive agent mode — never prompts, never trusts |
-| `PAS_NON_INTERACTIVE` | `1` | Suppress trust prompts in CI |
+| `HKA_TRUST_THIS` | `1` | Trust all manifests unconditionally (for development) |
+| `HKA_AGENT` | `1` | Non-interactive agent mode — never prompts, never trusts |
+| `HKA_NON_INTERACTIVE` | `1` | Suppress trust prompts in CI |
 
 #### Exit codes
 
@@ -1295,20 +1295,20 @@ pas trust <ACTION>
 |------|---------|
 | 0 | Action completed successfully |
 | 1 | Trust store corrupted or I/O error |
-| 2 | Manifest not trusted (checked at `pas run` time, not here) |
+| 2 | Manifest not trusted (checked at `hka run` time, not here) |
 | 3 | Trust store corrupted (deserialization failure) |
 
 #### Examples
 
 ```bash
 # Add a manifest to the trust store
-pas trust add /path/to/project/pas.toml <blake3-hash>
+hka trust add /path/to/project/.harmonik-attractor/config.toml <blake3-hash>
 
 # List all trusted manifests
-pas trust list
+hka trust list
 
 # Remove a manifest
-pas trust remove /path/to/project/pas.toml <blake3-hash>
+hka trust remove /path/to/project/.harmonik-attractor/config.toml <blake3-hash>
 ```
 
 ---
@@ -1323,7 +1323,7 @@ Every `--json` payload (decompose, scaffold, generate, validate, run, answer, st
 |------|---------|-----------|
 | 0 | Success | all commands |
 | 1 | General failure (validation error, handler error, quality loop exhausted, unreadable Run Index) | `run`, `runs`, `validate`, `launch`, `trust` |
-| 2 | Manifest not trusted | `run` (when quality stages attempted with untrusted `pas.toml`) |
+| 2 | Manifest not trusted | `run` (when quality stages attempted with untrusted `.harmonik-attractor/config.toml`) |
 | 3 | Trust store corrupted | `run`, `trust` |
 | 4 | No `.git` root found without `--force` | `init` |
 | 5 | Pipeline already running | `run`, `launch` |
@@ -1337,7 +1337,7 @@ Every `--json` payload (decompose, scaffold, generate, validate, run, answer, st
 ### Run with a budget limit (recommended for loops)
 
 ```bash
-pas run pipelines/epic-runner.dot -w . --max-budget-usd 10.00
+hka run pipelines/epic-runner.dot -w . --max-budget-usd 10.00
 ```
 
 If total spend across all nodes exceeds $10, the pipeline stops with an error. Prevents a looping pipeline from running up a massive bill overnight.
@@ -1345,7 +1345,7 @@ If total spend across all nodes exceeds $10, the pipeline stops with an error. P
 ### Run with a step limit
 
 ```bash
-pas run pipelines/epic-runner.dot -w . --max-steps 50
+hka run pipelines/epic-runner.dot -w . --max-steps 50
 ```
 
 Limits the pipeline to 50 node executions. For an epic runner with ~7 nodes per loop, this allows ~7 iterations before stopping. The default is 200 steps.
@@ -1353,7 +1353,7 @@ Limits the pipeline to 50 node executions. For an epic runner with ~7 nodes per 
 ### Run with both limits (safest for unattended runs)
 
 ```bash
-pas run pipelines/epic-runner.dot -w . --max-budget-usd 20.00 --max-steps 100
+hka run pipelines/epic-runner.dot -w . --max-budget-usd 20.00 --max-steps 100
 ```
 
 The pipeline stops at whichever limit is hit first.
@@ -1361,7 +1361,7 @@ The pipeline stops at whichever limit is hit first.
 ### Run a pipeline in your project directory
 
 ```bash
-pas run pipelines/fix-bug.dot -w .
+hka run pipelines/fix-bug.dot -w .
 ```
 
 The `-w .` sets the working directory to the current directory. Selected provider CLIs and tool commands use this path as their working directory.
@@ -1369,7 +1369,7 @@ The `-w .` sets the working directory to the current directory. Selected provide
 ### Run a pipeline for a different project
 
 ```bash
-pas run ~/pipelines/deploy-check.dot -w ~/projects/my-app
+hka run ~/pipelines/deploy-check.dot -w ~/projects/my-app
 ```
 
 The pipeline file and working directory don't need to be in the same place.
@@ -1377,8 +1377,8 @@ The pipeline file and working directory don't need to be in the same place.
 ### Validate before running
 
 ```bash
-pas validate pipelines/new-feature.dot && \
-pas run pipelines/new-feature.dot -w .
+hka validate pipelines/new-feature.dot && \
+hka run pipelines/new-feature.dot -w .
 ```
 
 Only runs if validation passes.
@@ -1386,7 +1386,7 @@ Only runs if validation passes.
 ### Inspect a pipeline to see its structure
 
 ```bash
-pas info pipelines/epic-runner.dot
+hka info pipelines/epic-runner.dot
 ```
 
 Quick way to see the nodes and verify the graph shape before running.
@@ -1394,7 +1394,7 @@ Quick way to see the nodes and verify the graph shape before running.
 ### Debug a failing pipeline
 
 ```bash
-pas -v run pipelines/fix-bug.dot -w .
+hka -v run pipelines/fix-bug.dot -w .
 ```
 
 The `-v` flag enables debug logging. You'll see:
@@ -1406,26 +1406,26 @@ The `-v` flag enables debug logging. You'll see:
 ### Dry run to verify parsing
 
 ```bash
-pas run pipelines/complex-feature.dot --dry-run
+hka run pipelines/complex-feature.dot --dry-run
 ```
 
 Parses and validates the pipeline, prints the structure, but doesn't execute any selected provider CLI or tool command. Zero cost.
 
-### Run from anywhere with an alias
+### Run from anywhere
 
 Add to your shell profile (`~/.zshrc` or `~/.bashrc`):
 
 ```bash
-alias pas='~/.local/bin/pas'
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Then:
 
 ```bash
 cd ~/projects/my-app
-pas run pipelines/fix-auth.dot -w .
-pas validate pipelines/new-feature.dot
-pas info pipelines/deploy.dot
+hka run pipelines/fix-auth.dot -w .
+hka validate pipelines/new-feature.dot
+hka info pipelines/deploy.dot
 ```
 
 ### Pipeline for a beads issue
@@ -1435,7 +1435,7 @@ pas info pipelines/deploy.dot
 bd show baseball-v3-vfd5
 
 # Run the pipeline that fixes it
-pas run pipelines/fix-sync-partial-failure.dot -w ~/gt/baseball
+hka run pipelines/fix-sync-partial-failure.dot -w ~/gt/baseball
 ```
 
 ### Process an entire epic
@@ -1448,7 +1448,7 @@ cp /Volumes/qwiizlab/projects/connect-the-bots/docs/examples/epic-runner.dot pip
 sed -i '' 's/EPIC_ID/baseball-v3-8xey/g' pipelines/run-epic.dot
 
 # Run it — loops through all child tasks
-pas run pipelines/run-epic.dot -w .
+hka run pipelines/run-epic.dot -w .
 ```
 
 ### Chain validate + run in CI or scripts
@@ -1461,10 +1461,10 @@ PIPELINE="$1"
 WORKDIR="${2:-.}"
 
 echo "Validating $PIPELINE..."
-pas validate "$PIPELINE"
+hka validate "$PIPELINE"
 
 echo "Running $PIPELINE in $WORKDIR..."
-pas run "$PIPELINE" -w "$WORKDIR"
+hka run "$PIPELINE" -w "$WORKDIR"
 ```
 
 Usage: `./run-pipeline.sh pipelines/fix-bug.dot ~/projects/my-app`
@@ -1473,29 +1473,29 @@ Usage: `./run-pipeline.sh pipelines/fix-bug.dot ~/projects/my-app`
 
 ```bash
 # Step 1: Generate a PRD from a description
-pas plan --prd --from-prompt "Add real-time notifications via WebSockets"
+hka plan --prd --from-prompt "Add real-time notifications via WebSockets"
 
-# Step 2: Review and edit .pas/prd.md manually
+# Step 2: Review and edit .harmonik-attractor/prd.md manually
 
 # Step 3: Generate a spec from a description (or copy template and edit)
-pas plan --spec --from-prompt "Add real-time notifications via WebSockets"
+hka plan --spec --from-prompt "Add real-time notifications via WebSockets"
 
-# Step 4: Review and edit .pas/spec.md manually
+# Step 4: Review and edit .harmonik-attractor/spec.md manually
 
 # Step 5: Decompose spec into beads epic + tasks
-pas decompose .pas/spec.md
+hka decompose .harmonik-attractor/spec.md
 
 # Step 6: Scaffold pipeline from the epic
-pas scaffold <EPIC_ID>
+hka scaffold <EPIC_ID>
 
 # Step 7: Run the pipeline
-pas run pipelines/<EPIC_ID>.dot -w .
+hka run pipelines/<EPIC_ID>.dot -w .
 ```
 
 ### Run the meta-pipeline (automated full workflow)
 
 ```bash
-pas run templates/plan-to-execute.dot -w .
+hka run templates/plan-to-execute.dot -w .
 ```
 
 The meta-pipeline chains all planning steps with human review gates. It generates PRD, pauses for review, generates spec, pauses for review, decomposes into beads, scaffolds the pipeline, validates, and executes.
@@ -1503,8 +1503,8 @@ The meta-pipeline chains all planning steps with human review gates. It generate
 ### Compare two pipelines
 
 ```bash
-pas info pipelines/v1.dot
-pas info pipelines/v2.dot
+hka info pipelines/v1.dot
+hka info pipelines/v2.dot
 ```
 
 Quick way to compare node counts and structure between pipeline revisions.
@@ -1523,30 +1523,30 @@ Quick way to compare node counts and structure between pipeline revisions.
 
 ### Optional
 
-- **`PAS_STATE_DIR`** — Folder for machine-wide PAS state: the Run Index (`runs.jsonl`) and Monitor Plan workspaces (`plans/<plan-id>/`). Default `$XDG_STATE_HOME/pas`, else `~/.local/state/pas`.
-- **`GEMINI_API_KEY`** — Not read by `pas`. Agents inherit it like any
+- **`HKA_STATE_DIR`** — Folder for machine-wide harmonik-attractor state: the Run Index (`runs.jsonl`) and Monitor Plan workspaces (`plans/<plan-id>/`). Default `$XDG_STATE_HOME/harmonik-attractor`, else `~/.local/state/harmonik-attractor`.
+- **`GEMINI_API_KEY`** — Not read by `harmonik-attractor`. Agents inherit it like any
   variable not on their profile's `env.remove` list, so a Gemini node's
   `gemini` can use it.
-- **`RUST_LOG`** — Override log level (e.g. `RUST_LOG=debug pas run ...`). The `-v` flag sets this to `debug` automatically.
+- **`RUST_LOG`** — Override log level (e.g. `RUST_LOG=debug hka run ...`). The `-v` flag sets this to `debug` automatically.
 
 ### What a Claude agent process gets
 
 Each `claude` node starts `claude` in the workdir, in its own process group,
-with stdin from `/dev/null` (it never reads `pas`'s stdin). Its environment is
-`pas`'s own, with these changes:
+with stdin from `/dev/null` (it never reads `harmonik-attractor`'s stdin). Its environment is
+`harmonik-attractor`'s own, with these changes:
 
 - **Removed**, so the agent runs on your Claude subscription and never on a key
   it happened to inherit: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
   `ANTHROPIC_BASE_URL`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`,
   `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`. Variables whose name or
   value is not UTF-8 are not passed either.
-- **Set** by PAS (any value `pas` itself had is replaced):
-  - `PAS_RUN_ID`: the Run's id (as in `run.json`); unset outside a Run.
-  - `PAS_NODE_ID`: the node's id.
-  - `PAS_ATTEMPT`: the attempt at this node, from 1.
-  - `PAS_INVOCATION_ID`: this Model Invocation's id, the same as
+- **Set** by harmonik-attractor (any value `harmonik-attractor` itself had is replaced):
+  - `HKA_RUN_ID`: the Run's id (as in `run.json`); unset outside a Run.
+  - `HKA_NODE_ID`: the node's id.
+  - `HKA_ATTEMPT`: the attempt at this node, from 1.
+  - `HKA_INVOCATION_ID`: this Model Invocation's id, the same as
     `LlmInvoked.invocation_id` and the Transcript's file name.
-  - `PAS_SESSION_ID`: the agent session id the invocation runs with (minted
+  - `HKA_SESSION_ID`: the agent session id the invocation runs with (minted
     for a new session, or the one being continued).
 
 Its stderr is written, as it arrives, to `transcripts/<invocation-id>.stderr.log`
@@ -1564,14 +1564,14 @@ transcript /…/transcripts/<id>.jsonl; stderr /…/transcripts/<id>.stderr.log
 ```
 
 **Stopping it.** On the node's timeout, or when the Run is stopped (SIGTERM to
-`pas run`, as `pas kill` sends), PAS sends TERM to the agent's process group,
+`hka run`, as `hka kill` sends), harmonik-attractor sends TERM to the agent's process group,
 waits the profile's `kill_grace` (built-in 10 s), then sends KILL. A stopped Run starts no new stage,
 waits for the agent to exit, journals `AttemptEnded` with reason `stopped` and
 exits 143; the stopped stage records no `StageFailed`, and resuming the Run runs
 it again.
 
 Codex and Gemini nodes run the same way, through their profiles (see
-[Agent profiles](#agent-profiles-agentsname-in-pastoml)).
+[Agent profiles](#agent-profiles-agentsname-in-harmonik-attractorconfigtoml)).
 
 ---
 
@@ -1587,11 +1587,11 @@ These are set in the `.dot` file as node attributes and passed through to each `
 | Graph `model` | `--model` (fallback) | Default model when node doesn't specify one |
 
 Every node also gets:
-- `--output-format stream-json --verbose` — streamed JSON events; PAS parses the final `result` event
+- `--output-format stream-json --verbose` — streamed JSON events; harmonik-attractor parses the final `result` event
 - `--session-id <id>`, or `--resume <id>` when the node continues its session (see [Agent sessions](#agent-sessions))
 - `--dangerously-skip-permissions` — allows file edits and bash execution
-- `--strict-mcp-config --disable-slash-commands` — only the MCP config PAS passes; no slash commands
-- `--disallowedTools <list>` — no session tools that reach outside the Run (see [the `claude` profile](#agent-profiles-agentsname-in-pastoml))
+- `--strict-mcp-config --disable-slash-commands` — only the MCP config harmonik-attractor passes; no slash commands
+- `--disallowedTools <list>` — no session tools that reach outside the Run (see [the `claude` profile](#agent-profiles-agentsname-in-harmonik-attractorconfigtoml))
 
 A final `result` event with `is_error` or a `subtype` starting `error` (such as
 `error_max_turns`) makes the node fail.

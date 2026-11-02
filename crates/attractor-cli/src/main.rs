@@ -18,7 +18,7 @@ use commands::{
 #[command(
     name = "harmonik-attractor",
     version,
-    about = "Pascal's Discrete Attractor — DOT-based pipeline runner for AI workflows"
+    about = "harmonik-attractor — DOT-based pipeline runner for AI workflows"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -76,7 +76,7 @@ enum Commands {
         #[arg(long)]
         codergen_claude_setting_sources: Option<String>,
 
-        /// PAS-owned Claude settings JSON or file path for codergen nodes
+        /// harmonik-attractor-owned Claude settings JSON or file path for codergen nodes
         #[arg(long)]
         codergen_claude_settings: Option<String>,
 
@@ -421,7 +421,7 @@ enum Commands {
         #[arg(long)]
         codergen_claude_setting_sources: Option<String>,
 
-        /// PAS-owned Claude settings JSON or file path for codergen nodes
+        /// harmonik-attractor-owned Claude settings JSON or file path for codergen nodes
         #[arg(long)]
         codergen_claude_settings: Option<String>,
 

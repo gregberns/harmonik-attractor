@@ -1,7 +1,7 @@
-# PAS (harmonik-attractor): agent context
+# harmonik-attractor: agent context
 
-PAS is an Attractor: a pipeline engine that walks a DOT graph of agent and
-tool nodes. Binary `pas`; Rust workspace; MIT OR Apache-2.0. This is the
+harmonik-attractor (binary also `hka`) is an Attractor: a pipeline engine
+walking a DOT graph of agent and tool nodes. Rust; MIT OR Apache-2.0. The
 operator's fork of citadelgrad/pascals-discrete-attractor, driven by
 harmonik-v3 (hk3). `CLAUDE.md` is a symlink to this file; edit `AGENTS.md`.
 
@@ -19,7 +19,7 @@ statuses or "until X" notes; those belong in the plan.
   README links the ticket table, `tickets/` and the glossary (`CONTEXT.md`).
 - Build only what a ticket asks; use the glossary's terms.
 - No other tracker for our own work: no `bd`/beads, TodoWrite or TODO
-  lists. (PAS's beads integration, docs/guide.md, is a product feature.)
+  lists. (Our beads integration, docs/guide.md, is a product feature.)
 
 ## Build and test
 
@@ -49,7 +49,7 @@ Pure core, imperative shell ([docs/engineering.md](docs/engineering.md)).
 
 Detail in [docs/engineering.md](docs/engineering.md#testing).
 - New tests go through the two public seams: the agent registry's `run`
-  with a fake, and `pas run` end to end with a fake.
+  with a fake, and `hka run` end to end with a fake.
 - No real agent, API key or subscription in any test: use the shell fakes.
 - Every bug fix starts with a failing test.
 - Deterministic tests: no wall-clock sleeps where a file, fifo or signal
