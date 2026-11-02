@@ -1,7 +1,8 @@
 /target
 .worktrees/
 .beads/
-.pas/
+.harmonik-attractor/*
+!.harmonik-attractor/config.toml
 .envrc
 .DS_Store
 .tldr/cache/

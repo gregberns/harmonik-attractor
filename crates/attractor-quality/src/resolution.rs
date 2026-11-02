@@ -2,16 +2,26 @@ use crate::manifest::{Manifest, ResolvedManifest};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+/// The project folder: the config, and the run data next to it.
+pub const PROJECT_DIR: &str = ".harmonik-attractor";
+/// The project config's file name inside [`PROJECT_DIR`].
+pub const CONFIG_FILE: &str = "config.toml";
+
+/// `<dir>/.harmonik-attractor/config.toml`.
+pub fn config_path(dir: &Path) -> PathBuf {
+    dir.join(PROJECT_DIR).join(CONFIG_FILE)
+}
+
 #[derive(Debug, Error)]
 pub enum ResolutionError {
-    #[error("pas.toml not found (searched up to 16 directory levels)")]
+    #[error(".harmonik-attractor/config.toml not found (searched up to 16 directory levels)")]
     NotFound,
-    #[error("pas.toml at {path} is malformed: {source}")]
+    #[error(".harmonik-attractor/config.toml at {path} is malformed: {source}")]
     Malformed {
         path: PathBuf,
         source: toml::de::Error,
     },
-    #[error("pas.toml at {path} is invalid: {reason}")]
+    #[error(".harmonik-attractor/config.toml at {path} is invalid: {reason}")]
     Invalid { path: PathBuf, reason: String },
 }
 
@@ -20,7 +30,7 @@ pub fn resolve(start_dir: &Path) -> Result<ResolvedManifest, ResolutionError> {
     let mut ascents = 0;
 
     loop {
-        let candidate = current.join("pas.toml");
+        let candidate = config_path(&current);
         if candidate.exists() {
             let content =
                 std::fs::read_to_string(&candidate).map_err(|e| ResolutionError::Invalid {
@@ -66,8 +76,9 @@ mod tests {
     use tempfile::TempDir;
 
     fn write_valid_manifest(dir: &Path) {
+        fs::create_dir_all(dir.join(".harmonik-attractor")).unwrap();
         fs::write(
-            dir.join("pas.toml"),
+            dir.join(".harmonik-attractor/config.toml"),
             r#"
 [project]
 name = "test-project"
@@ -112,7 +123,12 @@ stages = ["lint", "test"]
     #[test]
     fn returns_malformed_for_invalid_toml() {
         let tmp = TempDir::new().unwrap();
-        fs::write(tmp.path().join("pas.toml"), "this is not valid toml!!!").unwrap();
+        fs::create_dir_all(tmp.path().join(".harmonik-attractor")).unwrap();
+        fs::write(
+            tmp.path().join(".harmonik-attractor/config.toml"),
+            "this is not valid toml!!!",
+        )
+        .unwrap();
         let result = resolve(tmp.path());
         assert!(matches!(result, Err(ResolutionError::Malformed { .. })));
     }

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use attractor_quality::{
     ClaudeCodergenConfig, ClaudeSettingSource, ClaudeSettingsMode, ResolutionError,
@@ -220,7 +220,7 @@ impl ResolvedConfig {
     }
 
     /// Folder for the Runs' git worktrees; `None` means the built-in
-    /// `<project-root>/.pas/worktrees`.
+    /// `<project-root>/.harmonik-attractor/worktrees`.
     pub fn worktree_root(&self) -> &ResolvedValue<Option<PathBuf>> {
         &self.worktree_root
     }
@@ -284,7 +284,7 @@ pub enum ConfigurationError {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("failed to resolve pas.toml: {0}")]
+    #[error("failed to resolve .harmonik-attractor/config.toml: {0}")]
     Manifest(String),
 }
 
@@ -424,7 +424,7 @@ impl RunConfiguration {
     }
 
     /// The same configuration working in `workdir`, e.g. the Run's git
-    /// worktree. `pas.toml` stays the one resolved from the caller's workdir.
+    /// worktree. `.harmonik-attractor/config.toml` stays the one resolved from the caller's workdir.
     pub fn with_workdir(self, workdir: PathBuf) -> Self {
         let source = self.controls.workdir.source();
         Self {
@@ -560,7 +560,7 @@ fn resolve_claude(
         ResolvedValue::sensitive(value.clone(), ConfigurationSource::Caller)
     } else if let Some(config) = manifest.filter(|config| !config.plugin_dirs.is_empty()) {
         let manifest_dir = resolved_manifest
-            .and_then(|resolved| resolved.path.parent())
+            .map(ResolvedManifest::project_root)
             .unwrap_or_else(|| std::path::Path::new("."));
         let values = config
             .plugin_dirs
@@ -598,16 +598,15 @@ fn resolve_claude(
     })
 }
 
-/// `--worktree-root` > `pas.toml` `[run] worktree_root` (relative to the
-/// `pas.toml` folder) > built-in (`None`).
+/// `--worktree-root` > `.harmonik-attractor/config.toml` `[run]
+/// worktree_root` (relative to the project root) > built-in (`None`).
 fn resolve_worktree_root(
     caller: Option<&PathBuf>,
     manifest: Option<&ResolvedManifest>,
 ) -> ResolvedValue<Option<PathBuf>> {
     let from_manifest = manifest.and_then(|resolved| {
         let root = resolved.manifest.run.as_ref()?.worktree_root.as_ref()?;
-        let dir = resolved.path.parent().unwrap_or_else(|| Path::new("."));
-        Some(dir.join(root))
+        Some(resolved.project_root().join(root))
     });
     match (caller, from_manifest) {
         (Some(root), _) => ResolvedValue::new(Some(root.clone()), ConfigurationSource::Caller),

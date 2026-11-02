@@ -4,13 +4,13 @@
 prints scripted stream-json, so any engine behaviour can be tested end to
 end through `pas run` with no real agent, API key or subscription.
 
-Tests select it by agent profile (ticket 03): the test repo's `pas.toml`
+Tests select it by agent profile (ticket 03): the test repo's `.harmonik-attractor/config.toml`
 defines a `fake` profile (`mechanism = "claude-p"`, `command` = this script,
 `test_only = true`), pipelines use `agent="fake"`, and `pas run` gets
 `--allow-test-agents`. PAS runs it with its own environment minus the
 profile's `env.remove` plus `env.set` and the `PAS_*` ids; the test sets
 `FAKE_AGENT_SCENARIOS`. Extra profile fields (`kill_grace`, `timeout`,
-`reasoning_args`, `env.set`, ...) go in the same `pas.toml`. Only the test of
+`reasoning_args`, `env.set`, ...) go in the same `.harmonik-attractor/config.toml`. Only the test of
 the `llm_provider="claude"` alias still puts this script first on `PATH` as
 `claude`. A seam 1 test can instead give `Agents` a profile whose command is
 this script (`crates/attractor-handler-claude-p/tests/claude_p.rs`). The Rust
@@ -103,7 +103,7 @@ PAS runs one invocation of a node at a time.
 | `pre_init_hang` | creates `started` in `$FAKE_AGENT_SCENARIOS`, then waits for the file `go` there (at most 10 s) before printing anything, so a test can kill it before its init line | - |
 | `edit_hang` | writes `partial.txt` in its cwd (uncommitted), then hangs like `hang` | - |
 | `commit_hang` | writes `committed.txt` in its cwd, commits it as `fake-claude commit` (like `edit_commit`), creates `committed`, then hangs like `hang` | - |
-| `pas_dir` | creates `.pas/x` (holding `x`) and `visible.txt` in its cwd, then success | 0 |
+| `pas_dir` | creates `.harmonik-attractor/x` (holding `x`) and `visible.txt` in its cwd, then success | 0 |
 | `flaky` | hangs while its start count is at most `fails` (default 1), then success | 0 |
 | `bad_result` | init, then `{"type":"result","subtype":"success","is_error":false,"num_turns":"many"}`, a result line that doesn't deserialize (`num_turns` is a string) | `exit` (default 0) |
 | `session_not_found` | needs `--resume <id>` (else exit 2): no init line, the result line `{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["No conversation found with session ID: <id>"]}`, and `No conversation found with session ID: <id>` on stderr, as `claude -p --resume` does for a session it doesn't have | 1 |
@@ -143,7 +143,7 @@ log the environment to `env.log` and argv to `invocations.log` (the
 positional prompt as `<prompt>`), and the prompt to `prompts.log`,
 `prompt.<node>.<attempt>` and `prompt.<node>@<k>`. `fake-gemini`'s `--help`
 probe is not a start. The CLI harness selects them
-with `agent="fake-codex"` / `agent="fake-gemini"` (its `pas.toml` profiles
+with `agent="fake-codex"` / `agent="fake-gemini"` (its `.harmonik-attractor/config.toml` profiles
 inherit the built-in `codex`/`gemini` profiles with the fake as `command`),
 or shims them on `PATH` as `codex`/`gemini` for the `llm_provider` aliases.
 

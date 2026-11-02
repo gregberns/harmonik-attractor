@@ -65,7 +65,7 @@ pub fn parse_run_id(s: &str) -> Option<String> {
     Uuid::try_parse(s).ok().map(|u| u.hyphenated().to_string())
 }
 
-/// The stable Pipeline folder (`.pas/logs/<stem>-<hash>`).
+/// The stable Pipeline folder (`.harmonik-attractor/logs/<stem>-<hash>`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PipelineDir(PathBuf);
 
@@ -241,15 +241,18 @@ mod tests {
 
     #[test]
     fn paths_match_c1_layout() {
-        let p = PipelineDir::new("/r/.pas/logs/x-1a2b3c4d");
+        let p = PipelineDir::new("/r/.harmonik-attractor/logs/x-1a2b3c4d");
         assert_eq!(
             p.checkpoint(),
-            Path::new("/r/.pas/logs/x-1a2b3c4d/checkpoint.json")
+            Path::new("/r/.harmonik-attractor/logs/x-1a2b3c4d/checkpoint.json")
         );
-        assert_eq!(p.run_lock(), Path::new("/r/.pas/logs/x-1a2b3c4d/run.lock"));
+        assert_eq!(
+            p.run_lock(),
+            Path::new("/r/.harmonik-attractor/logs/x-1a2b3c4d/run.lock")
+        );
         let id = "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b";
         let r = p.run(id).unwrap();
-        let root = format!("/r/.pas/logs/x-1a2b3c4d/runs/{id}");
+        let root = format!("/r/.harmonik-attractor/logs/x-1a2b3c4d/runs/{id}");
         assert_eq!(r.path(), Path::new(&root));
         assert_eq!(r.run_json(), Path::new(&format!("{root}/run.json")));
         assert_eq!(r.events(), Path::new(&format!("{root}/events.jsonl")));

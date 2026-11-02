@@ -94,10 +94,10 @@ pub(crate) fn attempt_message(commit: &AttemptCommit<'_>) -> String {
     message
 }
 
-/// The pathspec of everything in the worktree except `.pas/`.
-const ALL_BUT_PAS: [&str; 3] = ["--", ".", ":(exclude).pas"];
+/// The pathspec of everything in the worktree except `.harmonik-attractor/`.
+const ALL_BUT_PAS: [&str; 3] = ["--", ".", ":(exclude).harmonik-attractor"];
 
-/// Commit everything in the worktree at `root` except `.pas/`, hooks skipped,
+/// Commit everything in the worktree at `root` except `.harmonik-attractor/`, hooks skipped,
 /// even when nothing changed; returns the new commit's sha.
 pub(crate) async fn commit_attempt(
     root: &Path,
@@ -132,7 +132,7 @@ pub(crate) async fn commit_attempt(
         .ok_or_else(|| "no HEAD after the commit".to_string())
 }
 
-/// Whether the worktree has changes outside `.pas/`.
+/// Whether the worktree has changes outside `.harmonik-attractor/`.
 pub(crate) async fn is_dirty(root: &Path) -> Result<bool, String> {
     let status = run(
         root,

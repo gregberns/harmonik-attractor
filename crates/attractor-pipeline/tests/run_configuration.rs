@@ -539,8 +539,9 @@ async fn preferred_label_is_current_outcome_state_not_stale_workflow_data() {
 #[test]
 fn caller_manifest_graph_and_built_in_precedence_is_resolved_per_field() {
     let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join(".harmonik-attractor")).unwrap();
     std::fs::write(
-        root.path().join("pas.toml"),
+        root.path().join(".harmonik-attractor/config.toml"),
         r#"
 [project]
 name = "precedence"
@@ -711,8 +712,9 @@ mcp_config_json = "{\"manifest-mcp\":true}"
 #[test]
 fn sensitive_resolved_value_debug_is_redacted_for_caller_and_manifest_sources() {
     let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join(".harmonik-attractor")).unwrap();
     std::fs::write(
-        root.path().join("pas.toml"),
+        root.path().join(".harmonik-attractor/config.toml"),
         r#"
 [project]
 name = "debug-redaction"
@@ -972,8 +974,9 @@ fn worktree_root_resolves_caller_then_manifest_then_built_in() {
         || plan(r#"digraph G { start [shape="Mdiamond"] done [shape="Msquare"] start -> done }"#);
     let with_toml = tempfile::tempdir().unwrap();
     std::fs::create_dir(with_toml.path().join(".git")).unwrap();
+    std::fs::create_dir_all(with_toml.path().join(".harmonik-attractor")).unwrap();
     std::fs::write(
-        with_toml.path().join("pas.toml"),
+        with_toml.path().join(".harmonik-attractor/config.toml"),
         "[project]\nname = \"demo\"\n\n[run]\nworktree_root = \"wt\"\n",
     )
     .unwrap();

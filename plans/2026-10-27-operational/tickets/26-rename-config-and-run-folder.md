@@ -21,5 +21,5 @@
 
 **Status:** open
 
-- [ ] A run with `.harmonik-attractor/config.toml` reads it; a lone `pas.toml` is ignored
-- [ ] After a run, `git status` in the project shows no run data, and `config.toml` is still tracked
+- [x] A run with `.harmonik-attractor/config.toml` reads it; a lone `pas.toml` is ignored
+- [x] After a run, `git status` in the project shows no run data, and `config.toml` is still tracked

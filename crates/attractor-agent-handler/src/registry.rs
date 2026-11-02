@@ -114,7 +114,7 @@ pub enum ConfigError {
     MissingField {
         profile: String,
         field: &'static str,
-        /// A `pas.toml` profile replaced the built-in one of this name.
+        /// A `.harmonik-attractor/config.toml` profile replaced the built-in one of this name.
         replaced_builtin: bool,
     },
     /// A profile sets both `resume_args` and `resume_command`.
@@ -183,7 +183,7 @@ impl fmt::Display for ConfigError {
                 if *replaced_builtin {
                     write!(
                         f,
-                        " (a pas.toml profile replaces the built-in {profile} profile whole: \
+                        " (a .harmonik-attractor/config.toml profile replaces the built-in {profile} profile whole: \
                          copy its fields, or define a new profile with \
                          inherit_from = \"{profile}\")"
                     )?;

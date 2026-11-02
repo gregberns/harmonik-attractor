@@ -490,7 +490,7 @@ fn a_timeout_sends_term_first() {
 #[test]
 fn an_agent_that_ignores_term_is_killed_after_the_profiles_grace() {
     let fake = FakeAgent::new();
-    fake.commit_pas_toml("timeout = \"1s\"\nkill_grace = \"1s\"");
+    fake.commit_config("timeout = \"1s\"\nkill_grace = \"1s\"");
     let stderr = failed_run(&fake, r#"prompt="scenario=hang_ignore_term""#);
     assert!(
         stderr.contains("node 'work' attempt 1 failed: timeout after 1000ms"),
@@ -545,7 +545,7 @@ fn a_stop_sends_term_to_the_agent_first() {
 #[test]
 fn a_stop_still_kills_an_agent_that_ignores_term() {
     let fake = FakeAgent::new();
-    fake.commit_pas_toml("kill_grace = \"1s\"");
+    fake.commit_config("kill_grace = \"1s\"");
     let mut child = spawn_run(
         &fake,
         &one_node(r#"timeout="120s", prompt="scenario=hang_ignore_term""#),

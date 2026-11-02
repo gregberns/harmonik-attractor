@@ -1,5 +1,5 @@
 #![cfg(unix)]
-//! Agent profiles (ticket 03, design.md §2): `agent=`, `pas.toml`
+//! Agent profiles (ticket 03, design.md §2): `agent=`, `.harmonik-attractor/config.toml`
 //! `[agents.*]`, `test_only` and `--allow-test-agents`, model and reasoning
 //! overrides, `env.set` over `env.remove`, `pas validate`, and the
 //! `llm_provider="claude"` alias, through `pas run` with the fake.
@@ -84,7 +84,7 @@ fn a_test_only_profile_is_refused_without_the_flag() {
 #[test]
 fn reasoning_effort_fills_the_profiles_reasoning_args() {
     let fake = FakeAgent::new();
-    fake.commit_pas_toml(r#"reasoning_args = ["--effort", "{reasoning}"]"#);
+    fake.commit_config(r#"reasoning_args = ["--effort", "{reasoning}"]"#);
 
     let output = fake.run(&one_node(
         r#"agent="fake", reasoning_effort="high", prompt="scenario=success""#,
@@ -105,7 +105,7 @@ fn llm_model_overrides_the_profiles_model() {
     ];
     for (attrs, graph_attrs, expected) in cases {
         let fake = FakeAgent::new();
-        fake.commit_pas_toml(profile);
+        fake.commit_config(profile);
         let dot = format!(
             r#"digraph G {{
                 {graph_attrs}
@@ -130,7 +130,7 @@ fn llm_model_overrides_the_profiles_model() {
 /// a fake profile that takes `--model`.
 fn validate_and_run_output(dot: &str) -> [String; 2] {
     let fake = FakeAgent::new();
-    fake.commit_pas_toml("model_args = [\"--model\", \"{model}\"]");
+    fake.commit_config("model_args = [\"--model\", \"{model}\"]");
     let both = |output: std::process::Output| {
         assert_success(&output);
         format!(
@@ -174,7 +174,7 @@ fn llm_model_on_a_node_and_model_on_the_graph_are_not_warned() {
 #[test]
 fn env_set_reaches_the_agent_even_when_in_the_remove_list() {
     let fake = FakeAgent::new();
-    fake.commit_pas_toml(r#"env.set = { ANTHROPIC_API_KEY = "set-by-profile" }"#);
+    fake.commit_config(r#"env.set = { ANTHROPIC_API_KEY = "set-by-profile" }"#);
 
     let output = fake
         .command(&one_node(r#"agent="fake", prompt="scenario=success""#))
@@ -217,7 +217,7 @@ fn the_default_env_remove_strips_the_gemini_keys() {
 #[test]
 fn a_profiles_own_env_remove_still_replaces_the_default_list() {
     let fake = FakeAgent::new();
-    fake.commit_pas_toml(r#"env.remove = ["GOOGLE_API_KEY"]"#);
+    fake.commit_config(r#"env.remove = ["GOOGLE_API_KEY"]"#);
     assert_eq!(gemini_keys_seen(&fake), (Some("inherited".into()), None));
 }
 
@@ -304,8 +304,9 @@ const CROSS_SESSION_TOOLS: &str =
 fn the_claude_alias_with_codergen_claude_settings_keeps_02as_argv() {
     let fake = FakeAgent::new();
     fake.shim_claude_on_path();
+    fs::create_dir_all(fake.repo().join(".harmonik-attractor")).unwrap();
     fs::write(
-        fake.repo().join("pas.toml"),
+        fake.repo().join(".harmonik-attractor/config.toml"),
         r#"[project]
 name = "alias-test"
 
@@ -320,7 +321,7 @@ mcp_config_json = "{\"mcpServers\":{}}"
 "#,
     )
     .unwrap();
-    fake.git(&["add", "pas.toml"]);
+    fake.git(&["add", ".harmonik-attractor/config.toml"]);
     fake.git(&["commit", "-q", "-m", "codergen.claude"]);
 
     let output = fake.run(&one_node(
@@ -373,7 +374,7 @@ mcp_config_json = "{\"mcpServers\":{}}"
 #[test]
 fn a_profile_with_its_own_args_gets_exactly_those_args() {
     let fake = FakeAgent::new();
-    fake.commit_pas_toml(
+    fake.commit_config(
         "[agents.own-args]\ninherit_from = \"fake-claude\"\nargs = [\"--strict-mcp-config\"]",
     );
 
@@ -452,7 +453,7 @@ impl Drop for Spawned {
 #[test]
 fn attempt_started_records_the_stop_wait_of_the_profiles_used() {
     let fake = FakeAgent::new();
-    fake.commit_pas_toml("kill_grace = \"1s\"");
+    fake.commit_config("kill_grace = \"1s\"");
     // `work` uses the fake; `gate` waits for `go` in the worktree; the stop
     // lands before `after`.
     let dot = &format!(
@@ -485,8 +486,8 @@ fn attempt_started_records_the_stop_wait_of_the_profiles_used() {
     fs::write(fake.worktree().join("go"), "").unwrap();
     assert_eq!(run.wait(30).code(), Some(0), "a stopped Run exits 0");
 
-    // A resume reloads pas.toml: its Attempt records the new grace.
-    fake.commit_pas_toml("kill_grace = \"2s\"");
+    // A resume reloads .harmonik-attractor/config.toml: its Attempt records the new grace.
+    fake.commit_config("kill_grace = \"2s\"");
     let resumed = fake.run(dot);
     assert_success(&resumed);
 
@@ -502,7 +503,7 @@ fn attempt_started_records_the_stop_wait_of_the_profiles_used() {
 fn pas_kill_without_grace_waits_for_a_profile_grace_over_15s() {
     let fake = FakeAgent::new();
     // Over the old fixed 20 s default's limit (15 s grace + 5 s margin).
-    fake.commit_pas_toml("kill_grace = \"16s\"");
+    fake.commit_config("kill_grace = \"16s\"");
     let mut run = Spawned(
         fake.command(&one_node(
             r#"agent="fake", timeout="120s", prompt="scenario=hang_ignore_term""#,
@@ -541,15 +542,16 @@ fn pas_kill_without_grace_waits_for_a_profile_grace_over_15s() {
     assert_eq!(ended[0]["reason"], "stopped");
 }
 
-// --- `pas validate --workdir` reads the workdir's pas.toml, as `run` does ---
+// --- `pas validate --workdir` reads the workdir's .harmonik-attractor/config.toml, as `run` does ---
 
-/// A git repo beside the fake's whose `pas.toml` has a profile with an
+/// A git repo beside the fake's whose `.harmonik-attractor/config.toml` has a profile with an
 /// unknown field, and the pipeline file `dot`.
 fn broken_project(fake: &FakeAgent, dot: &str) -> (std::path::PathBuf, std::path::PathBuf) {
     let broken = fake.root().join("broken");
     fs::create_dir(&broken).unwrap();
+    fs::create_dir_all(broken.join(".harmonik-attractor")).unwrap();
     fs::write(
-        broken.join("pas.toml"),
+        broken.join(".harmonik-attractor/config.toml"),
         "[project]\nname = \"broken\"\n\n[agents.fake]\nmechanism = \"claude-p\"\ncommand = \"x\"\nbogus_field = 1\n",
     )
     .unwrap();
@@ -572,13 +574,13 @@ fn validate_in(
     command.output().unwrap()
 }
 
-/// `pas`'s error for the broken `pas.toml`: from "failed to resolve
-/// pas.toml" to the end of its "unknown field" line.
+/// `pas`'s error for the broken `.harmonik-attractor/config.toml`: from "failed to resolve
+/// .harmonik-attractor/config.toml" to the end of its "unknown field" line.
 fn bogus_field_error(output: &std::process::Output) -> String {
     let err = stderr(output);
     assert!(!output.status.success(), "{err}");
     let start = err
-        .find("failed to resolve pas.toml")
+        .find("failed to resolve .harmonik-attractor/config.toml")
         .unwrap_or_else(|| panic!("{err}"));
     let field = err
         .find("unknown field `bogus_field`")
@@ -588,7 +590,7 @@ fn bogus_field_error(output: &std::process::Output) -> String {
 }
 
 #[test]
-fn validate_with_workdir_reads_that_projects_pas_toml_like_run() {
+fn validate_with_workdir_reads_that_projects_config_like_run() {
     let fake = FakeAgent::new();
     let dot = one_node(r#"agent="fake", prompt="scenario=success""#);
     let (broken, pipeline) = broken_project(&fake, &dot);
@@ -607,7 +609,7 @@ fn validate_with_workdir_reads_that_projects_pas_toml_like_run() {
 }
 
 #[test]
-fn validate_without_workdir_still_reads_the_current_directorys_pas_toml() {
+fn validate_without_workdir_still_reads_the_current_directorys_config() {
     let fake = FakeAgent::new();
     let dot = one_node(r#"agent="fake", prompt="scenario=success""#);
     let (broken, pipeline) = broken_project(&fake, &dot);

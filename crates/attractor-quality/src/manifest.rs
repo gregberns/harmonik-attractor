@@ -1,7 +1,7 @@
 use attractor_agent_handler::ProfileConfig;
 use serde::{Deserialize, Deserializer};
 use std::collections::{BTreeMap, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -26,7 +26,7 @@ pub struct ProjectSection {
 /// `[run]`: where a Run's git worktree goes.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RunSection {
-    /// Folder holding the Runs' worktrees, relative to `pas.toml`'s folder.
+    /// Folder holding the Runs' worktrees, relative to `.harmonik-attractor/config.toml`'s folder.
     pub worktree_root: Option<PathBuf>,
 }
 
@@ -163,6 +163,17 @@ pub struct ResolvedManifest {
     pub manifest: Manifest,
     pub path: PathBuf,
     pub blake3_hash: String,
+}
+
+impl ResolvedManifest {
+    /// The project root: the folder holding `.harmonik-attractor/`. Relative
+    /// paths in the config resolve against it.
+    pub fn project_root(&self) -> &Path {
+        self.path
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or_else(|| Path::new("."))
+    }
 }
 
 #[cfg(test)]

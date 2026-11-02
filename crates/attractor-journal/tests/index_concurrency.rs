@@ -26,7 +26,7 @@ fn index_child_append() {
         chrono::Utc::now(),
         workdir,
         PathBuf::from("/abs/pipelines/x.dot"),
-        PathBuf::from("/abs/repo/.pas/logs/x/runs"),
+        PathBuf::from("/abs/repo/.harmonik-attractor/logs/x/runs"),
     );
     append_entry(&entry).unwrap();
 }

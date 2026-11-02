@@ -1,5 +1,5 @@
 //! Agent profiles from config: the embedded defaults (`agents.toml`) and a
-//! project's `pas.toml` `[agents.<name>]`, layered and resolved into
+//! project's `.harmonik-attractor/config.toml` `[agents.<name>]`, layered and resolved into
 //! [`Profile`]s. Pure: parsing and merging, no I/O.
 
 use std::collections::{BTreeMap, BTreeSet};

@@ -299,7 +299,8 @@ cmd = "true"
 [quality.hooks.check-b]
 cmd = "true"
 "#;
-        let toml_path = tmp.path().join("pas.toml");
+        let toml_path = tmp.path().join(".harmonik-attractor/config.toml");
+        std::fs::create_dir_all(toml_path.parent().unwrap()).unwrap();
         std::fs::File::create(&toml_path)
             .unwrap()
             .write_all(manifest.as_bytes())
@@ -361,7 +362,8 @@ name = "test-project"
 [quality]
 stages = []
 "#;
-        let toml_path = tmp.path().join("pas.toml");
+        let toml_path = tmp.path().join(".harmonik-attractor/config.toml");
+        std::fs::create_dir_all(toml_path.parent().unwrap()).unwrap();
         std::fs::File::create(&toml_path)
             .unwrap()
             .write_all(manifest.as_bytes())
@@ -514,7 +516,8 @@ allow_failure = true
 [quality.hooks.after]
 cmd = "true"
 "#;
-        std::fs::File::create(tmp.path().join("pas.toml"))
+        std::fs::create_dir_all(tmp.path().join(".harmonik-attractor")).unwrap();
+        std::fs::File::create(tmp.path().join(".harmonik-attractor/config.toml"))
             .unwrap()
             .write_all(manifest.as_bytes())
             .unwrap();

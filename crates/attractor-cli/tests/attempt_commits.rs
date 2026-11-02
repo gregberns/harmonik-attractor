@@ -181,7 +181,10 @@ fn a_pas_folder_in_the_worktree_is_never_committed() {
     );
     let names = fake.git(&["log", "--name-only", "--format=", &range]);
     assert!(names.lines().any(|l| l == "visible.txt"), "{names}");
-    assert!(!names.lines().any(|l| l.starts_with(".pas")), "{names}");
+    assert!(
+        !names.lines().any(|l| l.starts_with(".harmonik-attractor")),
+        "{names}"
+    );
 }
 
 #[test]
@@ -236,8 +239,13 @@ fn a_non_git_workdir_gets_no_commits() {
     let fake = FakeAgent::new();
     let plain = fake.root().join("plain");
     fs::create_dir(&plain).unwrap();
-    // The fake profile comes from pas.toml, which the plain folder needs too.
-    fs::copy(fake.repo().join("pas.toml"), plain.join("pas.toml")).unwrap();
+    // The fake profile comes from .harmonik-attractor/config.toml, which the plain folder needs too.
+    fs::create_dir_all(plain.join(".harmonik-attractor")).unwrap();
+    fs::copy(
+        fake.repo().join(".harmonik-attractor/config.toml"),
+        plain.join(".harmonik-attractor/config.toml"),
+    )
+    .unwrap();
     let output = fake
         .command_in(
             &one_node(r#"timeout="30s", prompt="scenario=success""#),

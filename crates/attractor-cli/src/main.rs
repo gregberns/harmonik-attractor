@@ -48,7 +48,7 @@ enum Commands {
         #[arg(short, long)]
         workdir: Option<PathBuf>,
 
-        /// Logs output directory (default: .pas/logs/<pipeline>-<hash>)
+        /// Logs output directory (default: .harmonik-attractor/logs/<pipeline>-<hash>)
         #[arg(short, long)]
         logs: Option<PathBuf>,
 
@@ -117,7 +117,7 @@ enum Commands {
         base: Option<String>,
 
         /// Folder for the Runs' git worktrees. Default: `[run]
-        /// worktree_root` in pas.toml, else `<project-root>/.pas/worktrees`.
+        /// worktree_root` in .harmonik-attractor/config.toml, else `<project-root>/.harmonik-attractor/worktrees`.
         /// Ignored on resume
         #[arg(long)]
         worktree_root: Option<PathBuf>,
@@ -212,7 +212,7 @@ enum Commands {
         /// Path to the pipeline .dot file
         pipeline: PathBuf,
 
-        /// The working directory whose pas.toml is checked, as for `run`
+        /// The working directory whose .harmonik-attractor/config.toml is checked, as for `run`
         /// (default: the current directory)
         #[arg(short, long)]
         workdir: Option<PathBuf>,
@@ -246,7 +246,7 @@ enum Commands {
         #[arg(long)]
         from_prompt: Option<String>,
 
-        /// Output file path (defaults: .pas/prd.md or .pas/spec.md)
+        /// Output file path (defaults: .harmonik-attractor/prd.md or .harmonik-attractor/spec.md)
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
@@ -337,10 +337,10 @@ enum Commands {
         json: bool,
     },
 
-    /// Initialise a `pas.toml` in the current (or specified) project.
+    /// Initialise a `.harmonik-attractor/config.toml` in the current (or specified) project.
     ///
     /// Detects the project toolchain from well-known config files (Cargo.toml,
-    /// pyproject.toml, package.json, …) and writes a starter `pas.toml` to the
+    /// pyproject.toml, package.json, …) and writes a starter `.harmonik-attractor/config.toml` to the
     /// nearest `.git` root. If no `.git` is found the command exits with code 4
     /// in non-interactive mode unless `--force` is given.
     Init {
@@ -348,7 +348,7 @@ enum Commands {
         #[arg(long, default_value = ".")]
         workdir: PathBuf,
 
-        /// Overwrite an existing `pas.toml` and proceed without a `.git` guard
+        /// Overwrite an existing `.harmonik-attractor/config.toml` and proceed without a `.git` guard
         #[arg(long)]
         force: bool,
 
@@ -365,7 +365,7 @@ enum Commands {
         dry_run: bool,
     },
 
-    /// Manage the pas.toml trust store.
+    /// Manage the .harmonik-attractor/config.toml trust store.
     Trust {
         #[command(subcommand)]
         action: TrustAction,
@@ -447,14 +447,14 @@ enum Commands {
 enum TrustAction {
     /// Add a manifest to the trust store
     Add {
-        /// Path to the pas.toml file
+        /// Path to the .harmonik-attractor/config.toml file
         path: PathBuf,
         /// blake3 hash of the manifest
         hash: String,
     },
     /// Remove a manifest from the trust store
     Remove {
-        /// Path to the pas.toml file
+        /// Path to the .harmonik-attractor/config.toml file
         path: PathBuf,
         /// blake3 hash of the manifest
         hash: String,

@@ -176,7 +176,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         std::env::set_var("XDG_CONFIG_HOME", tmp.path());
 
-        let path = Path::new("/tmp/test/pas.toml");
+        let path = Path::new("/tmp/test/.harmonik-attractor/config.toml");
         let hash = "abc123def456789";
 
         assert!(!is_trusted(path, hash));
@@ -193,13 +193,14 @@ mod tests {
         let _guard = TEST_LOCK.lock().unwrap();
         let tmp = TempDir::new().unwrap();
         std::env::set_var("XDG_CONFIG_HOME", tmp.path().join("config"));
-        let manifest = tmp.path().join("pas.toml");
+        std::fs::create_dir_all(tmp.path().join(".harmonik-attractor")).unwrap();
+        let manifest = tmp.path().join(".harmonik-attractor/config.toml");
         std::fs::write(&manifest, "[project]\nname = \"x\"\n").unwrap();
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
 
         let hash = "abc123def456789";
-        add_trust(Path::new("pas.toml"), hash, "test").unwrap();
+        add_trust(Path::new(".harmonik-attractor/config.toml"), hash, "test").unwrap();
         assert!(is_trusted(&manifest, hash));
 
         std::env::set_current_dir(old_cwd).unwrap();
@@ -233,8 +234,18 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         std::env::set_var("XDG_CONFIG_HOME", tmp.path());
 
-        add_trust(Path::new("/a/pas.toml"), "hash1", "test").unwrap();
-        add_trust(Path::new("/b/pas.toml"), "hash2", "test").unwrap();
+        add_trust(
+            Path::new("/a/.harmonik-attractor/config.toml"),
+            "hash1",
+            "test",
+        )
+        .unwrap();
+        add_trust(
+            Path::new("/b/.harmonik-attractor/config.toml"),
+            "hash2",
+            "test",
+        )
+        .unwrap();
         let entries = list_trusted().unwrap();
         assert_eq!(entries.len(), 2);
 

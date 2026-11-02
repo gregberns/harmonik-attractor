@@ -699,7 +699,10 @@ fn directory_run_creates_one_run_per_pipeline() {
     for extra in [&["--run-id", RUN_ID][..], &["--json"][..]] {
         let output = run_dir_cmd(extra);
         assert_failure(&output);
-        assert!(!fx.path().join(".pas").exists(), "{extra:?} created files");
+        assert!(
+            !fx.path().join(".harmonik-attractor").exists(),
+            "{extra:?} created files"
+        );
         assert!(!fx.index().exists());
     }
 

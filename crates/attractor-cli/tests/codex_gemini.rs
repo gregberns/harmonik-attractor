@@ -238,10 +238,10 @@ fn the_cost_warning_follows_the_handler_not_the_profile_name() {
 }
 
 /// The PROVIDER_COST_UNTRACKED lines of a dry run of one node on
-/// `profile`, with `agents` added to the harness's `pas.toml`.
+/// `profile`, with `agents` added to the harness's `.harmonik-attractor/config.toml`.
 fn cost_warnings(agents: &str, profile: &str) -> Vec<String> {
     let fake = FakeAgent::new();
-    fake.write_pas_toml(agents);
+    fake.write_config(agents);
     let output = fake.run_with(
         &one_node(&format!("agent=\"{profile}\", prompt=\"p\"")),
         &["--dry-run"],

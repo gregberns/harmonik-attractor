@@ -156,7 +156,7 @@ fn a_retry_after_a_timeout_continues_the_same_pi_session() {
     // Pi's spawn may run for the timeout plus the rate-limit window (Pi
     // waits for rate limits itself): no window, so the timeout applies. It
     // covers the retry too, so it has room for a slow start under load.
-    fake.commit_pas_toml(
+    fake.commit_config(
         "\n[agents.fake-pi-nowait]\ninherit_from = \"fake-pi\"\nrate_limit_window = \"0s\"",
     );
     node_file(&fake, "work.1", "scenario=hang");
@@ -214,7 +214,7 @@ fn validate_names_a_pi_profile_missing_provider_or_model() {
         ("model", "provider = \"deepseek\"\n"),
     ] {
         let fake = FakeAgent::new();
-        fake.write_pas_toml(&format!(
+        fake.write_config(&format!(
             "\n[agents.bad]\nmechanism = \"pi\"\ncommand = [\"pi\"]\n{profile}"
         ));
         let output = fake.validate(&one_node(r#"timeout="30s""#), &[]);
@@ -236,7 +236,7 @@ fn the_example_profiles_validate() {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/examples/pi-agents.toml"),
     )
     .unwrap();
-    fake.write_pas_toml(&format!("\n{examples}"));
+    fake.write_config(&format!("\n{examples}"));
     let dot = r#"digraph G {
         start [shape="Mdiamond"]
         a [shape="box", agent="deepseek", prompt="a"]

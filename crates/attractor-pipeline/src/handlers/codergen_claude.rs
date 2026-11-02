@@ -47,7 +47,7 @@ impl Default for ClaudeCliConfig {
 }
 
 impl ClaudeCliConfig {
-    /// The `[codergen.claude]` settings a run resolved (CLI over `pas.toml`).
+    /// The `[codergen.claude]` settings a run resolved (CLI over `.harmonik-attractor/config.toml`).
     pub(super) fn from_resolved(claude: &ResolvedClaudeConfig) -> Self {
         Self {
             settings_mode: *claude.settings_mode().value(),
@@ -71,7 +71,7 @@ impl ClaudeCliConfig {
     }
 }
 
-/// The agent profiles a run uses: the built-in ones, then `pas.toml`'s
+/// The agent profiles a run uses: the built-in ones, then `.harmonik-attractor/config.toml`'s
 /// `[agents.<name>]` (whole profiles by name), with the run's
 /// `[codergen.claude]` flags folded into the `claude` profile's args before
 /// `inherit_from` resolves, so a profile inheriting from `claude` keeps them.

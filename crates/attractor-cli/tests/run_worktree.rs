@@ -87,7 +87,9 @@ fn run_creates_worktree_on_run_branch_at_base() {
     let wt = fake.worktree();
     assert_eq!(
         wt,
-        canonical(&fake.repo()).join(".pas/worktrees").join(run_id)
+        canonical(&fake.repo())
+            .join(".harmonik-attractor/worktrees")
+            .join(run_id)
     );
     assert_eq!(meta["branch"], branch.as_str());
     assert_eq!(meta["base"], "HEAD");
@@ -148,7 +150,7 @@ fn non_git_workdir_runs_in_place_with_a_warning() {
     assert_success(&output);
 
     assert!(plain.join("here").is_file());
-    assert!(!plain.join(".pas").exists());
+    assert!(!plain.join(".harmonik-attractor").exists());
     let meta = fake.run_meta();
     assert!(meta["worktree"].is_null(), "{meta}");
     assert!(meta["branch"].is_null(), "{meta}");
@@ -171,11 +173,11 @@ fn main_checkout_stays_clean_with_default_logs_and_worktrees() {
         .unwrap();
     assert_success(&output);
 
-    assert!(fake.repo().join(".pas/logs").is_dir());
-    assert!(fake.repo().join(".pas/worktrees").is_dir());
+    assert!(fake.repo().join(".harmonik-attractor/logs").is_dir());
+    assert!(fake.repo().join(".harmonik-attractor/worktrees").is_dir());
     assert_eq!(
-        fs::read_to_string(fake.repo().join(".pas/.gitignore")).unwrap(),
-        "*\n"
+        fs::read_to_string(fake.repo().join(".harmonik-attractor/.gitignore")).unwrap(),
+        "*\n!config.toml\n"
     );
     assert_eq!(fake.git(&["status", "--porcelain"]), "");
 }
@@ -183,8 +185,12 @@ fn main_checkout_stays_clean_with_default_logs_and_worktrees() {
 #[test]
 fn existing_pas_gitignore_is_left_alone() {
     let fake = FakeAgent::new();
-    fs::create_dir_all(fake.repo().join(".pas")).unwrap();
-    fs::write(fake.repo().join(".pas/.gitignore"), "worktrees/\nlogs/\n").unwrap();
+    fs::create_dir_all(fake.repo().join(".harmonik-attractor")).unwrap();
+    fs::write(
+        fake.repo().join(".harmonik-attractor/.gitignore"),
+        "worktrees/\nlogs/\n",
+    )
+    .unwrap();
 
     let output = fake
         .pas_run(&agent_node("edit_commit"))
@@ -194,7 +200,7 @@ fn existing_pas_gitignore_is_left_alone() {
     assert_success(&output);
 
     assert_eq!(
-        fs::read_to_string(fake.repo().join(".pas/.gitignore")).unwrap(),
+        fs::read_to_string(fake.repo().join(".harmonik-attractor/.gitignore")).unwrap(),
         "worktrees/\nlogs/\n"
     );
 }
@@ -208,7 +214,7 @@ fn default_logs_in_a_subdirectory_are_ignored_too() {
     fake.git(&["add", "sub/keep"]);
     fake.git(&["commit", "-q", "-m", "sub"]);
 
-    // cwd = <repo>/sub: the logs go to <repo>/sub/.pas/logs.
+    // cwd = <repo>/sub: the logs go to <repo>/sub/.harmonik-attractor/logs.
     let output = fake
         .pas_run(&tool_node("true"))
         .current_dir(&sub)
@@ -216,10 +222,10 @@ fn default_logs_in_a_subdirectory_are_ignored_too() {
         .unwrap();
     assert_success(&output);
 
-    assert!(sub.join(".pas/logs").is_dir());
+    assert!(sub.join(".harmonik-attractor/logs").is_dir());
     assert_eq!(
-        fs::read_to_string(sub.join(".pas/.gitignore")).unwrap(),
-        "*\n"
+        fs::read_to_string(sub.join(".harmonik-attractor/.gitignore")).unwrap(),
+        "*\n!config.toml\n"
     );
     assert_eq!(fake.git(&["status", "--porcelain"]), "");
     // pas's own logs folder is not dirt.
@@ -248,13 +254,14 @@ fn a_refused_run_leaves_its_default_logs_ignored() {
 #[test]
 fn worktree_root_inside_the_repo_stays_out_of_git_status() {
     let fake = FakeAgent::new();
+    fs::create_dir_all(fake.repo().join(".harmonik-attractor")).unwrap();
     fs::write(
-        fake.repo().join("pas.toml"),
+        fake.repo().join(".harmonik-attractor/config.toml"),
         "[project]\nname = \"demo\"\n\n[run]\nworktree_root = \"wt\"\n",
     )
     .unwrap();
-    fake.git(&["add", "pas.toml"]);
-    fake.git(&["commit", "-q", "-m", "pas.toml"]);
+    fake.git(&["add", ".harmonik-attractor/config.toml"]);
+    fake.git(&["commit", "-q", "-m", ".harmonik-attractor/config.toml"]);
 
     assert_success(&fake.run(&tool_node("true")));
     assert_eq!(fake.git(&["status", "--porcelain"]), "");
@@ -388,12 +395,13 @@ fn worktree_root_flag_puts_the_worktree_there() {
     // The node ran there; the successful Run then removed it (ticket 07).
     assert_eq!(on_branch(&fake, "where"), fake.worktree().to_str().unwrap());
     assert!(!fake.worktree().exists());
-    assert!(!fake.repo().join(".pas/worktrees").exists());
+    assert!(!fake.repo().join(".harmonik-attractor/worktrees").exists());
 }
 
-fn write_pas_toml(fake: &FakeAgent, worktree_root: &str) {
+fn write_config(fake: &FakeAgent, worktree_root: &str) {
+    fs::create_dir_all(fake.repo().join(".harmonik-attractor")).unwrap();
     fs::write(
-        fake.repo().join("pas.toml"),
+        fake.repo().join(".harmonik-attractor/config.toml"),
         format!("[project]\nname = \"demo\"\n\n[run]\nworktree_root = \"{worktree_root}\"\n"),
     )
     .unwrap();
@@ -402,14 +410,14 @@ fn write_pas_toml(fake: &FakeAgent, worktree_root: &str) {
         format!("/{worktree_root}/\n"),
     )
     .unwrap();
-    fake.git(&["add", "pas.toml", ".gitignore"]);
-    fake.git(&["commit", "-q", "-m", "pas.toml"]);
+    fake.git(&["add", ".harmonik-attractor/config.toml", ".gitignore"]);
+    fake.git(&["commit", "-q", "-m", ".harmonik-attractor/config.toml"]);
 }
 
 #[test]
-fn pas_toml_worktree_root_is_relative_to_pas_toml() {
+fn config_worktree_root_is_relative_to_the_project_root() {
     let fake = FakeAgent::new();
-    write_pas_toml(&fake, "wt");
+    write_config(&fake, "wt");
 
     assert_success(&fake.run(&tool_node("true")));
 
@@ -421,9 +429,9 @@ fn pas_toml_worktree_root_is_relative_to_pas_toml() {
 }
 
 #[test]
-fn worktree_root_flag_beats_pas_toml() {
+fn worktree_root_flag_beats_the_config() {
     let fake = FakeAgent::new();
-    write_pas_toml(&fake, "wt");
+    write_config(&fake, "wt");
     let root = fake.root().join("flag-root");
 
     assert_success(&fake.run_with(
@@ -452,7 +460,7 @@ fn unknown_base_is_refused_before_any_branch_or_worktree() {
     .unwrap();
     assert_eq!(first["error"]["code"], "invalid_base", "{first}");
     assert_eq!(fake.git(&["branch", "--list", "pas/run/*"]), "");
-    assert!(!fake.repo().join(".pas/worktrees").exists());
+    assert!(!fake.repo().join(".harmonik-attractor/worktrees").exists());
     assert_eq!(
         fake.git(&["worktree", "list", "--porcelain"])
             .matches("worktree ")
@@ -525,7 +533,7 @@ fn second_run_of_same_pipeline_is_refused_before_any_worktree() {
         2
     );
     assert_eq!(
-        fs::read_dir(fake.repo().join(".pas/worktrees"))
+        fs::read_dir(fake.repo().join(".harmonik-attractor/worktrees"))
             .unwrap()
             .count(),
         1
@@ -599,7 +607,7 @@ fn resume_continues_in_the_same_worktree() {
     assert_eq!(on_branch(&fake, "seen"), "ok");
     assert!(!wt.exists());
     assert_eq!(
-        fs::read_dir(fake.repo().join(".pas/worktrees"))
+        fs::read_dir(fake.repo().join(".harmonik-attractor/worktrees"))
             .unwrap()
             .count(),
         0,
@@ -634,7 +642,7 @@ fn resume_ignores_a_changed_worktree_root() {
         err.contains("worktree") && err.contains(wt.to_str().unwrap()),
         "{err}"
     );
-    assert!(!fake.repo().join(".pas/worktrees").exists());
+    assert!(!fake.repo().join(".harmonik-attractor/worktrees").exists());
     assert_eq!(
         fake.git(&["worktree", "list", "--porcelain"])
             .matches("worktree ")

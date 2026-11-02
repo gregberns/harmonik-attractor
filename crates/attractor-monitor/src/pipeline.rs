@@ -209,12 +209,12 @@ fn fnv1a32(bytes: &[u8]) -> u32 {
 }
 
 /// The logs folder `pas run <dot>` picks when run in `repo` without `--logs`:
-/// `<repo>/.pas/logs/<stem>-<hash of the canonical path>`.
+/// `<repo>/.harmonik-attractor/logs/<stem>-<hash of the canonical path>`.
 pub fn logs_dir(repo: &Path, dot: &Path) -> PathBuf {
     let stem = dot.file_stem().unwrap_or_default().to_string_lossy();
     let canonical = std::fs::canonicalize(dot).unwrap_or_else(|_| dot.to_path_buf());
     let hash = fnv1a32(canonical.to_string_lossy().as_bytes());
-    repo.join(format!(".pas/logs/{stem}-{hash:08x}"))
+    repo.join(format!(".harmonik-attractor/logs/{stem}-{hash:08x}"))
 }
 
 #[cfg(test)]
@@ -415,7 +415,10 @@ mod tests {
         assert_eq!(fnv1a32(b""), 0x811c9dc5);
         assert_eq!(fnv1a32(b"a"), 0xe40c292c);
         let d = logs_dir(Path::new("/r"), Path::new("/nonexistent/p.dot"));
-        let want = format!("/r/.pas/logs/p-{:08x}", fnv1a32(b"/nonexistent/p.dot"));
+        let want = format!(
+            "/r/.harmonik-attractor/logs/p-{:08x}",
+            fnv1a32(b"/nonexistent/p.dot")
+        );
         assert_eq!(d, PathBuf::from(want));
     }
 }

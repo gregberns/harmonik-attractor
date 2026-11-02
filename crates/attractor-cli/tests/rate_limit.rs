@@ -123,7 +123,7 @@ fn rate_limited_twice_then_success_journals_each_wait_and_spawn() {
 #[test]
 fn always_rate_limited_with_no_window_fails_at_once_saying_rate_limited() {
     let fake = FakeAgent::new();
-    fake.commit_pas_toml(
+    fake.commit_config(
         "\n[agents.fake-claude-nowait]\ninherit_from = \"fake-claude\"\nrate_limit_window = \"0s\"",
     );
     fs::write(

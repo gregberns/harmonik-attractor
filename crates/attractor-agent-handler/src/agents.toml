@@ -1,5 +1,5 @@
 # The agent profiles PAS ships with. A project replaces a profile by name,
-# or adds one, in `pas.toml` `[agents.<name>]`; `[defaults]` fills any field
+# or adds one, in `.harmonik-attractor/config.toml` `[agents.<name>]`; `[defaults]` fills any field
 # no profile in an `inherit_from` chain sets.
 
 [defaults]

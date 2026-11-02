@@ -813,8 +813,9 @@ fn resolve_claude_cli_config(
     if let Some(dir) = workdir {
         match attractor_quality::resolve(Path::new(dir)) {
             Ok(resolved) => {
+                let root = resolved.project_root().to_path_buf();
                 if let Some(claude) = resolved.manifest.codergen.and_then(|c| c.claude) {
-                    apply_manifest_claude_config(&mut cfg, claude, resolved.path.parent());
+                    apply_manifest_claude_config(&mut cfg, claude, Some(&root));
                 }
             }
             Err(ResolutionError::NotFound) => {}
@@ -823,7 +824,7 @@ fn resolve_claude_cli_config(
                     handler: "codergen".into(),
                     node: node_id.into(),
                     message: format!(
-                        "Failed to resolve pas.toml for Claude codergen config: {err}"
+                        "Failed to resolve .harmonik-attractor/config.toml for Claude codergen config: {err}"
                     ),
                 });
             }

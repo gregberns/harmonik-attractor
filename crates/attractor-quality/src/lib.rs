@@ -12,7 +12,7 @@ pub use manifest::{
     ClaudeCodergenConfig, ClaudeSettingSource, ClaudeSettingsMode, CodergenSection, HookConfig,
     Manifest, QualitySection, ResolvedManifest,
 };
-pub use resolution::{resolve, ResolutionError};
+pub use resolution::{config_path, resolve, ResolutionError, CONFIG_FILE, PROJECT_DIR};
 pub use trust::{
     add_trust, is_trusted, list_trusted, prompt_and_add, remove_trust, TrustEntry, TrustError,
 };

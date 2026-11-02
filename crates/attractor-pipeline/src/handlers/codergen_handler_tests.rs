@@ -267,10 +267,11 @@ fn the_fold_keeps_the_args_an_overridden_claude_inherits() {
 }
 
 #[test]
-fn resolve_claude_cli_config_reads_pas_toml_and_resolves_plugin_dirs() {
+fn resolve_claude_cli_config_reads_the_config_and_resolves_plugin_dirs() {
     let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(".harmonik-attractor")).unwrap();
     std::fs::write(
-        dir.path().join("pas.toml"),
+        dir.path().join(".harmonik-attractor/config.toml"),
         r#"
 [project]
 name = "test"
@@ -280,7 +281,7 @@ settings_mode = "inherit"
 setting_sources = ["user"]
 settings_json = "{}"
 tools = "Read,Edit"
-plugin_dirs = [".pas/plugin"]
+plugin_dirs = [".harmonik-attractor/plugin"]
 "#,
     )
     .unwrap();
@@ -292,14 +293,18 @@ plugin_dirs = [".pas/plugin"]
     assert_eq!(cfg.setting_sources, vec!["user"]);
     assert_eq!(cfg.settings.as_deref(), Some("{}"));
     assert_eq!(cfg.tools.as_deref(), Some("Read,Edit"));
-    assert_eq!(cfg.plugin_dirs, vec![dir.path().join(".pas/plugin")]);
+    assert_eq!(
+        cfg.plugin_dirs,
+        vec![dir.path().join(".harmonik-attractor/plugin")]
+    );
 }
 
 #[test]
-fn resolve_claude_cli_config_cli_overrides_pas_toml() {
+fn resolve_claude_cli_config_cli_overrides_the_config() {
     let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(".harmonik-attractor")).unwrap();
     std::fs::write(
-        dir.path().join("pas.toml"),
+        dir.path().join(".harmonik-attractor/config.toml"),
         r#"
 [project]
 name = "test"

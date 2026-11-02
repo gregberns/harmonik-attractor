@@ -11,7 +11,7 @@ fn pas() -> &'static str {
 
 /// `pas` with its Run Index in a scratch folder, never the developer's
 /// `~/.local/state/pas/runs.jsonl`, run in `cwd` (a test's scratch folder,
-/// so a default `.pas/` folder never lands in the source tree).
+/// so a default `.harmonik-attractor/` folder never lands in the source tree).
 fn pas_command(cwd: &Path) -> Command {
     let mut command = Command::new(pas());
     command.current_dir(cwd).env(

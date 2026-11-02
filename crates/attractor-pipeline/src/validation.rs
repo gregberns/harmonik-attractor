@@ -253,7 +253,7 @@ pub fn check_agents(
         .map(|(node_id, selection, error)| {
             let fix = match &error {
                 ConfigError::UnknownProfile(_) => format!(
-                    "Use a defined profile, or define [agents.{}] in pas.toml",
+                    "Use a defined profile, or define [agents.{}] in .harmonik-attractor/config.toml",
                     selection.profile
                 ),
                 ConfigError::NoReasoningArgs { .. } => {
@@ -262,7 +262,7 @@ pub fn check_agents(
                 ConfigError::TestOnly { .. } => {
                     "Pass --allow-test-agents (test profiles only)".into()
                 }
-                _ => "Fix the agent profile in pas.toml".into(),
+                _ => "Fix the agent profile in .harmonik-attractor/config.toml".into(),
             };
             Diagnostic {
                 rule: "agent_profile".into(),

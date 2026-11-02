@@ -1,7 +1,7 @@
 //! Runs `pas run` against the fake `claude` (`tests/agents/fake-claude`).
 //!
 //! Each [`FakeAgent`] owns a scratch folder: a git repo used as the workdir,
-//! whose first commit holds a `pas.toml` with the `fake` agent profile
+//! whose first commit holds a `.harmonik-attractor/config.toml` with the `fake` agent profile
 //! (`test_only`, `command` = the fake script), the fake's scenario folder,
 //! and the Run's logs and state folders. Pipelines select the fake with
 //! `agent="fake"`, and every `pas run` passes `--allow-test-agents`. A
@@ -10,7 +10,7 @@
 //! from the user's `PATH`; [`FakeAgent::shim_claude_on_path`] replaces the
 //! `claude` stub with the fake (the `llm_provider="claude"` alias), and
 //! `shim_codex_on_path`/`shim_gemini_on_path` do the same for `codex` and
-//! `gemini`. The `pas.toml` also has `fake-codex`, `fake-gemini` and
+//! `gemini`. The `.harmonik-attractor/config.toml` also has `fake-codex`, `fake-gemini` and
 //! `fake-claude` profiles (the built-in `codex`/`gemini`/`claude` profiles
 //! with the fakes as command, `test_only`; `fake-claude` resumes sessions,
 //! `fake` doesn't), and `fake-pi`: a `pi` profile run by
@@ -31,7 +31,7 @@ fn fake_script(name: &str) -> PathBuf {
 }
 
 /// The fake script in the repo's `tests/agents/`.
-fn fake_claude() -> PathBuf {
+pub fn fake_claude() -> PathBuf {
     fake_script("fake-claude")
 }
 
@@ -53,22 +53,24 @@ impl FakeAgent {
         }
         crate::blocked_agents::block_agents(&fake.bin());
         fake.git(&["init", "-q"]);
-        fake.write_pas_toml("");
-        fake.git(&["add", "pas.toml"]);
+        fake.write_config("");
+        fake.git(&["add", ".harmonik-attractor/config.toml"]);
         fake.git(&["commit", "-q", "-m", "base"]);
         fake
     }
 
-    /// Writes the repo's `pas.toml`: the `fake` profile, then `agents`
+    /// Writes the repo's `.harmonik-attractor/config.toml`: the `fake` profile, then `agents`
     /// (more `[agents.<name>]` tables, or an override of `fake`'s fields
     /// when it starts with plain keys). Does not commit.
-    pub fn write_pas_toml(&self, agents: &str) {
+    pub fn write_config(&self, agents: &str) {
         let fake = fake_claude().canonicalize().unwrap();
         let codex = fake_script("fake-codex").canonicalize().unwrap();
         let gemini = fake_script("fake-gemini").canonicalize().unwrap();
         let pi = fake_script("fake-pi").canonicalize().unwrap();
+        let config = self.repo().join(".harmonik-attractor/config.toml");
+        fs::create_dir_all(config.parent().unwrap()).unwrap();
         fs::write(
-            self.repo().join("pas.toml"),
+            &config,
             format!(
                 "[project]\nname = \"fake-test\"\n\n\
                  [agents.fake-codex]\ninherit_from = \"codex\"\ncommand = {codex:?}\ntest_only = true\n\n\
@@ -84,12 +86,12 @@ impl FakeAgent {
         .unwrap();
     }
 
-    /// [`FakeAgent::write_pas_toml`], committed, so the Run's worktree and
+    /// [`FakeAgent::write_config`], committed, so the Run's worktree and
     /// the dirty check see it.
-    pub fn commit_pas_toml(&self, agents: &str) {
-        self.write_pas_toml(agents);
-        self.git(&["add", "pas.toml"]);
-        self.git(&["commit", "-q", "-m", "pas.toml"]);
+    pub fn commit_config(&self, agents: &str) {
+        self.write_config(agents);
+        self.git(&["add", ".harmonik-attractor/config.toml"]);
+        self.git(&["commit", "-q", "-m", "config"]);
     }
 
     /// Puts the fake on `PATH` as `claude` in place of its stub, for
@@ -370,7 +372,7 @@ impl FakeAgent {
     }
 
     /// `pas validate <pipeline> <extra>` for `dot`, run in the repo so it
-    /// reads the repo's `pas.toml`.
+    /// reads the repo's `.harmonik-attractor/config.toml`.
     pub fn validate(&self, dot: &str, extra: &[&str]) -> Output {
         self.pas()
             .arg("validate")

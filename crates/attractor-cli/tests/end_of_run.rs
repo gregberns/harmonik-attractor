@@ -265,8 +265,13 @@ fn a_non_git_workdir_reports_null_git_fields() {
     let fake = FakeAgent::new();
     let plain: PathBuf = fake.root().join("plain");
     fs::create_dir(&plain).unwrap();
-    // The fake profile comes from pas.toml, which the plain folder needs too.
-    fs::copy(fake.repo().join("pas.toml"), plain.join("pas.toml")).unwrap();
+    // The fake profile comes from .harmonik-attractor/config.toml, which the plain folder needs too.
+    fs::create_dir_all(plain.join(".harmonik-attractor")).unwrap();
+    fs::copy(
+        fake.repo().join(".harmonik-attractor/config.toml"),
+        plain.join(".harmonik-attractor/config.toml"),
+    )
+    .unwrap();
     let output = fake
         .command_in(
             &one_node(r#"timeout="30s", prompt="scenario=success""#),

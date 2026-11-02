@@ -1,6 +1,6 @@
 //! The git worktree and branch each Run works in (design.md §3): branch
 //! `pas/run/<run-id>` from a base commit, checked out at
-//! `<worktree_root>/<run-id>`, default `<project-root>/.pas/worktrees`.
+//! `<worktree_root>/<run-id>`, default `<project-root>/.harmonik-attractor/worktrees`.
 //!
 //! Names and decisions are pure functions; the `git` calls below them are a
 //! thin shell that returns typed errors.
@@ -13,8 +13,11 @@ const BRANCH_PREFIX: &str = "pas/run/";
 
 /// The base of a new Run's branch when `--base` is not given.
 pub(crate) const DEFAULT_BASE: &str = "HEAD";
-/// The folder pas keeps its own files in, at the project root.
-pub(crate) const PAS_DIR: &str = ".pas";
+/// The project folder: the config, and the run data PAS keeps there.
+pub(crate) const PROJECT_DIR: &str = attractor_quality::PROJECT_DIR;
+/// The `.gitignore` PAS writes in the project folder and a worktree root:
+/// everything but the config, which stays committable.
+const PROJECT_GITIGNORE: &str = "*\n!config.toml\n";
 
 /// Why the Run's worktree could not be prepared.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,9 +95,9 @@ pub(crate) fn worktree_path(root: &Path, run_id: &str) -> PathBuf {
     root.join(run_id)
 }
 
-/// `<project-root>/.pas/worktrees`.
+/// `<project-root>/.harmonik-attractor/worktrees`.
 pub(crate) fn default_worktree_root(top: &Path) -> PathBuf {
-    top.join(PAS_DIR).join("worktrees")
+    top.join(PROJECT_DIR).join("worktrees")
 }
 
 /// The Run's workdir: the source workdir's place in the repository, inside
@@ -223,7 +226,7 @@ pub(crate) struct PlaceRequest<'a> {
     pub run_id: &'a str,
     /// `--base`; a new Run defaults to [`DEFAULT_BASE`].
     pub base: Option<&'a str>,
-    /// `--worktree-root` or `pas.toml`'s; `None` uses the default.
+    /// `--worktree-root` or `.harmonik-attractor/config.toml`'s; `None` uses the default.
     pub root: Option<&'a Path>,
     /// A dry run starts no agent, so it works in place and creates nothing.
     pub dry_run: bool,
@@ -250,7 +253,7 @@ pub(crate) fn place_new_run(request: &PlaceRequest<'_>) -> Result<RunPlace, Work
         warnings.push(dirty_warning(&top));
     }
     let ignore = |dir: &Path| {
-        ensure_pas_gitignore(dir).map_err(|e| WorktreeError::Io {
+        ensure_project_gitignore(dir).map_err(|e| WorktreeError::Io {
             path: dir.join(".gitignore"),
             message: e.to_string(),
         })
@@ -263,7 +266,7 @@ pub(crate) fn place_new_run(request: &PlaceRequest<'_>) -> Result<RunPlace, Work
             root.to_path_buf()
         }
         None => {
-            ignore(&top.join(PAS_DIR))?;
+            ignore(&top.join(PROJECT_DIR))?;
             default_worktree_root(&top)
         }
     };
@@ -390,9 +393,9 @@ pub(crate) fn resolve_base(top: &Path, base: &str) -> Result<String, WorktreeErr
 }
 
 /// Whether the checkout at `top` has uncommitted changes or untracked
-/// files, outside `.pas/`.
+/// files, outside `.harmonik-attractor/`.
 pub(crate) fn is_dirty(top: &Path) -> Result<bool, WorktreeError> {
-    let exclude = format!(":(exclude){PAS_DIR}");
+    let exclude = format!(":(exclude){PROJECT_DIR}");
     git(top, &["status", "--porcelain", "--", ".", &exclude]).map(|out| !out.is_empty())
 }
 
@@ -410,8 +413,8 @@ pub(crate) fn branch_tip(dir: &Path, branch: &str) -> Result<String, WorktreeErr
 }
 
 /// `git worktree remove --force <worktree>`, run from the repository at
-/// `dir`. The caller has checked that nothing outside `.pas/` is
-/// uncommitted; `--force` is only for an ignored or excluded `.pas/` inside
+/// `dir`. The caller has checked that nothing outside `.harmonik-attractor/` is
+/// uncommitted; `--force` is only for an ignored or excluded `.harmonik-attractor/` inside
 /// it, which would otherwise block the removal. The branch stays.
 pub(crate) fn remove_worktree(dir: &Path, worktree: &Path) -> Result<(), WorktreeError> {
     git(
@@ -421,16 +424,17 @@ pub(crate) fn remove_worktree(dir: &Path, worktree: &Path) -> Result<(), Worktre
     .map(|_| ())
 }
 
-/// Write `<pas_dir>/.gitignore` containing `*` unless the file exists, so
-/// git ignores everything pas keeps there (also used for a worktree root).
-pub(crate) fn ensure_pas_gitignore(pas_dir: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(pas_dir)?;
+/// Write `<dir>/.gitignore` ([`PROJECT_GITIGNORE`]) unless the file exists,
+/// so git ignores the run data PAS keeps there but not `config.toml` (also
+/// used for a worktree root).
+pub(crate) fn ensure_project_gitignore(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
     match std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(pas_dir.join(".gitignore"))
+        .open(dir.join(".gitignore"))
     {
-        Ok(mut file) => std::io::Write::write_all(&mut file, b"*\n"),
+        Ok(mut file) => std::io::Write::write_all(&mut file, PROJECT_GITIGNORE.as_bytes()),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
         Err(e) => Err(e),
     }
@@ -524,13 +528,13 @@ mod tests {
         );
         assert_eq!(
             default_worktree_root(Path::new("/repo")),
-            PathBuf::from("/repo/.pas/worktrees")
+            PathBuf::from("/repo/.harmonik-attractor/worktrees")
         );
     }
 
     #[test]
     fn run_workdir_keeps_the_subdirectory() {
-        let wt = Path::new("/repo/.pas/worktrees/r1");
+        let wt = Path::new("/repo/.harmonik-attractor/worktrees/r1");
         let top = Path::new("/repo");
         assert_eq!(run_workdir(wt, top, top), Ok(wt.to_path_buf()));
         // Path equality ignores a trailing slash; argv (Codex's --cd) doesn't.
@@ -596,11 +600,11 @@ mod tests {
     #[test]
     fn checked_out_at_reads_worktree_list() {
         let porcelain = "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n\
-                         worktree /repo/.pas/worktrees/r1\nHEAD def\nbranch refs/heads/pas/run/r1\n\n\
+                         worktree /repo/.harmonik-attractor/worktrees/r1\nHEAD def\nbranch refs/heads/pas/run/r1\n\n\
                          worktree /detached\nHEAD 123\ndetached\n";
         assert_eq!(
             checked_out_at(porcelain, BRANCH),
-            Some(PathBuf::from("/repo/.pas/worktrees/r1"))
+            Some(PathBuf::from("/repo/.harmonik-attractor/worktrees/r1"))
         );
         assert_eq!(
             checked_out_at(porcelain, "main"),
@@ -610,18 +614,18 @@ mod tests {
     }
 
     #[test]
-    fn pas_gitignore_is_written_once() {
+    fn project_gitignore_is_written_once() {
         let tmp = tempfile::tempdir().unwrap();
-        let pas = tmp.path().join(".pas");
-        ensure_pas_gitignore(&pas).unwrap();
+        let dir = tmp.path().join(".harmonik-attractor");
+        ensure_project_gitignore(&dir).unwrap();
         assert_eq!(
-            std::fs::read_to_string(pas.join(".gitignore")).unwrap(),
-            "*\n"
+            std::fs::read_to_string(dir.join(".gitignore")).unwrap(),
+            "*\n!config.toml\n"
         );
-        std::fs::write(pas.join(".gitignore"), "mine\n").unwrap();
-        ensure_pas_gitignore(&pas).unwrap();
+        std::fs::write(dir.join(".gitignore"), "mine\n").unwrap();
+        ensure_project_gitignore(&dir).unwrap();
         assert_eq!(
-            std::fs::read_to_string(pas.join(".gitignore")).unwrap(),
+            std::fs::read_to_string(dir.join(".gitignore")).unwrap(),
             "mine\n"
         );
     }

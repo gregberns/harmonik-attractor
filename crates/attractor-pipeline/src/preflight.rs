@@ -139,7 +139,7 @@ fn run_plan_inner(
                 format!("the explicit ${max_budget_usd:.2} budget from --max-budget-usd")
             }
             ConfigurationSource::Manifest => {
-                format!("the ${max_budget_usd:.2} budget from pas.toml")
+                format!("the ${max_budget_usd:.2} budget from .harmonik-attractor/config.toml")
             }
             ConfigurationSource::Graph => {
                 format!("the graph-declared ${max_budget_usd:.2} budget")
@@ -172,7 +172,7 @@ fn run_plan_inner(
                 severity: Severity::Warn,
                 code: "QUALITY_NO_MANIFEST".into(),
                 message: format!(
-                    "Pipeline uses 'quality' handler but no pas.toml found in {}",
+                    "Pipeline uses 'quality' handler but no .harmonik-attractor/config.toml found in {}",
                     workdir.display()
                 ),
                 suggestion: Some("hka init".into()),
@@ -192,7 +192,7 @@ fn run_plan_inner(
                 severity: Severity::Warn,
                 code: "QUALITY_NO_MANIFEST".into(),
                 message: format!(
-                    "Pipeline uses 'quality' handler but no pas.toml found in {}",
+                    "Pipeline uses 'quality' handler but no .harmonik-attractor/config.toml found in {}",
                     workdir.display()
                 ),
                 suggestion: Some("hka init".into()),
@@ -203,7 +203,11 @@ fn run_plan_inner(
             findings.push(PreflightFinding {
                 severity: Severity::Warn,
                 code: "QUALITY_MALFORMED_MANIFEST".into(),
-                message: format!("pas.toml at {} is malformed: {}", path.display(), source),
+                message: format!(
+                    ".harmonik-attractor/config.toml at {} is malformed: {}",
+                    path.display(),
+                    source
+                ),
                 suggestion: None,
                 workdir: Some(workdir.to_path_buf()),
             });
@@ -212,7 +216,11 @@ fn run_plan_inner(
             findings.push(PreflightFinding {
                 severity: Severity::Warn,
                 code: "QUALITY_INVALID_MANIFEST".into(),
-                message: format!("pas.toml at {} is invalid: {}", path.display(), reason),
+                message: format!(
+                    ".harmonik-attractor/config.toml at {} is invalid: {}",
+                    path.display(),
+                    reason
+                ),
                 suggestion: None,
                 workdir: Some(workdir.to_path_buf()),
             });
@@ -314,8 +322,9 @@ mod tests {
 
     fn workdir_with_git_and_manifest(tmp: &TempDir) {
         fs::create_dir(tmp.path().join(".git")).unwrap();
+        fs::create_dir_all(tmp.path().join(".harmonik-attractor")).unwrap();
         fs::write(
-            tmp.path().join("pas.toml"),
+            tmp.path().join(".harmonik-attractor/config.toml"),
             "[project]\nname = \"test\"\n[quality]\nstages = [\"check\"]\n",
         )
         .unwrap();
@@ -323,7 +332,7 @@ mod tests {
 
     fn workdir_with_git_no_manifest(tmp: &TempDir) {
         fs::create_dir(tmp.path().join(".git")).unwrap();
-        // No pas.toml
+        // No .harmonik-attractor/config.toml
     }
 
     // ---- integration tests ----

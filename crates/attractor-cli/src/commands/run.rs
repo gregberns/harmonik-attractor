@@ -43,7 +43,7 @@ pub struct RunInvocation {
     pub allow_shared_workdir: bool,
     /// `--base`: the commit a new Run's branch starts at; `None` is `HEAD`.
     pub base: Option<String>,
-    /// `--worktree-root`, absolute; `None` leaves it to pas.toml or the
+    /// `--worktree-root`, absolute; `None` leaves it to .harmonik-attractor/config.toml or the
     /// built-in default.
     pub worktree_root: Option<PathBuf>,
     /// `--allow-test-agents`: `test_only` agent profiles may run.
@@ -187,7 +187,7 @@ fn stop_wait_ms(
 }
 
 /// Generate a deterministic logs directory name from the pipeline file path.
-/// Format: `.pas/logs/<stem>-<8hex>` e.g. `.pas/logs/phase-01-spec-a3f1b2c9`
+/// Format: `.harmonik-attractor/logs/<stem>-<8hex>` e.g. `.harmonik-attractor/logs/phase-01-spec-a3f1b2c9`
 ///
 /// The hash is derived from the canonical file path so re-running the same
 /// pipeline always finds the same logs dir (and its checkpoint).
@@ -211,7 +211,7 @@ fn stable_logs_dir(pipeline_path: &std::path::Path) -> PathBuf {
         std::fs::canonicalize(pipeline_path).unwrap_or_else(|_| pipeline_path.to_path_buf());
     let hash = fnv1a32(canonical.to_string_lossy().as_bytes());
 
-    PathBuf::from(format!(".pas/logs/{}-{:08x}", stem, hash))
+    PathBuf::from(format!(".harmonik-attractor/logs/{}-{:08x}", stem, hash))
 }
 
 /// Print a highlighted resume banner built from real checkpoint data.
@@ -344,7 +344,7 @@ fn prepare_run_configuration(
     )
     .map_err(anyhow::Error::msg)?;
 
-    // The run's agent profiles (built-in, pas.toml, [codergen.claude]), and
+    // The run's agent profiles (built-in, .harmonik-attractor/config.toml, [codergen.claude]), and
     // every profile a node uses checked before anything is written.
     let agents = crate::agents::agents(
         attractor_pipeline::agent_profiles(configured.controls())?,
@@ -998,14 +998,14 @@ async fn prepare_run(
     // written, so a refused Run leaves no trace (C5).
     let workdir_abs = absolute(configured.controls().workdir().value());
     let mut locks = acquire_pipeline_lock(&logs_dir)?;
-    // The default logs folder is `.pas/logs/..` under the cwd: keep it out
+    // The default logs folder is `.harmonik-attractor/logs/..` under the cwd: keep it out
     // of `git status` (and the dirty check) from the moment it exists.
     if logs.is_none() {
-        let pas_dir = std::path::Path::new(run_worktree::PAS_DIR);
-        run_worktree::ensure_pas_gitignore(pas_dir).map_err(|e| {
+        let project_dir = std::path::Path::new(run_worktree::PROJECT_DIR);
+        run_worktree::ensure_project_gitignore(project_dir).map_err(|e| {
             setup(&format!(
                 "cannot write {}: {e}",
-                pas_dir.join(".gitignore").display()
+                project_dir.join(".gitignore").display()
             ))
         })?;
     }
@@ -1372,7 +1372,10 @@ fn stable_manifest_dir(dir: &std::path::Path) -> PathBuf {
 
     let stem = dir.file_name().unwrap_or_default().to_string_lossy();
 
-    PathBuf::from(format!(".pas/logs/{}-batch-{:08x}", stem, hash))
+    PathBuf::from(format!(
+        ".harmonik-attractor/logs/{}-batch-{:08x}",
+        stem, hash
+    ))
 }
 
 fn load_manifest(path: &std::path::Path) -> anyhow::Result<RunManifest> {

@@ -446,7 +446,7 @@ async fn condition_routes_to_fallback_on_no_match() {
 #[tokio::test]
 async fn quality_pipeline_all_stages_pass() {
     let tmp = tempfile::tempdir().unwrap();
-    // Workdir has no pas.toml → resolve() fails → falls back to quality_checks attr.
+    // Workdir has no .harmonik-attractor/config.toml → resolve() fails → falls back to quality_checks attr.
     let graph = build_graph(
         r#"digraph QualityPass {
             start [shape="Mdiamond"]

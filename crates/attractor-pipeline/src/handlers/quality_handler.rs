@@ -445,7 +445,7 @@ fn ensure_manifest_trusted(path: &Path, blake3_hash: &str, node_id: &str) -> Res
             handler: "quality".into(),
             node: node_id.to_string(),
             message: format!(
-                "pas.toml at {} is not trusted; run `hka trust add {} {}` or set PAS_TRUST_THIS=1",
+                ".harmonik-attractor/config.toml at {} is not trusted; run `hka trust add {} {}` or set PAS_TRUST_THIS=1",
                 path.display(),
                 path.display(),
                 blake3_hash
@@ -454,7 +454,7 @@ fn ensure_manifest_trusted(path: &Path, blake3_hash: &str, node_id: &str) -> Res
         Err(e) => Err(AttractorError::HandlerError {
             handler: "quality".into(),
             node: node_id.to_string(),
-            message: format!("failed to check pas.toml trust: {e}"),
+            message: format!("failed to check .harmonik-attractor/config.toml trust: {e}"),
         }),
     }
 }

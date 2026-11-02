@@ -65,7 +65,7 @@ fn check(
 }
 
 /// Every agent profile the pipeline uses, checked against the profiles of
-/// `workdir`'s project (built-in, `pas.toml`), the current directory's when
+/// `workdir`'s project (built-in, `.harmonik-attractor/config.toml`), the current directory's when
 /// `None`, as `pas run` resolves them.
 fn check_agents(
     graph: attractor_pipeline::PipelineGraph,

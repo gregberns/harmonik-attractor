@@ -70,7 +70,7 @@ mod tests {
     use super::*;
 
     const EXAMPLE: &str = r#"{ "v": 1, "run_id": "0192...", "pipeline_path": "/abs/pipelines/x.dot", "pipeline_name": "X",
-  "workdir": "/abs/repo", "git_worktree": "/abs/repo", "logs_dir": "/abs/repo/.pas/logs/x-1a2b3c4d",
+  "workdir": "/abs/repo", "git_worktree": "/abs/repo", "logs_dir": "/abs/repo/.harmonik-attractor/logs/x-1a2b3c4d",
   "started_at": "2026-09-24T10:00:00Z", "argv": ["pas","run","pipelines/x.dot","--max-budget-usd","50"],
   "pas_version": "0.11.0", "epic_id": null }"#;
 

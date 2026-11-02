@@ -51,7 +51,7 @@ fn fail_loop(timeout: &str) -> String {
 #[test]
 fn a_retry_after_a_timeout_says_it_timed_out() {
     let fake = FakeAgent::new();
-    fake.commit_pas_toml("kill_grace = \"1s\"");
+    fake.commit_config("kill_grace = \"1s\"");
     scenario(&fake, "work.1", "scenario=hang");
     scenario(&fake, "work.2", "scenario=success");
 

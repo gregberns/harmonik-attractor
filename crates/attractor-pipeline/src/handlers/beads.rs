@@ -37,7 +37,7 @@ const CLOSED: &str = "closed";
 const BLOCKS: &str = "blocks";
 
 /// Where the claimed Task is handed to later stages, relative to the workdir.
-pub const CURRENT_TASK_FILE: &str = ".pas/current_task.md";
+pub const CURRENT_TASK_FILE: &str = ".harmonik-attractor/current_task.md";
 
 pub const LABEL_MORE: &str = "MORE";
 pub const LABEL_DONE: &str = "DONE";

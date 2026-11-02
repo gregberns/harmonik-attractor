@@ -108,7 +108,7 @@ pub(crate) enum Cleanup {
     KeepWithWarning(String),
 }
 
-/// Only a successful Run with nothing uncommitted outside `.pas/`, and no
+/// Only a successful Run with nothing uncommitted outside `.harmonik-attractor/`, and no
 /// other process working in the worktree (`shared`, from
 /// `--allow-shared-workdir`), is removed; a failure or stop keeps the
 /// worktree for a resume or a look.
@@ -209,7 +209,7 @@ mod tests {
 
     fn worktree() -> RunWorktree {
         RunWorktree {
-            path: PathBuf::from("/repo/.pas/worktrees/r1"),
+            path: PathBuf::from("/repo/.harmonik-attractor/worktrees/r1"),
             branch: "pas/run/r1".to_string(),
             base: "HEAD".to_string(),
             base_sha: "abc".to_string(),
@@ -249,7 +249,7 @@ mod tests {
         let report = final_report("r1", &ending, Some(&git(false)), vec!["w".to_string()]);
         let value = serde_json::to_value(&report).unwrap();
         assert_eq!(value["status"], "failed");
-        assert_eq!(value["worktree"], "/repo/.pas/worktrees/r1");
+        assert_eq!(value["worktree"], "/repo/.harmonik-attractor/worktrees/r1");
         assert_eq!(value["error"], "boom");
         assert_eq!(value["warnings"], serde_json::json!(["w"]));
     }

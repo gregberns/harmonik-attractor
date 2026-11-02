@@ -676,7 +676,11 @@ fn directory_run_locks_each_pipeline() {
     let output = dir_run();
     assert_success(&output);
     let mut run_starts = Vec::new();
-    find_files(&s.path().join(".pas"), "events.jsonl", &mut run_starts);
+    find_files(
+        &s.path().join(".harmonik-attractor"),
+        "events.jsonl",
+        &mut run_starts,
+    );
     assert_eq!(run_starts.len(), 2, "{run_starts:?}");
     let mut worktrees = Vec::new();
     for events in run_starts {
