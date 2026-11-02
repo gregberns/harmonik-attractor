@@ -71,7 +71,7 @@ fn claude_args(cfg: ClaudeCliConfig, model: Option<&str>) -> Vec<String> {
         observer: None,
         cancel: CancellationToken::new(),
     };
-    let config = fold_codergen_claude(AgentsConfig::builtin().unwrap(), claude_settings_args(&cfg));
+    let config = fold_codergen_claude(AgentsConfig::builtin().unwrap(), &cfg);
     let claude = config.resolve().unwrap().remove(0);
     attractor_agent_handler::AgentHandler::argv(
         &attractor_handler_claude_p::ClaudeP::default(),
@@ -110,9 +110,9 @@ fn claude_argv_has_todays_flags_with_stream_json_output() {
             "--dangerously-skip-permissions",
             "--strict-mcp-config",
             "--disable-slash-commands",
+            "--safe-mode",
             "--disallowedTools",
             "SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup",
-            "--safe-mode",
             "--session-id",
             "sess-1",
             "--model",
@@ -130,7 +130,7 @@ fn claude_argv_has_todays_flags_with_stream_json_output() {
 fn claude_argv_strict_bare_is_opt_in() {
     let args = claude_args(
         ClaudeCliConfig {
-            settings_mode: ClaudeSettingsMode::StrictBare,
+            settings_mode: Some(ClaudeSettingsMode::StrictBare),
             ..ClaudeCliConfig::default()
         },
         None,
@@ -145,7 +145,7 @@ fn claude_argv_strict_bare_is_opt_in() {
 fn claude_argv_inherit_uses_setting_sources() {
     let args = claude_args(
         ClaudeCliConfig {
-            settings_mode: ClaudeSettingsMode::Inherit,
+            settings_mode: Some(ClaudeSettingsMode::Inherit),
             setting_sources: vec!["user".into(), "project".into()],
             ..ClaudeCliConfig::default()
         },
@@ -199,11 +199,14 @@ fn claude_node_args_carry_allowed_tools_and_budget() {
     );
 }
 
+/// `settings_mode` sets the `claude` profile's `isolation`; the other
+/// `[codergen.claude]` flags go at the end of its args. Profiles inheriting
+/// from `claude` get both.
 #[test]
-fn codergen_claude_flags_fold_into_the_end_of_the_claude_profiles_args() {
-    use attractor_agent_handler::AgentsConfig;
+fn codergen_claude_settings_fold_into_the_claude_profile() {
+    use attractor_agent_handler::{AgentsConfig, Isolation};
     let cfg = ClaudeCliConfig {
-        settings_mode: ClaudeSettingsMode::StrictBare,
+        settings_mode: Some(ClaudeSettingsMode::StrictBare),
         tools: Some("Read".into()),
         ..ClaudeCliConfig::default()
     };
@@ -217,22 +220,18 @@ fn codergen_claude_flags_fold_into_the_end_of_the_claude_profiles_args() {
     .unwrap()
     .profiles;
     let config = AgentsConfig::builtin().unwrap().with_overrides(&overrides);
-    let profiles = fold_codergen_claude(config, claude_settings_args(&cfg))
-        .resolve()
-        .unwrap();
+    let profiles = fold_codergen_claude(config, &cfg).resolve().unwrap();
     let expected = [
         "--dangerously-skip-permissions",
         "--strict-mcp-config",
         "--disable-slash-commands",
-        "--disallowedTools",
-        "SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup",
-        "--bare",
         "--tools",
         "Read",
     ];
     for name in ["claude", "claude-opus"] {
         let profile = profiles.iter().find(|p| p.name == name).unwrap();
         assert_eq!(profile.args, expected, "{name}");
+        assert_eq!(profile.setup.isolation, Some(Isolation::Bare), "{name}");
         // The session flags stay their own field, after the folded args.
         assert_eq!(
             profile.session_args,
@@ -240,6 +239,21 @@ fn codergen_claude_flags_fold_into_the_end_of_the_claude_profiles_args() {
             "{name}"
         );
     }
+}
+
+/// Without a `settings_mode`, the profile's own `isolation` stays.
+#[test]
+fn the_fold_leaves_isolation_alone_without_a_settings_mode() {
+    use attractor_agent_handler::{AgentsConfig, Isolation};
+    let overrides = AgentsConfig::parse("[profiles.claude]\ninherit_from = \"x\"\n[profiles.x]\nmechanism = \"claude-p\"\ncommand = \"c\"\nisolation = \"bare\"\n")
+        .unwrap()
+        .profiles;
+    let config = AgentsConfig::builtin().unwrap().with_overrides(&overrides);
+    let profiles = fold_codergen_claude(config, &ClaudeCliConfig::default())
+        .resolve()
+        .unwrap();
+    let claude = profiles.iter().find(|p| p.name == "claude").unwrap();
+    assert_eq!(claude.setup.isolation, Some(Isolation::Bare));
 }
 
 #[test]
@@ -259,11 +273,18 @@ fn the_fold_keeps_the_args_an_overridden_claude_inherits() {
     .unwrap()
     .profiles;
     let config = AgentsConfig::builtin().unwrap().with_overrides(&overrides);
-    let profiles = fold_codergen_claude(config, vec!["--safe-mode".into()])
-        .resolve()
-        .unwrap();
+    let cfg = ClaudeCliConfig {
+        tools: Some("T".into()),
+        ..ClaudeCliConfig::default()
+    };
+    let profiles = fold_codergen_claude(config, &cfg).resolve().unwrap();
     let claude = profiles.iter().find(|p| p.name == "claude").unwrap();
-    assert_eq!(claude.args, ["--base", "--safe-mode"]);
+    assert_eq!(claude.args, ["--base", "--tools", "T"]);
+    // No settings mode and no isolation in the chain: the default mode's.
+    assert_eq!(
+        claude.setup.isolation,
+        Some(attractor_agent_handler::Isolation::Safe)
+    );
 }
 
 #[test]
@@ -289,7 +310,7 @@ plugin_dirs = [".harmonik-attractor/plugin"]
 
     let cfg = resolve_claude_cli_config(&snapshot, dir.path().to_str(), "code").unwrap();
 
-    assert_eq!(cfg.settings_mode, ClaudeSettingsMode::Inherit);
+    assert_eq!(cfg.settings_mode, Some(ClaudeSettingsMode::Inherit));
     assert_eq!(cfg.setting_sources, vec!["user"]);
     assert_eq!(cfg.settings.as_deref(), Some("{}"));
     assert_eq!(cfg.tools.as_deref(), Some("Read,Edit"));
@@ -322,7 +343,10 @@ settings_mode = "strict_bare"
 
     let cfg = resolve_claude_cli_config(&snapshot, dir.path().to_str(), "code").unwrap();
 
-    assert_eq!(cfg.settings_mode, ClaudeSettingsMode::SubscriptionBare);
+    assert_eq!(
+        cfg.settings_mode,
+        Some(ClaudeSettingsMode::SubscriptionBare)
+    );
 }
 
 #[test]

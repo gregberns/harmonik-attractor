@@ -24,6 +24,6 @@ the rest): `isolation` (`safe` | `bare` | `inherit` with
 
 **Status:** open
 
-- [ ] A `reviewer` inheriting `claude` with `plugin_dirs` and `settings` gets those flags plus `--safe-mode` and `--disallowedTools` (seam 2)
-- [ ] A profile setting `disallowed_tools = []` gets no `--disallowedTools`
-- [ ] Relative paths arrive absolute; a codex profile with `plugin_dirs` fails validation
+- [x] A `reviewer` inheriting `claude` with `plugin_dirs` and `settings` gets those flags plus `--safe-mode` and `--disallowedTools` (seam 2)
+- [x] A profile setting `disallowed_tools = []` gets no `--disallowedTools`
+- [x] Relative paths arrive absolute; a codex profile with `plugin_dirs` fails validation

@@ -833,14 +833,15 @@ fn resolve_claude_cli_config(
 
     apply_context_claude_overrides(&mut cfg, snapshot, node_id)?;
 
-    if cfg.settings_mode == ClaudeSettingsMode::Inherit && cfg.setting_sources.is_empty() {
+    let inherit = cfg.settings_mode == Some(ClaudeSettingsMode::Inherit);
+    if inherit && cfg.setting_sources.is_empty() {
         return Err(AttractorError::HandlerError {
             handler: "codergen".into(),
             node: node_id.into(),
             message: "Claude settings_mode=inherit requires explicit setting_sources".into(),
         });
     }
-    if cfg.settings_mode == ClaudeSettingsMode::Inherit {
+    if inherit {
         tracing::warn!(
             node = %node_id,
             setting_sources = %cfg.setting_sources.join(","),
@@ -857,7 +858,7 @@ fn apply_manifest_claude_config(
     manifest_dir: Option<&Path>,
 ) {
     if let Some(mode) = claude.settings_mode {
-        cfg.settings_mode = mode;
+        cfg.settings_mode = Some(mode);
     }
     if let Some(sources) = claude.setting_sources {
         cfg.setting_sources = sources
@@ -895,12 +896,13 @@ fn apply_context_claude_overrides(
     node_id: &str,
 ) -> Result<()> {
     if let Some(mode) = snapshot.get(CLAUDE_MODE_KEY).and_then(|v| v.as_str()) {
-        cfg.settings_mode =
-            ClaudeSettingsMode::from_str(mode).map_err(|err| AttractorError::HandlerError {
+        cfg.settings_mode = Some(ClaudeSettingsMode::from_str(mode).map_err(|err| {
+            AttractorError::HandlerError {
                 handler: "codergen".into(),
                 node: node_id.into(),
                 message: err,
-            })?;
+            }
+        })?);
     }
     if let Some(sources) = string_list_from_value(snapshot.get(CLAUDE_SOURCES_KEY)) {
         cfg.setting_sources = parse_setting_sources(sources, node_id)?;

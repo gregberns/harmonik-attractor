@@ -28,11 +28,11 @@ remove = [
 # gets `--session-id`, a retry or loop-back `--resume` with the same id.
 # Session files persist under `~/.claude`.
 #
-# `--disallowedTools` turns off Claude's session tools that reach outside
-# the Run: they message, schedule or start the operator's other sessions
-# (the hk3 crew, say). One comma-separated value, since the flag is
-# variadic and would swallow the words after it. A profile that sets its
-# own `args` replaces this list whole.
+# `isolation = "safe"` is `--safe-mode`: the operator's own hooks, skills,
+# plugins and settings stay out. `disallowed_tools` turns off Claude's
+# session tools that reach outside the Run: they message, schedule or start
+# the operator's other sessions (the hk3 crew, say). A profile that sets its
+# own `args` keeps both; one that sets `disallowed_tools` replaces the list.
 [profiles.claude]
 mechanism = "claude-p"
 command = ["claude"]
@@ -40,8 +40,17 @@ args = [
     "--dangerously-skip-permissions",
     "--strict-mcp-config",
     "--disable-slash-commands",
-    "--disallowedTools",
-    "SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup",
+]
+isolation = "safe"
+disallowed_tools = [
+    "SendMessage",
+    "ListAgents",
+    "Workflow",
+    "RemoteTrigger",
+    "PushNotification",
+    "CronCreate",
+    "CronDelete",
+    "ScheduleWakeup",
 ]
 session_args = ["--session-id", "{session_id}"]
 resume_args = ["--resume", "{session_id}"]

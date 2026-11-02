@@ -253,27 +253,27 @@ on the node, or `llm_provider`, which names a built-in profile:
 
 | Profile | Mechanism (handler) | Command and args | The handler adds |
 |---------|---------------------|------------------|------------------|
-| `claude` | `claude-p` | `claude --dangerously-skip-permissions --strict-mcp-config --disable-slash-commands --disallowedTools SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup` (+ `[codergen.claude]` flags), then `--session-id <id>` (new) or `--resume <id>` (continue) | `-p <prompt> --output-format stream-json --verbose` |
+| `claude` | `claude-p` | `claude --dangerously-skip-permissions --strict-mcp-config --disable-slash-commands` (+ `[codergen.claude]` flags), then `--safe-mode` (`isolation = "safe"`) and `--disallowedTools SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup` (`disallowed_tools`), then `--session-id <id>` (new) or `--resume <id>` (continue) | `-p <prompt> --output-format stream-json --verbose` |
 | `codex` | `codex-exec` | `codex exec --json --yolo --skip-git-repo-check`; to continue, `codex exec resume <thread-id> --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox` | `--cd <workdir>` (new sessions only) and `<prompt>` |
 | `gemini` | `gemini` | `gemini --approval-mode yolo` | `--output-format <json\|stream-json>` right after the command, and `<prompt>` last |
 
-**Session tools.** `--disallowedTools` turns off Claude's session tools
-that reach outside the Run (`SendMessage`, `ListAgents`, `Workflow`,
-`RemoteTrigger`, `PushNotification`, `CronCreate`, `CronDelete`,
-`ScheduleWakeup`), so a pipeline agent can't message, schedule or start
-the operator's other sessions. The list is one comma-separated value: the
-flag is variadic and would swallow separate words after it. A profile
-that sets its own `args` replaces the built-in list whole, this flag
-included. To allow one tool back, copy the `claude` args and drop it from
-the list:
+**Session tools.** The `claude` profile's `disallowed_tools` turns off
+Claude's session tools that reach outside the Run (`SendMessage`,
+`ListAgents`, `Workflow`, `RemoteTrigger`, `PushNotification`,
+`CronCreate`, `CronDelete`, `ScheduleWakeup`), so a pipeline agent can't
+message, schedule or start the operator's other sessions. They are passed
+as one comma-separated `--disallowedTools` value: the flag is variadic and
+would swallow separate words after it. A profile that sets its own `args`
+keeps this list; one that sets `disallowed_tools` replaces it whole (`[]`
+passes no flag). To allow one tool back, copy the list and drop it:
 
 ```toml
 [agents.claude-crew]
 inherit_from = "claude"
-# the built-in args, with SendMessage allowed again
-args = ["--dangerously-skip-permissions", "--strict-mcp-config",
-        "--disable-slash-commands", "--disallowedTools",
-        "ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup"]
+# the built-in list, with SendMessage allowed again
+disallowed_tools = ["ListAgents", "Workflow", "RemoteTrigger",
+                    "PushNotification", "CronCreate", "CronDelete",
+                    "ScheduleWakeup"]
 ```
 
 A model is added as `--model <model>` for all three; only `claude` takes a

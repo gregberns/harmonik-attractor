@@ -17,8 +17,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 
 use attractor_agent_handler::{
-    AgentHandler, AgentResult, AgentStatus, ConfigError, FailureClass, Invocation, Limits, Profile,
-    Spawned, Usage,
+    refuse_claude_fields, AgentHandler, AgentResult, AgentStatus, ConfigError, FailureClass,
+    Invocation, Limits, Profile, Spawned, Usage,
 };
 use attractor_agent_process::{run_local, LocalRun, Spawn};
 
@@ -46,9 +46,10 @@ pub fn agent_dirs(state_dir: &Path) -> PathBuf {
 }
 
 /// A `pi` profile names its provider and model, takes the model through
-/// `--model <provider>/<model>` rather than `model_args`, and has positive
-/// limits.
+/// `--model <provider>/<model>` rather than `model_args`, has positive
+/// limits, and sets none of the Claude setup fields.
 pub fn check_profile(profile: &Profile) -> Result<(), ConfigError> {
+    refuse_claude_fields(profile)?;
     let required = |field: &'static str, value: &Option<String>| match value.as_deref() {
         Some(value) if !value.trim().is_empty() => Ok(()),
         _ => Err(ConfigError::HandlerField {
@@ -300,6 +301,7 @@ mod tests {
             base_url: None,
             api_key_env: Some("DEEPSEEK_API_KEY".into()),
             limits: None,
+            setup: Default::default(),
         }
     }
 
@@ -420,6 +422,21 @@ mod tests {
         assert_eq!(
             check_profile(&zero).map_err(|e| e.to_string()),
             Err("agent profile deepseek: limits must be positive".into())
+        );
+    }
+
+    #[test]
+    fn check_refuses_the_claude_setup_fields() {
+        let with_tools = Profile {
+            setup: attractor_agent_handler::ClaudeSetup {
+                tools: Some(vec!["Read".into()]),
+                ..Default::default()
+            },
+            ..profile()
+        };
+        assert_eq!(
+            check_profile(&with_tools).map_err(|e| e.to_string()),
+            Err("agent profile deepseek: tools is not used by mechanism pi".into())
         );
     }
 

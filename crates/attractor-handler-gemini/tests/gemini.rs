@@ -45,6 +45,7 @@ fn profile(command: Vec<String>) -> Profile {
         base_url: None,
         api_key_env: None,
         limits: None,
+        setup: Default::default(),
     }
 }
 

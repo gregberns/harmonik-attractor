@@ -297,9 +297,9 @@ const CROSS_SESSION_TOOLS: &str =
     "SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup";
 
 /// The `llm_provider="claude"` alias with every `[codergen.claude]` setting
-/// gives exactly the argv ticket 02a gave: the `claude` profile's args, the
-/// `[codergen.claude]` flags, the node's flags, the model, then the
-/// handler's own flags.
+/// gives the flags ticket 02a gave: the `claude` profile's args, the
+/// `[codergen.claude]` flags, its setup flags (the settings mode is its
+/// `isolation`), the node's flags, the model, then the handler's own flags.
 #[test]
 fn the_claude_alias_with_codergen_claude_settings_keeps_02as_argv() {
     let fake = FakeAgent::new();
@@ -336,10 +336,6 @@ mcp_config_json = "{\"mcpServers\":{}}"
         "--dangerously-skip-permissions",
         "--strict-mcp-config",
         "--disable-slash-commands",
-        "--disallowedTools",
-        CROSS_SESSION_TOOLS,
-        "--setting-sources",
-        "user,project",
         "--mcp-config",
         "{\"mcpServers\":{}}",
         "--settings",
@@ -350,6 +346,10 @@ mcp_config_json = "{\"mcpServers\":{}}"
         "{\"r\":{}}",
         "--plugin-dir",
         plugin.to_str().unwrap(),
+        "--setting-sources",
+        "user,project",
+        "--disallowedTools",
+        CROSS_SESSION_TOOLS,
         "--session-id",
         session.as_str(),
         "--allowedTools",
@@ -369,10 +369,10 @@ mcp_config_json = "{\"mcpServers\":{}}"
     );
 }
 
-/// A profile that sets its own `args` replaces the built-in list whole,
-/// `--disallowedTools` included.
+/// A profile that sets its own `args` replaces only the base flags: it
+/// keeps the `isolation` and `disallowed_tools` it inherits.
 #[test]
-fn a_profile_with_its_own_args_gets_exactly_those_args() {
+fn a_profile_with_its_own_args_keeps_its_isolation_and_disallowed_tools() {
     let fake = FakeAgent::new();
     fake.commit_config(
         "[agents.own-args]\ninherit_from = \"fake-claude\"\nargs = [\"--strict-mcp-config\"]",
@@ -383,6 +383,9 @@ fn a_profile_with_its_own_args_gets_exactly_those_args() {
     let session = fake.env_logs()[0]["HKA_SESSION_ID"].clone();
     let expected = [
         "--strict-mcp-config",
+        "--safe-mode",
+        "--disallowedTools",
+        CROSS_SESSION_TOOLS,
         "--session-id",
         session.as_str(),
         "-p",
@@ -393,6 +396,124 @@ fn a_profile_with_its_own_args_gets_exactly_those_args() {
     assert_eq!(
         fake.invocations(),
         vec![expected.map(String::from).to_vec()]
+    );
+}
+
+// --- Claude agent setup fields (isolation, settings, plugin_dirs, ...) ---
+
+/// A `reviewer` inheriting `claude` with its own skills and settings keeps
+/// the isolation and disallowed tools it inherits; its relative paths
+/// arrive absolute, against the project root.
+#[test]
+fn a_reviewer_inheriting_claude_gets_its_plugin_dirs_and_settings() {
+    let fake = FakeAgent::new();
+    fake.commit_config(
+        "[agents.reviewer]\ninherit_from = \"fake-claude\"\n\
+         plugin_dirs = [\"agents/reviewer\", \"/abs/plugin\"]\n\
+         settings = \"agents/reviewer/settings.json\"\n\
+         mcp_config = '{\"mcpServers\":{}}'\n\
+         tools = [\"Read\", \"Grep\"]",
+    );
+
+    assert_success(&fake.run(&one_node(r#"agent="reviewer", prompt="scenario=success""#)));
+
+    let root = fs::canonicalize(fake.repo()).unwrap();
+    let reviewer = root.join("agents/reviewer");
+    let settings = root.join("agents/reviewer/settings.json");
+    let session = fake.env_logs()[0]["HKA_SESSION_ID"].clone();
+    let expected = [
+        "--dangerously-skip-permissions",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+        "--safe-mode",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--settings",
+        settings.to_str().unwrap(),
+        "--tools",
+        "Read,Grep",
+        "--disallowedTools",
+        CROSS_SESSION_TOOLS,
+        "--plugin-dir",
+        reviewer.to_str().unwrap(),
+        "--plugin-dir",
+        "/abs/plugin",
+        "--session-id",
+        session.as_str(),
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+    ];
+    assert_eq!(
+        fake.invocations(),
+        vec![expected.map(String::from).to_vec()]
+    );
+}
+
+#[test]
+fn a_profile_with_an_empty_disallowed_tools_gets_no_disallowed_tools_flag() {
+    let fake = FakeAgent::new();
+    fake.commit_config(
+        "[agents.open]\ninherit_from = \"fake-claude\"\ndisallowed_tools = []\nisolation = \"bare\"",
+    );
+
+    assert_success(&fake.run(&one_node(r#"agent="open", prompt="scenario=success""#)));
+
+    let argv = &fake.invocations()[0];
+    assert!(!argv.iter().any(|a| a == "--disallowedTools"), "{argv:?}");
+    assert!(argv.iter().any(|a| a == "--bare"), "{argv:?}");
+    assert!(!argv.iter().any(|a| a == "--safe-mode"), "{argv:?}");
+}
+
+#[test]
+fn isolation_inherit_passes_the_setting_sources() {
+    let fake = FakeAgent::new();
+    fake.commit_config(
+        "[agents.mine]\ninherit_from = \"fake-claude\"\n\
+         isolation = \"inherit\"\nsetting_sources = [\"user\", \"project\"]",
+    );
+
+    assert_success(&fake.run(&one_node(r#"agent="mine", prompt="scenario=success""#)));
+
+    assert_eq!(
+        flag_value(&fake, "--setting-sources").as_deref(),
+        Some("user,project")
+    );
+    assert!(!fake.invocations()[0].iter().any(|a| a == "--safe-mode"));
+}
+
+#[test]
+fn validate_names_a_claude_field_on_a_codex_profile() {
+    let fake = FakeAgent::new();
+    fake.commit_config("[agents.coder]\ninherit_from = \"fake-codex\"\nplugin_dirs = [\"p\"]");
+    let output = fake.validate(
+        &one_node(r#"agent="coder", prompt="p""#),
+        &["--allow-test-agents"],
+    );
+    assert!(!output.status.success(), "{}", stdout(&output));
+    let out = format!("{}{}", stdout(&output), stderr(&output));
+    assert!(
+        out.contains("agent profile coder: plugin_dirs is not used by mechanism codex-exec"),
+        "{out}"
+    );
+}
+
+#[test]
+fn validate_refuses_inherit_isolation_without_setting_sources() {
+    let fake = FakeAgent::new();
+    fake.commit_config("[agents.mine]\ninherit_from = \"fake-claude\"\nisolation = \"inherit\"");
+    let output = fake.validate(
+        &one_node(r#"agent="mine", prompt="p""#),
+        &["--allow-test-agents"],
+    );
+    assert!(!output.status.success(), "{}", stdout(&output));
+    let out = format!("{}{}", stdout(&output), stderr(&output));
+    assert!(
+        out.contains(
+            "agent profile mine: setting_sources is required with isolation = \"inherit\""
+        ),
+        "{out}"
     );
 }
 

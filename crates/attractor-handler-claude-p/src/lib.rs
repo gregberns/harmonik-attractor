@@ -14,7 +14,8 @@ use std::time::{Duration, Instant, SystemTime};
 use async_trait::async_trait;
 
 use attractor_agent_handler::{
-    spawn_path, AgentHandler, AgentResult, AgentStatus, FailureClass, Invocation, Spawned, Usage,
+    refuse_pi_fields, spawn_path, AgentHandler, AgentResult, AgentStatus, ConfigError,
+    FailureClass, Invocation, Isolation, Profile, Spawned, Usage,
 };
 use attractor_agent_process::{run_local, LocalRun, Spawn};
 
@@ -75,6 +76,13 @@ struct SpawnEnd {
 impl AgentHandler for ClaudeP {
     fn mechanism(&self) -> &'static str {
         Self::MECHANISM
+    }
+
+    /// The `pi` fields are refused; `isolation = "inherit"` needs
+    /// `setting_sources`, which nothing else takes.
+    fn check(&self, profile: &Profile) -> Result<(), ConfigError> {
+        refuse_pi_fields(profile)?;
+        check_setup(profile)
     }
 
     /// The invocation's argv followed by the flags the parser depends on.
@@ -308,9 +316,69 @@ fn with_partial_output(transcript: Option<&PathBuf>, result: AgentResult) -> Age
     }
 }
 
+/// `setting_sources` is set, and not empty, exactly when `isolation` is
+/// `inherit`.
+fn check_setup(profile: &Profile) -> Result<(), ConfigError> {
+    let inherit = profile.setup.isolation == Some(Isolation::Inherit);
+    let problem = match (inherit, &profile.setup.setting_sources) {
+        (true, Some(sources)) if !sources.is_empty() => return Ok(()),
+        (false, None) => return Ok(()),
+        (true, _) => "is required with isolation = \"inherit\"",
+        (false, Some(_)) => "is only used with isolation = \"inherit\"",
+    };
+    Err(ConfigError::HandlerField {
+        profile: profile.name.clone(),
+        field: "setting_sources",
+        problem: problem.into(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn claude_profile(setup: &str) -> Profile {
+        let overrides = attractor_agent_handler::AgentsConfig::parse(&format!(
+            "[profiles.mine]\ninherit_from = \"claude\"\n{setup}"
+        ))
+        .unwrap()
+        .profiles;
+        attractor_agent_handler::AgentsConfig::builtin()
+            .unwrap()
+            .with_overrides(&overrides)
+            .resolve()
+            .unwrap()
+            .into_iter()
+            .find(|p| p.name == "mine")
+            .unwrap()
+    }
+
+    #[test]
+    fn check_takes_setting_sources_only_with_isolation_inherit() {
+        let check = |setup: &str| ClaudeP::default().check(&claude_profile(setup));
+        assert_eq!(check(""), Ok(()));
+        assert_eq!(
+            check("isolation = \"inherit\"\nsetting_sources = [\"user\"]"),
+            Ok(())
+        );
+        let error = |setup: &str| check(setup).unwrap_err().to_string();
+        assert_eq!(
+            error("isolation = \"inherit\""),
+            "agent profile mine: setting_sources is required with isolation = \"inherit\""
+        );
+        assert_eq!(
+            error("isolation = \"inherit\"\nsetting_sources = []"),
+            "agent profile mine: setting_sources is required with isolation = \"inherit\""
+        );
+        assert_eq!(
+            error("setting_sources = [\"user\"]"),
+            "agent profile mine: setting_sources is only used with isolation = \"inherit\""
+        );
+        assert_eq!(
+            error("provider = \"x\""),
+            "agent profile mine: provider is not used by mechanism claude-p"
+        );
+    }
 
     #[test]
     fn a_spawn_gets_what_is_left_until_the_deadline_never_negative() {

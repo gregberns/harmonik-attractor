@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::profile::{Limits, Profile, ProfileEnv, Resume};
+use crate::profile::{ClaudeSetup, Isolation, Limits, Profile, ProfileEnv, Resume};
 use crate::registry::ConfigError;
 
 /// The built-in profiles and defaults, compiled into the binary.
@@ -48,6 +48,15 @@ pub struct ProfileConfig {
     pub base_url: Option<String>,
     pub api_key_env: Option<String>,
     pub limits: Option<Limits>,
+    /// `claude-p` profiles: what the agent starts with (see
+    /// [`ClaudeSetup`]). `setting_sources` goes with `isolation = "inherit"`.
+    pub isolation: Option<Isolation>,
+    pub setting_sources: Option<Vec<String>>,
+    pub settings: Option<String>,
+    pub plugin_dirs: Option<Vec<String>>,
+    pub tools: Option<Vec<String>>,
+    pub disallowed_tools: Option<Vec<String>>,
+    pub mcp_config: Option<String>,
 }
 
 /// `command = "claude"` or `command = ["claude", "--sub"]`.
@@ -222,6 +231,17 @@ fn overlay(child: ProfileConfig, parent: &ProfileConfig) -> ProfileConfig {
         base_url: child.base_url.or_else(|| parent.base_url.clone()),
         api_key_env: child.api_key_env.or_else(|| parent.api_key_env.clone()),
         limits: child.limits.or(parent.limits),
+        isolation: child.isolation.or(parent.isolation),
+        setting_sources: child
+            .setting_sources
+            .or_else(|| parent.setting_sources.clone()),
+        settings: child.settings.or_else(|| parent.settings.clone()),
+        plugin_dirs: child.plugin_dirs.or_else(|| parent.plugin_dirs.clone()),
+        tools: child.tools.or_else(|| parent.tools.clone()),
+        disallowed_tools: child
+            .disallowed_tools
+            .or_else(|| parent.disallowed_tools.clone()),
+        mcp_config: child.mcp_config.or_else(|| parent.mcp_config.clone()),
     }
 }
 
@@ -281,6 +301,15 @@ fn into_profile(name: &str, config: ProfileConfig) -> Result<Profile, ConfigErro
         base_url: config.base_url,
         api_key_env: config.api_key_env,
         limits: config.limits,
+        setup: ClaudeSetup {
+            isolation: config.isolation,
+            setting_sources: config.setting_sources,
+            settings: config.settings,
+            plugin_dirs: config.plugin_dirs,
+            tools: config.tools,
+            disallowed_tools: config.disallowed_tools,
+            mcp_config: config.mcp_config,
+        },
     })
 }
 
@@ -343,9 +372,34 @@ mod tests {
                 "--dangerously-skip-permissions",
                 "--strict-mcp-config",
                 "--disable-slash-commands",
-                "--disallowedTools",
-                "SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup",
             ]
+        );
+        assert_eq!(claude.setup.isolation, Some(Isolation::Safe));
+        assert_eq!(
+            claude.setup.disallowed_tools.as_deref(),
+            Some(
+                [
+                    "SendMessage",
+                    "ListAgents",
+                    "Workflow",
+                    "RemoteTrigger",
+                    "PushNotification",
+                    "CronCreate",
+                    "CronDelete",
+                    "ScheduleWakeup",
+                ]
+                .map(String::from)
+                .as_slice()
+            )
+        );
+        assert_eq!(
+            claude.setup,
+            ClaudeSetup {
+                isolation: claude.setup.isolation,
+                disallowed_tools: claude.setup.disallowed_tools.clone(),
+                ..ClaudeSetup::default()
+            },
+            "no other setup field"
         );
         // Ticket 08: sessions persist; a retry resumes.
         assert_eq!(claude.session_args, ["--session-id", "{session_id}"]);
@@ -410,15 +464,15 @@ mod tests {
         );
     }
 
-    /// The quoted strings of the first `args = [...]` in
+    /// The quoted strings of the first `disallowed_tools = [...]` in
     /// docs/cli-reference.md after `marker`.
-    fn documented_args(marker: &str) -> Vec<String> {
+    fn documented_disallowed_tools(marker: &str) -> Vec<String> {
         let doc = std::fs::read_to_string(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/cli-reference.md"),
         )
         .unwrap();
         let after = &doc[doc.find(marker).unwrap()..];
-        let list = &after[after.find("args = [").unwrap()..];
+        let list = &after[after.find("disallowed_tools = [").unwrap()..];
         let list = &list[..list.find(']').unwrap()];
         list.split('"')
             .skip(1)
@@ -428,14 +482,64 @@ mod tests {
     }
 
     #[test]
-    fn the_documented_claude_crew_recipe_is_the_claude_args_minus_send_message() {
+    fn the_documented_claude_crew_recipe_is_the_claude_list_minus_send_message() {
         let profiles = builtin_profiles().unwrap();
         let expected: Vec<String> = profile(&profiles, "claude")
-            .args
+            .setup
+            .disallowed_tools
             .iter()
-            .map(|arg| arg.replace("SendMessage,", ""))
+            .flatten()
+            .filter(|tool| *tool != "SendMessage")
+            .cloned()
             .collect();
-        assert_eq!(documented_args("[agents.claude-crew]"), expected);
+        assert_eq!(
+            documented_disallowed_tools("[agents.claude-crew]"),
+            expected
+        );
+    }
+
+    #[test]
+    fn each_setup_field_a_profile_sets_replaces_the_parents_whole() {
+        let profiles = config(BASE)
+            .with_overrides(&overrides(
+                r#"
+                [parent]
+                inherit_from = "base"
+                isolation = "inherit"
+                setting_sources = ["user"]
+                settings = "s.json"
+                plugin_dirs = ["a", "b"]
+                tools = ["Read"]
+                disallowed_tools = ["X", "Y"]
+                mcp_config = "m.json"
+                [child]
+                inherit_from = "parent"
+                plugin_dirs = ["c"]
+                disallowed_tools = []
+                "#,
+            ))
+            .resolve()
+            .unwrap();
+        let child = &profile(&profiles, "child").setup;
+        assert_eq!(
+            *child,
+            ClaudeSetup {
+                isolation: Some(Isolation::Inherit),
+                setting_sources: Some(vec!["user".into()]),
+                settings: Some("s.json".into()),
+                plugin_dirs: Some(vec!["c".into()]),
+                tools: Some(vec!["Read".into()]),
+                disallowed_tools: Some(vec![]),
+                mcp_config: Some("m.json".into()),
+            }
+        );
+        assert_eq!(profile(&profiles, "base").setup, ClaudeSetup::default());
+    }
+
+    #[test]
+    fn an_unknown_isolation_is_a_parse_error() {
+        let err = AgentsConfig::parse("[profiles.x]\nisolation = \"loose\"\n").unwrap_err();
+        assert!(err.to_string().contains("loose"), "{err}");
     }
 
     #[test]

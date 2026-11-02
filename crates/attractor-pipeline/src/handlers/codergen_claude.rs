@@ -6,7 +6,8 @@
 use std::path::Path;
 
 use attractor_agent_handler::{
-    AgentResult, AgentStatus, AgentsConfig, ConfigError, FailureClass, Profile, Usage,
+    AgentResult, AgentStatus, AgentsConfig, ClaudeSetup, ConfigError, FailureClass, Isolation,
+    Profile, ProfileConfig, Usage,
 };
 use attractor_dot::AttributeValue;
 use attractor_journal::RunDir;
@@ -16,14 +17,15 @@ use attractor_types::{AgentFiles, AttractorError, FailureKind, Outcome, Result};
 use super::{provider_outcome, ProviderResult};
 use crate::execution_plan::ResolvedNode;
 use crate::graph::{PipelineGraph, PipelineNode};
-use crate::run_configuration::{ResolvedClaudeConfig, ResolvedConfig};
+use crate::run_configuration::{ConfigurationSource, ResolvedClaudeConfig, ResolvedConfig};
 
 /// The agent profile Claude nodes (`llm_provider="claude"`) run with.
 pub const CLAUDE_PROFILE: &str = "claude";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct ClaudeCliConfig {
-    pub(super) settings_mode: ClaudeSettingsMode,
+    /// `None`: not set, so the profile's own `isolation` applies.
+    pub(super) settings_mode: Option<ClaudeSettingsMode>,
     pub(super) setting_sources: Vec<String>,
     pub(super) settings: Option<String>,
     pub(super) tools: Option<String>,
@@ -32,25 +34,12 @@ pub(super) struct ClaudeCliConfig {
     pub(super) mcp_config: Option<String>,
 }
 
-impl Default for ClaudeCliConfig {
-    fn default() -> Self {
-        Self {
-            settings_mode: ClaudeSettingsMode::SubscriptionBare,
-            setting_sources: vec![],
-            settings: None,
-            tools: None,
-            agents: None,
-            plugin_dirs: vec![],
-            mcp_config: None,
-        }
-    }
-}
-
 impl ClaudeCliConfig {
     /// The `[codergen.claude]` settings a run resolved (CLI over `.harmonik-attractor/config.toml`).
     pub(super) fn from_resolved(claude: &ResolvedClaudeConfig) -> Self {
         Self {
-            settings_mode: *claude.settings_mode().value(),
+            settings_mode: (claude.settings_mode().source() != ConfigurationSource::BuiltIn)
+                .then(|| *claude.settings_mode().value()),
             setting_sources: claude
                 .setting_sources()
                 .value()
@@ -73,32 +62,75 @@ impl ClaudeCliConfig {
 
 /// The agent profiles a run uses: the built-in ones, then `.harmonik-attractor/config.toml`'s
 /// `[agents.<name>]` (whole profiles by name), with the run's
-/// `[codergen.claude]` flags folded into the `claude` profile's args before
-/// `inherit_from` resolves, so a profile inheriting from `claude` keeps them.
+/// `[codergen.claude]` settings folded into the `claude` profile before
+/// `inherit_from` resolves, so a profile inheriting from `claude` keeps
+/// them. Relative setup paths resolve against the project root.
 pub fn agent_profiles(controls: &ResolvedConfig) -> std::result::Result<Vec<Profile>, ConfigError> {
     let overrides = controls
         .manifest()
         .map(|resolved| resolved.manifest.agents.clone())
         .unwrap_or_default();
     let config = AgentsConfig::builtin()?.with_overrides(&overrides);
-    let flags = claude_settings_args(&ClaudeCliConfig::from_resolved(controls.claude()));
-    fold_codergen_claude(config, flags).resolve()
+    let cfg = ClaudeCliConfig::from_resolved(controls.claude());
+    let profiles = fold_codergen_claude(config, &cfg).resolve()?;
+    Ok(match controls.manifest() {
+        Some(resolved) => profiles
+            .into_iter()
+            .map(|profile| Profile {
+                setup: profile.setup.resolved_against(resolved.project_root()),
+                ..profile
+            })
+            .collect(),
+        None => profiles,
+    })
 }
 
-/// `config` with `flags` appended to the `claude` profile's args. When that
-/// profile sets no args of its own, they go after the args it inherits.
-pub(super) fn fold_codergen_claude(mut config: AgentsConfig, flags: Vec<String>) -> AgentsConfig {
-    let inherited = inherited_args(&config, CLAUDE_PROFILE);
+/// `config` with `cfg` folded into the `claude` profile: its settings mode
+/// sets `isolation` (and `setting_sources`); without one, a `claude` whose
+/// chain sets no `isolation` gets the default mode's, `safe`. Its other
+/// flags are appended to the args. When that profile sets no args of its
+/// own, they go after the args it inherits.
+pub(super) fn fold_codergen_claude(
+    mut config: AgentsConfig,
+    cfg: &ClaudeCliConfig,
+) -> AgentsConfig {
+    let inherited = from_parents(&config, CLAUDE_PROFILE, |p| p.args.clone()).unwrap_or_default();
+    let isolated = from_parents(&config, CLAUDE_PROFILE, |p| p.isolation).is_some();
     if let Some(claude) = config.profiles.get_mut(CLAUDE_PROFILE) {
+        match cfg.settings_mode {
+            Some(mode) => {
+                claude.isolation = Some(isolation(mode));
+                claude.setting_sources =
+                    (mode == ClaudeSettingsMode::Inherit).then(|| cfg.setting_sources.clone());
+            }
+            None if claude.isolation.is_none() && !isolated => {
+                claude.isolation = Some(Isolation::Safe);
+            }
+            None => {}
+        }
         let args = claude.args.get_or_insert(inherited);
-        args.extend(flags);
+        args.extend(claude_flag_args(cfg));
     }
     config
 }
 
-/// The args `name` gets from its `inherit_from` chain; empty when none sets
-/// any (or the chain is broken, which resolving reports).
-fn inherited_args(config: &AgentsConfig, name: &str) -> Vec<String> {
+/// The profile `isolation` a settings mode means.
+fn isolation(mode: ClaudeSettingsMode) -> Isolation {
+    match mode {
+        ClaudeSettingsMode::SubscriptionBare => Isolation::Safe,
+        ClaudeSettingsMode::StrictBare => Isolation::Bare,
+        ClaudeSettingsMode::Inherit => Isolation::Inherit,
+    }
+}
+
+/// The field `name` gets from its `inherit_from` chain (`field` reads it
+/// from one profile); `None` when no parent sets it (or the chain is
+/// broken, which resolving reports).
+fn from_parents<T>(
+    config: &AgentsConfig,
+    name: &str,
+    field: impl Fn(&ProfileConfig) -> Option<T>,
+) -> Option<T> {
     let mut next = config
         .profiles
         .get(name)
@@ -111,29 +143,35 @@ fn inherited_args(config: &AgentsConfig, name: &str) -> Vec<String> {
         let Some(parent) = config.profiles.get(&parent_name) else {
             break;
         };
-        if let Some(args) = &parent.args {
-            return args.clone();
+        if let Some(value) = field(parent) {
+            return Some(value);
         }
         next = parent.inherit_from.clone();
         seen.push(parent_name);
     }
-    Vec::new()
+    None
 }
 
-/// The `[codergen.claude]` flags: settings mode, `--mcp-config`,
-/// `--settings`, `--tools`, `--agents`, `--plugin-dir`.
+/// The `[codergen.claude]` flags as extra args, for the compatibility
+/// path: the settings mode's isolation flag, when set, then
+/// [`claude_flag_args`].
 pub(super) fn claude_settings_args(cfg: &ClaudeCliConfig) -> Vec<String> {
+    let setup = ClaudeSetup {
+        isolation: cfg.settings_mode.map(isolation),
+        setting_sources: Some(cfg.setting_sources.clone()),
+        ..ClaudeSetup::default()
+    };
+    setup
+        .args()
+        .into_iter()
+        .chain(claude_flag_args(cfg))
+        .collect()
+}
+
+/// The `[codergen.claude]` flags other than the settings mode:
+/// `--mcp-config`, `--settings`, `--tools`, `--agents`, `--plugin-dir`.
+fn claude_flag_args(cfg: &ClaudeCliConfig) -> Vec<String> {
     let mut args = Vec::new();
-    match cfg.settings_mode {
-        ClaudeSettingsMode::SubscriptionBare => args.push("--safe-mode".to_string()),
-        ClaudeSettingsMode::StrictBare => args.push("--bare".to_string()),
-        ClaudeSettingsMode::Inherit => {
-            if !cfg.setting_sources.is_empty() {
-                args.push("--setting-sources".to_string());
-                args.push(cfg.setting_sources.join(","));
-            }
-        }
-    }
     let mut flag = |name: &str, value: &str| {
         args.push(name.to_string());
         args.push(value.to_string());

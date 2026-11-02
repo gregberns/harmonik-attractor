@@ -38,10 +38,11 @@ pub trait AgentHandler: Send + Sync {
     /// Check the handler-specific fields of a profile; called for every
     /// profile when `Agents` is built, so `pas validate` and `pas run`
     /// report a bad profile before anything starts. The default refuses
-    /// the `pi` fields, so a profile can't silently carry fields its
-    /// mechanism ignores.
+    /// the `pi` and `claude-p` fields, so a profile can't silently carry
+    /// fields its mechanism ignores.
     fn check(&self, profile: &Profile) -> Result<(), ConfigError> {
-        refuse_pi_fields(profile)
+        refuse_pi_fields(profile)?;
+        refuse_claude_fields(profile)
     }
     /// Whether the agent continues a session with the same command it
     /// starts one with (e.g. Pi's `--session-id`), so its profiles need no
@@ -603,6 +604,19 @@ pub fn refuse_pi_fields(profile: &Profile) -> Result<(), ConfigError> {
     ];
     match set.iter().find(|(_, is_set)| *is_set) {
         Some((field, _)) => Err(ConfigError::FieldNotForMechanism {
+            profile: profile.name.clone(),
+            field,
+            mechanism: profile.mechanism.clone(),
+        }),
+        None => Ok(()),
+    }
+}
+
+/// A profile whose mechanism isn't `claude-p` sets none of the Claude
+/// setup fields (`isolation`, `plugin_dirs`, ...).
+pub fn refuse_claude_fields(profile: &Profile) -> Result<(), ConfigError> {
+    match profile.setup.set_fields().first() {
+        Some(field) => Err(ConfigError::FieldNotForMechanism {
             profile: profile.name.clone(),
             field,
             mechanism: profile.mechanism.clone(),

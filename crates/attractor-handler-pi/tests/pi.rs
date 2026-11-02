@@ -55,6 +55,7 @@ fn profile() -> Profile {
             context: 1000,
             max_output: 100,
         }),
+        setup: Default::default(),
     }
 }
 

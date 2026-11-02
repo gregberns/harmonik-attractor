@@ -19,11 +19,12 @@ pub use config::{
 pub use env::child_env;
 pub use profile::{
     argv, fill, resolve_argv, resolve_argv_for, selected_model, selected_reasoning, spawn_path,
-    Limits, Profile, ProfileEnv, ResolvedArgv, Resume,
+    ClaudeSetup, Isolation, Limits, Profile, ProfileEnv, ResolvedArgv, Resume,
 };
 pub use prompt_file::prompt_file_text;
 pub use registry::{
-    refuse_pi_fields, AgentHandler, AgentObserver, Agents, ConfigError, HARD_DEADLINE_MARGIN,
+    refuse_claude_fields, refuse_pi_fields, AgentHandler, AgentObserver, Agents, ConfigError,
+    HARD_DEADLINE_MARGIN,
 };
 pub use tokio_util::sync::CancellationToken;
 pub use types::{

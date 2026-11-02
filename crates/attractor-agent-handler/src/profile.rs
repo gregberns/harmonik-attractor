@@ -1,6 +1,7 @@
 //! Agent profiles and the argv they produce: pure.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::time::Duration;
 
 use crate::types::{AgentRequest, Session};
@@ -52,6 +53,126 @@ pub struct Profile {
     /// The model's limits (`pi` profiles), for a model the provider doesn't
     /// list itself.
     pub limits: Option<Limits>,
+    /// What a Claude agent starts with (`claude-p` profiles); added after
+    /// `args`.
+    pub setup: ClaudeSetup,
+}
+
+/// How much of the operator's own Claude setup an agent loads:
+/// `--safe-mode`, `--bare`, or `--setting-sources <list>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Isolation {
+    Safe,
+    Bare,
+    /// Loads the `setting_sources` the profile names.
+    Inherit,
+}
+
+/// A `claude-p` profile's setup fields, each `None` when no profile in its
+/// `inherit_from` chain sets it. `settings` and `mcp_config` are a file or
+/// inline JSON (starting with `{`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ClaudeSetup {
+    pub isolation: Option<Isolation>,
+    pub setting_sources: Option<Vec<String>>,
+    pub settings: Option<String>,
+    pub plugin_dirs: Option<Vec<String>>,
+    pub tools: Option<Vec<String>>,
+    pub disallowed_tools: Option<Vec<String>>,
+    pub mcp_config: Option<String>,
+}
+
+impl ClaudeSetup {
+    /// The names of the fields that are set, for a mechanism that takes
+    /// none of them.
+    pub fn set_fields(&self) -> Vec<&'static str> {
+        [
+            ("isolation", self.isolation.is_some()),
+            ("setting_sources", self.setting_sources.is_some()),
+            ("settings", self.settings.is_some()),
+            ("plugin_dirs", self.plugin_dirs.is_some()),
+            ("tools", self.tools.is_some()),
+            ("disallowed_tools", self.disallowed_tools.is_some()),
+            ("mcp_config", self.mcp_config.is_some()),
+        ]
+        .into_iter()
+        .filter_map(|(field, set)| set.then_some(field))
+        .collect()
+    }
+
+    /// The same setup with each relative path joined to `root`: the plugin
+    /// dirs, and `settings` and `mcp_config` unless they are inline JSON.
+    pub fn resolved_against(self, root: &Path) -> Self {
+        let path = |value: String| {
+            if is_inline_json(&value) || Path::new(&value).is_absolute() {
+                value
+            } else {
+                root.join(value).to_string_lossy().into_owned()
+            }
+        };
+        Self {
+            settings: self.settings.map(path),
+            mcp_config: self.mcp_config.map(path),
+            plugin_dirs: self
+                .plugin_dirs
+                .map(|dirs| dirs.into_iter().map(path).collect()),
+            ..self
+        }
+    }
+
+    /// The flags: the isolation flag, `--mcp-config`, `--settings`,
+    /// `--tools`, `--disallowedTools` (left out when empty) and a
+    /// `--plugin-dir` per dir. A tool list is one comma-separated value,
+    /// since Claude's tool flags are variadic.
+    pub fn args(&self) -> Vec<String> {
+        let isolation = match self.isolation {
+            Some(Isolation::Safe) => vec!["--safe-mode".to_string()],
+            Some(Isolation::Bare) => vec!["--bare".to_string()],
+            Some(Isolation::Inherit) => vec![
+                "--setting-sources".to_string(),
+                self.setting_sources
+                    .iter()
+                    .flatten()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ],
+            None => vec![],
+        };
+        let flag = |name: &str, value: String| [name.to_string(), value];
+        let disallowed = self.disallowed_tools.as_ref().filter(|t| !t.is_empty());
+        isolation
+            .into_iter()
+            .chain(
+                self.mcp_config
+                    .iter()
+                    .flat_map(|v| flag("--mcp-config", v.clone())),
+            )
+            .chain(
+                self.settings
+                    .iter()
+                    .flat_map(|v| flag("--settings", v.clone())),
+            )
+            .chain(self.tools.iter().flat_map(|v| flag("--tools", v.join(","))))
+            .chain(
+                disallowed
+                    .into_iter()
+                    .flat_map(|v| flag("--disallowedTools", v.join(","))),
+            )
+            .chain(
+                self.plugin_dirs
+                    .iter()
+                    .flatten()
+                    .flat_map(|dir| flag("--plugin-dir", dir.clone())),
+            )
+            .collect()
+    }
+}
+
+/// Whether a `settings` or `mcp_config` value is inline JSON, not a file.
+fn is_inline_json(value: &str) -> bool {
+    value.trim_start().starts_with('{')
 }
 
 /// A model's context window and largest reply, in tokens.
@@ -132,10 +253,11 @@ pub fn selected_reasoning<'a>(profile: &'a Profile, req: &'a AgentRequest<'_>) -
 }
 
 /// The argv for `req` (design §1, §2), before the handler's own flags:
-/// - a new session: command, args, filled `session_args`;
-/// - continuing with `resume_args`: command, args, filled `resume_args`;
+/// - a new session: command, args, setup flags, filled `session_args`;
+/// - continuing with `resume_args`: command, args, setup flags, filled
+///   `resume_args`;
 /// - continuing with `resume_command`: the filled `resume_command` (its
-///   `{command}` element expands to the profile's command);
+///   `{command}` element expands to the profile's command), setup flags;
 ///
 /// then the request's extra args, the filled model args and reasoning args.
 pub fn resolve_argv(profile: &Profile, req: &AgentRequest<'_>) -> ResolvedArgv {
@@ -164,6 +286,7 @@ pub fn resolve_argv_for(
                 }
             }
             let len = command_len.unwrap_or(argv.len());
+            argv.extend(profile.setup.args());
             (argv, len)
         }
         (session, resume) => {
@@ -176,6 +299,7 @@ pub fn resolve_argv_for(
                 .iter()
                 .chain(&profile.args)
                 .cloned()
+                .chain(profile.setup.args())
                 .chain(session_args.iter().map(fill_id))
                 .collect();
             (argv, profile.command.len())
@@ -275,6 +399,7 @@ mod tests {
             base_url: None,
             api_key_env: None,
             limits: None,
+            setup: ClaudeSetup::default(),
         }
     }
 
@@ -427,6 +552,120 @@ mod tests {
             ]
         );
         assert_eq!(got.command_len, 2);
+    }
+
+    fn setup() -> ClaudeSetup {
+        ClaudeSetup {
+            isolation: Some(Isolation::Safe),
+            disallowed_tools: Some(vec!["A".into(), "B".into()]),
+            ..ClaudeSetup::default()
+        }
+    }
+
+    #[test]
+    fn setup_flags_come_after_args_and_before_the_session_args() {
+        let profile = Profile {
+            setup: setup(),
+            ..sessioned(Some(Resume::Args(vec![
+                "--resume".into(),
+                "{session_id}".into(),
+            ])))
+        };
+        let got = resolve_argv(&profile, &with_session(Session::Continue("s".into())));
+        assert_eq!(
+            &got.argv[..8],
+            [
+                "bin/claude",
+                "--sub",
+                "--a",
+                "--safe-mode",
+                "--disallowedTools",
+                "A,B",
+                "--resume",
+                "s"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_resume_command_keeps_the_setup_flags() {
+        let profile = Profile {
+            setup: setup(),
+            ..sessioned(Some(Resume::Command(vec!["{command}".into(), "r".into()])))
+        };
+        let got = resolve_argv(&profile, &with_session(Session::Continue("s".into())));
+        assert_eq!(
+            &got.argv[..6],
+            [
+                "bin/claude",
+                "--sub",
+                "r",
+                "--safe-mode",
+                "--disallowedTools",
+                "A,B"
+            ]
+        );
+    }
+
+    #[test]
+    fn setup_args_follow_the_field_order_and_join_tool_lists() {
+        let setup = ClaudeSetup {
+            isolation: Some(Isolation::Inherit),
+            setting_sources: Some(vec!["user".into(), "project".into()]),
+            settings: Some("s.json".into()),
+            plugin_dirs: Some(vec!["p1".into(), "p2".into()]),
+            tools: Some(vec!["Read".into(), "Grep".into()]),
+            disallowed_tools: Some(vec!["X".into()]),
+            mcp_config: Some("{}".into()),
+        };
+        assert_eq!(
+            setup.args(),
+            [
+                "--setting-sources",
+                "user,project",
+                "--mcp-config",
+                "{}",
+                "--settings",
+                "s.json",
+                "--tools",
+                "Read,Grep",
+                "--disallowedTools",
+                "X",
+                "--plugin-dir",
+                "p1",
+                "--plugin-dir",
+                "p2",
+            ]
+        );
+        let bare = ClaudeSetup {
+            isolation: Some(Isolation::Bare),
+            tools: Some(vec![]),
+            disallowed_tools: Some(vec![]),
+            ..ClaudeSetup::default()
+        };
+        // No tools at all is `--tools ""`; no disallowed tools is no flag.
+        assert_eq!(bare.args(), ["--bare", "--tools", ""]);
+        assert!(ClaudeSetup::default().args().is_empty());
+    }
+
+    #[test]
+    fn relative_setup_paths_resolve_against_the_root_inline_json_does_not() {
+        let setup = ClaudeSetup {
+            settings: Some("agents/r/settings.json".into()),
+            mcp_config: Some(" {\"mcpServers\":{}}".into()),
+            plugin_dirs: Some(vec!["agents/r".into(), "/abs".into()]),
+            ..ClaudeSetup::default()
+        }
+        .resolved_against(Path::new("/proj"));
+        assert_eq!(
+            setup.settings.as_deref(),
+            Some("/proj/agents/r/settings.json")
+        );
+        assert_eq!(setup.mcp_config.as_deref(), Some(" {\"mcpServers\":{}}"));
+        assert_eq!(
+            setup.plugin_dirs,
+            Some(vec!["/proj/agents/r".to_string(), "/abs".to_string()])
+        );
     }
 
     #[test]
