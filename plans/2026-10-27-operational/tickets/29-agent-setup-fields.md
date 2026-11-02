@@ -22,7 +22,7 @@ the rest): `isolation` (`safe` | `bare` | `inherit` with
 
 **Blocked by:** 28
 
-**Status:** open
+**Status:** done
 
 - [x] A `reviewer` inheriting `claude` with `plugin_dirs` and `settings` gets those flags plus `--safe-mode` and `--disallowedTools` (seam 2)
 - [x] A profile setting `disallowed_tools = []` gets no `--disallowedTools`
