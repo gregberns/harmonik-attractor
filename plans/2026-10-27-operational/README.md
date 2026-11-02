@@ -34,7 +34,7 @@ In priority order. The integrator marks a ticket done here when merging it.
 | 27 | [Rename: `HKA_*` env vars, state dirs and commit trailers](tickets/27-rename-env-state-trailers.md) | 26 | done |
 | 28 | [Rename: docs, README, AGENTS.md and examples](tickets/28-rename-docs.md) | 27 | done |
 | 29 | [Claude agent setup fields: isolation, settings, skills, tools](tickets/29-agent-setup-fields.md) | 28 | done |
-| 30 | [`[codergen.claude]` fills the new fields; docs and an example role](tickets/30-agent-setup-codergen-fold.md) | 29 | open |
+| 30 | [`[codergen.claude]` fills the new fields; docs and an example role](tickets/30-agent-setup-codergen-fold.md) | 29 | done |
 | 31 | [A reusable task-loop pipeline over a markdown task list](tickets/31-markdown-task-loop.md) | 30 | open |
 | 32 | [An example role that gives an agent its own skills](tickets/32-example-role.md) | 30, item 17 | open |
 

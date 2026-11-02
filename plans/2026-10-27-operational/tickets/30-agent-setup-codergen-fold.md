@@ -20,7 +20,7 @@
 
 **Blocked by:** 29
 
-**Status:** open
+**Status:** done
 
 - [x] Every existing `[codergen.claude]` and `--codergen-claude-*` test still passes
 
