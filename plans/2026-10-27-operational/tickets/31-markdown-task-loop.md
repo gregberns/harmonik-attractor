@@ -24,7 +24,7 @@ no engine change.
 
 **Blocked by:** 30
 
-**Status:** open
+**Status:** done
 
 - [x] The template validates with `bd` absent from the PATH
 - [x] With fakes, a two-task list runs both tasks, ticks both boxes and exits (seam 2)
