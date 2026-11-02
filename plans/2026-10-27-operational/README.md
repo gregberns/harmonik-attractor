@@ -94,3 +94,14 @@ These change how the product behaves, so they are not tickets yet. Each
 16. **Rename** to `harmonik-attractor` (alias `hka`): layout approved
     2026-10-28 ([rename plan](../2026-10-27-rename/README.md)). Tickets
     25-28, one after another (each touches most files).
+17. **Safe mode hides an agent's own skills.** Found with real Claude
+    (2.1.302) after ticket 29. With `isolation = "safe"` (`--safe-mode`, the
+    default), a profile's `plugin_dirs` plugin loads but its skills don't,
+    and the operator's own plugins (`gitkraken-hooks`, `gb`) are still
+    listed. With `--setting-sources project` the role's skill loads and the
+    operator's plugins and hooks are gone. Not checked: whether a personal
+    `~/.claude/CLAUDE.md` still loads (none on this machine). Proposed: a
+    `project` isolation (`--setting-sources project`) as the default.
+    Effect: the project's own `.claude/` settings and CLAUDE.md reach
+    agents, as in an hk3 session. Waiting on the operator; blocks ticket
+    30's example role.
