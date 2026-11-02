@@ -38,6 +38,12 @@ All notable changes to harmonik-attractor (formerly PAS) are documented here.
 - The retry prompt names the previous attempt's failure.
 - `hka validate --workdir` reads the same `.harmonik-attractor/config.toml`
   as `hka run`.
+- **Task loop.** `templates/task-loop.dot` is one reusable pipeline over
+  a markdown checklist, `TASKS.md` (example: `templates/TASKS.md`): pick
+  the first open task (`MORE`/`DONE`), implement it, run the tests (a tool
+  node, fixing until they pass), verify, tick its box, repeat. It needs no
+  Beads and no `bd` on the `PATH`. The guide and README lead with it; the
+  Beads planning workflow is optional.
 - **Claude profile fields.** A `claude-p` profile takes `isolation`
   (`safe`, `bare`, `inherit`), `setting_sources`, `settings`,
   `plugin_dirs`, `tools`, `disallowed_tools` and `mcp_config`, each passed

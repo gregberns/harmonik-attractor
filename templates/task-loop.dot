@@ -1,0 +1,99 @@
+// One pipeline, reused: work through a markdown task list, one task at a
+// time. No Beads: the tasks are the `- [ ] ...` lines of TASKS.md in the
+// repo root (see templates/TASKS.md).
+//
+// The loop: pick the first unchecked task (MORE) or stop (DONE);
+// implement it; run the tests (a tool node), fixing until they pass;
+// verify (PASS/FAIL); tick its box; go round again. harmonik-attractor
+// commits the worktree after every attempt, so each task's work and its
+// ticked box land on the Run's branch.
+//
+// To use it: copy this file and TASKS.md into your project, list your
+// tasks, set `test` to your test command, and run
+// `hka run task-loop.dot`. The list's path is TASKS.md in every prompt
+// and in `tick`; to use another file, replace TASKS.md throughout
+// (`${...}` variables expand in prompts only, not in tool commands).
+digraph TaskLoop {
+    goal="Work through the task list in TASKS.md, one unchecked task at a time, until every box is ticked."
+
+    start [shape="Mdiamond"]
+    done  [shape="Msquare"]
+
+    // --- Pick the next task ---
+    pick [
+        shape="diamond"
+        label="Pick Next Task"
+        llm_provider="claude"
+        fidelity="fresh"
+        timeout="300s"
+        allowed_tools="Read"
+        prompt="Read TASKS.md. Its tasks are the lines starting with `- [ ]` (open) or `- [x]` (done).
+If an open task remains, name the first one and end with MORE on the last line.
+If every task is done, end with DONE on the last line."
+    ]
+
+    // --- Implement the first open task ---
+    implement [
+        shape="box"
+        label="Implement"
+        llm_provider="claude"
+        fidelity="fresh"
+        timeout="1800s"
+        prompt="Implement the first open task (`- [ ]`) in TASKS.md, and only that task.
+Follow the project's existing patterns and keep the change focused.
+Add or update tests for it. Do not edit TASKS.md: the pipeline ticks the box."
+    ]
+
+    // --- Run the tests: your project's test command ---
+    test [
+        shape="parallelogram"
+        label="Run Tests"
+        tool_command="make test"
+        timeout="1800s"
+    ]
+
+    fix [
+        shape="box"
+        label="Fix"
+        llm_provider="claude"
+        timeout="1800s"
+        prompt="The first open task in TASKS.md is being implemented, and its tests or its review failed.
+Read the failure above, fix the code, and keep to that task. Do not edit TASKS.md."
+    ]
+
+    // --- Verify the task is done ---
+    verify [
+        shape="diamond"
+        label="Verify"
+        llm_provider="claude"
+        fidelity="fresh"
+        timeout="600s"
+        prompt="Check that the first open task (`- [ ]`) in TASKS.md is done: review the git diff for it and check it does what the task says. The tests pass.
+End with PASS on the last line if it is done, or FAIL with what is missing."
+    ]
+
+    // --- Tick its box: the first `- [ ] ` line becomes `- [x] ` ---
+    // Fails, stopping the Run, when no box is open.
+    tick [
+        shape="parallelogram"
+        label="Tick Task"
+        tool_command="awk '!t && index($0, \"- [ ] \") == 1 { $0 = \"- [x] \" substr($0, 7); t = 1 } { print } END { exit !t }' TASKS.md > TASKS.md.new && mv TASKS.md.new TASKS.md || { rm -f TASKS.md.new; exit 1; }"
+    ]
+
+    // --- Edges ---
+    start -> pick
+
+    pick -> implement [label="MORE", condition="preferred_label=MORE"]
+    pick -> done      [label="DONE", condition="preferred_label=DONE"]
+
+    implement -> test
+
+    test -> verify [condition="outcome=success"]
+    test -> fix    [condition="outcome=fail"]
+    fix  -> test
+
+    verify -> tick [label="PASS", condition="preferred_label=PASS"]
+    verify -> fix  [label="FAIL", condition="preferred_label=FAIL"]
+
+    tick -> pick [condition="outcome=success", loop_restart=true]
+}

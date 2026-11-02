@@ -95,8 +95,9 @@ therefore requires `agent` or `llm_provider`.
 - **DOT pipeline definitions** -- Standard Graphviz digraph syntax with typed attributes (strings, integers, floats, booleans, durations)
 - **Direct pipeline generation** -- Pass a PRD and/or spec file to generate a self-contained .dot pipeline (no external issue tracker required)
 - **End-to-end launch** -- `hka launch <docs/>` discovers spec+PRD pairs, generates pipelines, validates, and runs them sequentially in one command
+- **Task loop** -- `templates/task-loop.dot` works through a markdown checklist (`TASKS.md`): pick, implement, test, verify, tick, repeat; no Beads needed
 - **Planning workflow** -- Generate PRD and spec documents from templates or AI prompts, decompose specs into beads issues, scaffold pipelines from epics
-- **Beads integration** -- Decompose specs into epics and tasks, scaffold pipelines from beads epics, close issues as pipeline nodes complete
+- **Beads integration** (optional) -- Decompose specs into epics and tasks, scaffold pipelines from beads epics, close issues as pipeline nodes complete
 - **Multi-provider LLM support** -- OpenAI, Anthropic, and Gemini adapters with unified request/response types
 - **Built-in tools** -- read_file, write_file, edit_file, shell, grep, glob
 - **Agent loop** -- LLM + tool execution cycle with steering injection, follow-up queues, loop detection, and output truncation
@@ -125,6 +126,22 @@ cargo install --path crates/attractor-cli --features monitor
 ```
 
 ## Usage
+
+### Quick start: work through a task list
+
+List your tasks as `- [ ] ...` lines in `TASKS.md` and run the reusable
+task loop over them: pick a task, implement it, test, verify, tick its
+box, repeat. No Beads needed.
+
+```sh
+cp templates/task-loop.dot templates/TASKS.md ~/my-project/
+cd ~/my-project
+# edit TASKS.md, and the `test` node's tool_command in task-loop.dot
+git add TASKS.md task-loop.dot && git commit -m "Add the task list"
+hka run task-loop.dot
+```
+
+See [The Task Loop](docs/guide.md#the-task-loop).
 
 ### Run a pipeline
 
@@ -175,6 +192,8 @@ hka generate spec.md -o pipelines/my-feature.dot
 ```
 
 ### Planning workflow (PRD → Spec → Beads → Pipeline)
+
+Optional; needs Beads (`bd`).
 
 ```sh
 # Generate a PRD from a prompt

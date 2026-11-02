@@ -26,6 +26,21 @@ no engine change.
 
 **Status:** open
 
-- [ ] The template validates with `bd` absent from the PATH
-- [ ] With fakes, a two-task list runs both tasks, ticks both boxes and exits (seam 2)
-- [ ] The guide's first pipeline pattern needs no beads
+- [x] The template validates with `bd` absent from the PATH
+- [x] With fakes, a two-task list runs both tasks, ticks both boxes and exits (seam 2)
+- [x] The guide's first pipeline pattern needs no beads
+
+**Notes:**
+- The list's path is `TASKS.md` in the repo root, written in each prompt
+  and in the `tick` tool node, not once: `${...}` expands in prompts only,
+  not in `tool_command` (`transforms.rs`), and the ticket rules out an
+  engine change. The template's header and the guide say to replace it
+  throughout for another file.
+- `tick` is a tool node (awk turns the first `- [ ] ` into `- [x] `;
+  it fails with no open box), so ticking is exact and testable with fakes.
+  The commit is the engine's attempt commit, not a separate step.
+- `test` runs `make test`, a placeholder the user edits.
+- Tests: `crates/attractor-cli/tests/task_loop.rs` (validate with an empty
+  `PATH`; the template run on the fake `claude` with a list of two open
+  tasks and one ticked, checking the stage order and the branch's
+  `TASKS.md`). `documented_dot_contracts` also validates every template.

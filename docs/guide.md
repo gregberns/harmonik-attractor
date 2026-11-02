@@ -5,6 +5,7 @@ harmonik-attractor (`hka` for short) is a pipeline runner for AI workflows. You 
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [The Task Loop](#the-task-loop)
 - [DOT File Anatomy](#dot-file-anatomy)
 - [Nodes](#nodes)
 - [Edges](#edges)
@@ -16,8 +17,8 @@ harmonik-attractor (`hka` for short) is a pipeline runner for AI workflows. You 
 - [Edge Selection Algorithm](#edge-selection-algorithm)
 - [Differences from the Attractor spec](#differences-from-the-attractor-spec)
 - [Pipeline Patterns](#pipeline-patterns)
-- [Planning Workflow](#planning-workflow)
-- [Integrating with Beads](#integrating-with-beads)
+- [Planning Workflow](#planning-workflow) (optional, with Beads)
+- [Integrating with Beads](#integrating-with-beads) (optional)
 - [Adding to Your Project](#adding-to-your-project)
 - [Writing Effective Prompts](#writing-effective-prompts)
 - [Multi-Provider Support](#multi-provider-support)
@@ -43,9 +44,26 @@ cd /path/to/connect-the-bots
 
 This builds release binaries and installs `harmonik-attractor` and its short name `hka` to `~/.local/bin`.
 
+### Work through a task list
+
+One good pipeline, reused: list your tasks in a markdown file and run the
+task loop over it. In your project's git repository:
+
+```bash
+cp /path/to/harmonik-attractor/templates/task-loop.dot .
+cp /path/to/harmonik-attractor/templates/TASKS.md .
+# edit TASKS.md: one `- [ ] ...` line per task
+# edit task-loop.dot: set the `test` node's tool_command to your test command
+git add TASKS.md task-loop.dot && git commit -m "Add the task list"
+hka run task-loop.dot
+```
+
+The Run starts from `HEAD`, so commit the list first. See
+[The Task Loop](#the-task-loop).
+
 ### Create a pipeline
 
-Create `hello.dot`:
+To write your own pipeline instead, create `hello.dot`:
 
 ```dot
 digraph Hello {
@@ -76,9 +94,44 @@ hka info hello.dot       # Show structure (nodes, edges, goal)
 hka plan --prd           # Generate a PRD template
 hka plan --spec          # Generate a spec template
 hka generate spec.md     # Generate pipeline .dot from spec
-hka decompose spec.md   # Decompose spec into beads tasks
-hka scaffold <EPIC_ID>   # Scaffold pipeline from beads epic
+hka decompose spec.md    # Decompose spec into beads tasks (needs bd)
+hka scaffold <EPIC_ID>   # Scaffold pipeline from beads epic (needs bd)
 ```
+
+---
+
+## The Task Loop
+
+`templates/task-loop.dot` is a fixed pipeline you reuse for any work you
+can write down as a checklist. Its tasks are the `- [ ] ...` lines of
+`TASKS.md` in the repository root (example: `templates/TASKS.md`). It
+needs no Beads, and no `bd` on the `PATH`.
+
+```
+pick → implement → test → verify → tick → pick (loop)
+          fix ↗ (tests fail, or verify says FAIL) ↘ test
+```
+
+- **pick** (agent, diamond) reads `TASKS.md` and answers `MORE` while a
+  box is open, `DONE` when every box is ticked; `DONE` ends the Run.
+- **implement** (agent) does the first open task, and only that task.
+- **test** (tool node) runs your test command; a failure goes to **fix**,
+  which goes back to **test**.
+- **verify** (agent, diamond) checks the diff against the task: `PASS`
+  goes on, `FAIL` goes to **fix**.
+- **tick** (tool node) turns the first `- [ ] ` line into `- [x] `, then
+  loops back to **pick**. It fails, stopping the Run, if no box is open.
+
+harmonik-attractor commits the Run's worktree after every attempt, so each
+task's work and its ticked box are commits on the Run's branch
+(`hka/run/<run-id>`). Merge that branch when you are happy with it. A Run
+that stops resumes with the same `hka run` command; the boxes already
+ticked stay ticked, and it carries on where it stopped.
+
+To change the loop (a review step, another agent, a different list
+file), edit your copy: it is a plain `.dot` file. `${...}` variables
+expand in prompts only, not in tool commands, so a different list file
+means replacing `TASKS.md` throughout.
 
 ---
 
@@ -634,6 +687,9 @@ Run: bd sync --flush-only"]
 
 ## Planning Workflow
 
+Optional: this workflow tracks tasks in Beads (`bd`). Without Beads, use
+[the task loop](#the-task-loop).
+
 harmonik-attractor includes a full planning-to-execution workflow that bridges structured documents to beads issue tracking to pipeline execution.
 
 ### The flow
@@ -743,6 +799,9 @@ To end a Run immediately, use `hka kill <run-id> [--grace 20s]`; see the [CLI re
 ---
 
 ## Integrating with Beads
+
+Optional: nothing in harmonik-attractor needs Beads; `hka` checks for `bd`
+only when a pipeline has `beads.*` nodes.
 
 harmonik-attractor pipelines work well with [beads](https://github.com/Dicklesworthstone/beads_viewer) for issue tracking.
 
