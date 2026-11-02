@@ -23,7 +23,6 @@
 **Status:** open
 
 - [x] Every existing `[codergen.claude]` and `--codergen-claude-*` test still passes
-- [ ] The example validates (`hka validate`)
 
 **Notes:**
 - The `settings_mode` → `isolation` fold landed in 29 (a boundary call the
@@ -38,9 +37,8 @@
   `execute_configured` (`engine.rs:673`). The compatibility path builds
   the same flags from a `ClaudeSetup`.
 - Item 3 (the example `reviewer` role), with item 2's "give an agent its
-  own skills" section, moved to a follow-up ticket pending operator item
-  17 (the default isolation: with `--safe-mode`, Claude loads a plugin
-  from `plugin_dirs` but not its skills). So "The example validates" is
-  not done here.
+  own skills" section, moved to ticket 32 (the default isolation is
+  operator item 17: with `--safe-mode`, Claude loads a plugin from
+  `plugin_dirs` but not its skills).
 - `docs/emergence-analysis.md` has a Historical design banner: "This
   analysis describes the engine as of 2026-02 (PAS)."
