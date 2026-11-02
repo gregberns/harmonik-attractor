@@ -28,7 +28,7 @@
 
 **Blocked by:** 26
 
-**Status:** open
+**Status:** done
 
 - [x] A fake agent sees `HKA_RUN_ID` etc. and no `PAS_*` (seam 2)
 - [x] Resume after a kill still finds the interrupted attempt by its trailers
