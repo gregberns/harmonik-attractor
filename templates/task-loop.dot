@@ -10,9 +10,9 @@
 //
 // To use it: copy this file and TASKS.md into your project, list your
 // tasks, set `test` to your test command, and run
-// `hka run task-loop.dot`. The list's path is TASKS.md in every prompt
-// and in `tick`; to use another file, replace TASKS.md throughout
-// (`${...}` variables expand in prompts only, not in tool commands).
+// `hka run task-loop.dot`. To use another list, change TASKS.md in each
+// prompt and in the tick node (`${...}` variables expand in prompts only,
+// not in tool commands).
 digraph TaskLoop {
     goal="Work through the task list in TASKS.md, one unchecked task at a time, until every box is ticked."
 
