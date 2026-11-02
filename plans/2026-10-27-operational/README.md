@@ -30,7 +30,7 @@ In priority order. The integrator marks a ticket done here when merging it.
 | 23 | [Claude agents can't reach the operator's other sessions](tickets/23-no-cross-session-tools.md) | none | done |
 | 24 | [Directory mode: each phase starts from the previous phase's result](tickets/24-chain-phases.md) | none | done |
 | 25 | [Rename: the binary is `harmonik-attractor`, alias `hka`](tickets/25-rename-binary.md) | none | done |
-| 26 | [Rename: `pas.toml` and `.pas/` become `.harmonik-attractor/`](tickets/26-rename-config-and-run-folder.md) | 25 | open |
+| 26 | [Rename: `pas.toml` and `.pas/` become `.harmonik-attractor/`](tickets/26-rename-config-and-run-folder.md) | 25 | done |
 | 27 | [Rename: `HKA_*` env vars, state dirs and commit trailers](tickets/27-rename-env-state-trailers.md) | 26 | open |
 | 28 | [Rename: docs, README, AGENTS.md and examples](tickets/28-rename-docs.md) | 27 | open |
 | 29 | [Claude agent setup fields: isolation, settings, skills, tools](tickets/29-agent-setup-fields.md) | 28 | open |
