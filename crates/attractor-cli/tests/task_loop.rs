@@ -33,8 +33,10 @@ fn the_task_loop_validates_without_bd_on_the_path() {
     assert!(output.status.success(), "{}", stderr(&output));
 }
 
-#[test]
-fn the_task_loop_runs_both_tasks_ticks_both_boxes_and_exits() {
+/// A repo with a list of two open tasks and one ticked, a passing
+/// `make test`, and the fake `claude` scripted to pick twice, pass both,
+/// then answer DONE.
+fn two_task_list() -> FakeAgent {
     let fake = FakeAgent::new();
     fake.shim_claude_on_path();
     fs::write(
@@ -50,7 +52,19 @@ fn the_task_loop_runs_both_tasks_ticks_both_boxes_and_exits() {
     node_file(&fake, "pick@3", "scenario=label label=DONE");
     node_file(&fake, "implement", "scenario=success");
     node_file(&fake, "verify", "scenario=label label=PASS");
+    fake
+}
 
+fn tasks_on_the_run_branch(fake: &FakeAgent) -> String {
+    let branch = fake.run_meta()["branch"].as_str().unwrap().to_string();
+    fake.git(&["show", &format!("{branch}:TASKS.md")])
+}
+
+const ALL_TICKED: &str = "# Tasks\n\n- [x] first task\n- [x] already done\n- [x] second task";
+
+#[test]
+fn the_task_loop_runs_both_tasks_ticks_both_boxes_and_exits() {
+    let fake = two_task_list();
     let dot = fs::read_to_string(template("task-loop.dot")).unwrap();
     let output = fake.run(&dot);
     assert!(output.status.success(), "{}", stderr(&output));
@@ -73,9 +87,31 @@ fn the_task_loop_runs_both_tasks_ticks_both_boxes_and_exits() {
             "done",
         ]
     );
-    let branch = fake.run_meta()["branch"].as_str().unwrap().to_string();
-    assert_eq!(
-        fake.git(&["show", &format!("{branch}:TASKS.md")]),
-        "# Tasks\n\n- [x] first task\n- [x] already done\n- [x] second task"
+    assert_eq!(tasks_on_the_run_branch(&fake), ALL_TICKED);
+}
+
+/// Each task costs at least five steps, so `--max-steps` caps a list's
+/// length; the same command with a larger `--max-steps` resumes the Run.
+#[test]
+fn a_task_loop_stopped_by_max_steps_resumes_with_a_larger_max_steps() {
+    let fake = two_task_list();
+    let dot = fs::read_to_string(template("task-loop.dot")).unwrap();
+    let stopped = fake.run_with(&dot, &["--max-steps", "8"]);
+    assert!(
+        stderr(&stopped).contains("exceeded maximum step count (8)"),
+        "{}",
+        stderr(&stopped)
     );
+    // The same cap again stops at once: the step count is in the checkpoint.
+    let again = fake.run_with(&dot, &["--max-steps", "8"]);
+    assert!(
+        stderr(&again).contains("exceeded maximum step count (8)"),
+        "{}",
+        stderr(&again)
+    );
+
+    let resumed = fake.run_with(&dot, &["--max-steps", "200"]);
+    assert!(resumed.status.success(), "{}", stderr(&resumed));
+    assert_eq!(fake.run_dirs().len(), 1, "a resume, not a new Run");
+    assert_eq!(tasks_on_the_run_branch(&fake), ALL_TICKED);
 }

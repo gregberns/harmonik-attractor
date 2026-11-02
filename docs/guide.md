@@ -128,6 +128,15 @@ task's work and its ticked box are commits on the Run's branch
 that stops resumes with the same `hka run` command; the boxes already
 ticked stay ticked, and it carries on where it stopped.
 
+**Long lists and `--max-steps`.** Every node run is a step, and a Run
+stops at `--max-steps` (default 200). Each task takes at least 5 steps
+(pick, implement, test, verify, tick), plus 2 for each fix, so the default
+covers about 39 tasks with no fixes, fewer in practice. For a long list
+pass a larger cap: `hka run task-loop.dot --max-steps 1000`. The step
+count is saved with the Run, so a Run stopped by the cap stops again at
+once when resumed with the same command; resume it with a larger
+`--max-steps`.
+
 To change the loop (a review step, another agent, a different list
 file), edit your copy: it is a plain `.dot` file. `${...}` variables
 expand in prompts only, not in tool commands, so a different list file

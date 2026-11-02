@@ -13,6 +13,10 @@
 // `hka run task-loop.dot`. To use another list, change TASKS.md in each
 // prompt and in the tick node (`${...}` variables expand in prompts only,
 // not in tool commands).
+//
+// Each task takes at least 5 steps (plus 2 per fix) of `--max-steps`
+// (default 200); pass a larger `--max-steps` for a long list, and to
+// resume a Run that stopped at the cap.
 digraph TaskLoop {
     goal="Work through the task list in TASKS.md, one unchecked task at a time, until every box is ticked."
 

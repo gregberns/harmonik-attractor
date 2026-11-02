@@ -44,3 +44,8 @@ no engine change.
   `PATH`; the template run on the fake `claude` with a list of two open
   tasks and one ticked, checking the stage order and the branch's
   `TASKS.md`). `documented_dot_contracts` also validates every template.
+- `--max-steps` (default 200) caps a list's length: each task takes at
+  least 5 steps, and the step count is saved with the Run. The guide and
+  the template say so;
+  `a_task_loop_stopped_by_max_steps_resumes_with_a_larger_max_steps`
+  checks that the same cap stops again and a larger one resumes.
