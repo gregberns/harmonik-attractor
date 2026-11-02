@@ -199,9 +199,9 @@ fn claude_node_args_carry_allowed_tools_and_budget() {
     );
 }
 
-/// `settings_mode` sets the `claude` profile's `isolation`; the other
-/// `[codergen.claude]` flags go at the end of its args. Profiles inheriting
-/// from `claude` get both.
+/// `settings_mode` sets the `claude` profile's `isolation` and `tools` its
+/// `tools`; the args stay the profile's own. Profiles inheriting from
+/// `claude` get both.
 #[test]
 fn codergen_claude_settings_fold_into_the_claude_profile() {
     use attractor_agent_handler::{AgentsConfig, Isolation};
@@ -225,13 +225,16 @@ fn codergen_claude_settings_fold_into_the_claude_profile() {
         "--dangerously-skip-permissions",
         "--strict-mcp-config",
         "--disable-slash-commands",
-        "--tools",
-        "Read",
     ];
     for name in ["claude", "claude-opus"] {
         let profile = profiles.iter().find(|p| p.name == name).unwrap();
         assert_eq!(profile.args, expected, "{name}");
         assert_eq!(profile.setup.isolation, Some(Isolation::Bare), "{name}");
+        assert_eq!(
+            profile.setup.tools,
+            Some(vec!["Read".to_string()]),
+            "{name}"
+        );
         // The session flags stay their own field, after the folded args.
         assert_eq!(
             profile.session_args,
@@ -239,6 +242,33 @@ fn codergen_claude_settings_fold_into_the_claude_profile() {
             "{name}"
         );
     }
+}
+
+/// `tools` is a comma list: entries are trimmed, and `""` is no tools at
+/// all, which still passes `--tools ""`.
+#[test]
+fn codergen_claude_tools_split_into_the_profile_list() {
+    use attractor_agent_handler::AgentsConfig;
+    let tools_of = |tools: &str| {
+        let cfg = ClaudeCliConfig {
+            tools: Some(tools.into()),
+            ..ClaudeCliConfig::default()
+        };
+        let profiles = fold_codergen_claude(AgentsConfig::builtin().unwrap(), &cfg)
+            .resolve()
+            .unwrap();
+        let claude = profiles.into_iter().find(|p| p.name == "claude").unwrap();
+        claude.setup
+    };
+    assert_eq!(
+        tools_of("Read, Edit").tools,
+        Some(vec!["Read".to_string(), "Edit".to_string()])
+    );
+    let none = tools_of("");
+    assert_eq!(none.tools, Some(vec![]));
+    let args = none.args();
+    let at = args.iter().position(|a| a == "--tools").unwrap();
+    assert_eq!(args[at + 1], "");
 }
 
 /// Without a `settings_mode`, the profile's own `isolation` stays.
@@ -274,12 +304,12 @@ fn the_fold_keeps_the_args_an_overridden_claude_inherits() {
     .profiles;
     let config = AgentsConfig::builtin().unwrap().with_overrides(&overrides);
     let cfg = ClaudeCliConfig {
-        tools: Some("T".into()),
+        agents: Some("{}".into()),
         ..ClaudeCliConfig::default()
     };
     let profiles = fold_codergen_claude(config, &cfg).resolve().unwrap();
     let claude = profiles.iter().find(|p| p.name == "claude").unwrap();
-    assert_eq!(claude.args, ["--base", "--tools", "T"]);
+    assert_eq!(claude.args, ["--base", "--agents", "{}"]);
     // No settings mode and no isolation in the chain: the default mode's.
     assert_eq!(
         claude.setup.isolation,

@@ -239,9 +239,16 @@ mcp_config_json = "{}"
 CLI flags override the corresponding `.harmonik-attractor/config.toml` field for the current run;
 unset CLI fields continue to inherit their individual manifest values.
 
-These settings are added to the end of the `claude` profile's `args` (below),
-before `inherit_from` is resolved, so a profile that inherits from `claude`
-gets them too. The argv is the same as before profiles existed.
+These settings fill the `claude` profile's fields (see
+[The `claude-p` profile fields](#the-claude-p-profile-fields)) before
+`inherit_from` is resolved, so a profile that inherits from `claude` gets
+them too: `settings_mode` sets `isolation` (and `setting_sources` for
+`inherit`), and `settings_json`, `tools`, `plugin_dirs` and
+`mcp_config_json` set `settings`, `tools`, `plugin_dirs` and `mcp_config`.
+A profile that sets one of those fields itself replaces the
+`[codergen.claude]` value, so Claude gets that flag once. Only
+`agents_json` has no field; it is added to the end of the `claude`
+profile's `args` as `--agents`.
 
 #### Agent profiles (`[agents.<name>]` in `.harmonik-attractor/config.toml`)
 
@@ -253,7 +260,7 @@ on the node, or `llm_provider`, which names a built-in profile:
 
 | Profile | Mechanism (handler) | Command and args | The handler adds |
 |---------|---------------------|------------------|------------------|
-| `claude` | `claude-p` | `claude --dangerously-skip-permissions --strict-mcp-config --disable-slash-commands` (+ `[codergen.claude]` flags), then `--safe-mode` (`isolation = "safe"`) and `--disallowedTools SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup` (`disallowed_tools`), then `--session-id <id>` (new) or `--resume <id>` (continue) | `-p <prompt> --output-format stream-json --verbose` |
+| `claude` | `claude-p` | `claude --dangerously-skip-permissions --strict-mcp-config --disable-slash-commands` (+ `[codergen.claude]` `--agents`), then the [profile fields](#the-claude-p-profile-fields): `--safe-mode` (`isolation = "safe"`) and `--disallowedTools SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup` (`disallowed_tools`), then `--session-id <id>` (new) or `--resume <id>` (continue) | `-p <prompt> --output-format stream-json --verbose` |
 | `codex` | `codex-exec` | `codex exec --json --yolo --skip-git-repo-check`; to continue, `codex exec resume <thread-id> --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox` | `--cd <workdir>` (new sessions only) and `<prompt>` |
 | `gemini` | `gemini` | `gemini --approval-mode yolo` | `--output-format <json\|stream-json>` right after the command, and `<prompt>` last |
 
@@ -275,6 +282,29 @@ disallowed_tools = ["ListAgents", "Workflow", "RemoteTrigger",
                     "PushNotification", "CronCreate", "CronDelete",
                     "ScheduleWakeup"]
 ```
+
+#### The `claude-p` profile fields
+
+A `claude-p` profile (the built-in `claude`, and every profile inheriting
+from it) takes these fields, each passed as a Claude Code flag:
+
+| Field | Flag | Meaning |
+|-------|------|---------|
+| `isolation` | `--safe-mode`, `--bare`, or `--setting-sources` | `"safe"` (the built-in `claude`'s), `"bare"` (literal bare mode: API-key auth only), or `"inherit"` (no isolation; loads `setting_sources`). |
+| `setting_sources` | `--setting-sources <a,b>` | Required with `isolation = "inherit"`, and only used with it: `user`, `project`, `local`. |
+| `settings` | `--settings <file-or-json>` | A settings file, or inline JSON starting with `{`. |
+| `plugin_dirs` | `--plugin-dir <dir>`, once per dir | Plugin folders the agent loads. |
+| `tools` | `--tools <a,b>` | The built-in tools the agent may use; `[]` passes `--tools ""` (none). |
+| `disallowed_tools` | `--disallowedTools <a,b>` | Tools turned off. The built-in `claude` sets the session tools (below); `[]` passes no flag. |
+| `mcp_config` | `--mcp-config <file-or-json>` | An MCP config file, or inline JSON starting with `{`. |
+
+A relative `settings`, `mcp_config` or `plugin_dirs` path is relative to
+the project root (the folder holding `.harmonik-attractor/`), so it works
+from the Run's worktree. A profile setting one of these fields replaces
+its parent's whole value. The flags come after the profile's `args`, in
+the table's order, then the session flags. `hka validate` refuses
+`setting_sources` without `isolation = "inherit"` (and the reverse), and
+another mechanism refuses all seven fields.
 
 A model is added as `--model <model>` for all three; only `claude` takes a
 reasoning level (`--effort <level>`). Every agent node runs the same way:

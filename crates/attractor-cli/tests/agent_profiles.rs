@@ -297,9 +297,10 @@ const CROSS_SESSION_TOOLS: &str =
     "SendMessage,ListAgents,Workflow,RemoteTrigger,PushNotification,CronCreate,CronDelete,ScheduleWakeup";
 
 /// The `llm_provider="claude"` alias with every `[codergen.claude]` setting
-/// gives the flags ticket 02a gave: the `claude` profile's args, the
-/// `[codergen.claude]` flags, its setup flags (the settings mode is its
-/// `isolation`), the node's flags, the model, then the handler's own flags.
+/// gives the flags ticket 02a gave: the `claude` profile's args (with
+/// `--agents`), its setup fields (which the other `[codergen.claude]`
+/// settings fill), the node's flags, the model, then the handler's own
+/// flags.
 #[test]
 fn the_claude_alias_with_codergen_claude_settings_keeps_02as_argv() {
     let fake = FakeAgent::new();
@@ -336,20 +337,20 @@ mcp_config_json = "{\"mcpServers\":{}}"
         "--dangerously-skip-permissions",
         "--strict-mcp-config",
         "--disable-slash-commands",
+        "--agents",
+        "{\"r\":{}}",
+        "--setting-sources",
+        "user,project",
         "--mcp-config",
         "{\"mcpServers\":{}}",
         "--settings",
         "{}",
         "--tools",
         "Read,Edit",
-        "--agents",
-        "{\"r\":{}}",
-        "--plugin-dir",
-        plugin.to_str().unwrap(),
-        "--setting-sources",
-        "user,project",
         "--disallowedTools",
         CROSS_SESSION_TOOLS,
+        "--plugin-dir",
+        plugin.to_str().unwrap(),
         "--session-id",
         session.as_str(),
         "--allowedTools",
@@ -449,6 +450,39 @@ fn a_reviewer_inheriting_claude_gets_its_plugin_dirs_and_settings() {
         fake.invocations(),
         vec![expected.map(String::from).to_vec()]
     );
+}
+
+/// `[codergen.claude]` fills the `claude` profile's fields, so a profile
+/// inheriting it that sets the same field passes that flag once, its own.
+#[test]
+fn a_profiles_own_settings_win_over_codergen_claude_with_one_flag() {
+    let fake = FakeAgent::new();
+    fake.commit_config(
+        "[codergen.claude]\nsettings_json = \"{}\"\ntools = \"Read,Edit\"\n\
+         plugin_dirs = [\"shared\"]\nmcp_config_json = \"{}\"\n\n\
+         [agents.reviewer]\ninherit_from = \"fake-claude\"\n\
+         settings = \"agents/reviewer/settings.json\"\nplugin_dirs = [\"agents/reviewer\"]",
+    );
+
+    assert_success(&fake.run(&one_node(r#"agent="reviewer", prompt="scenario=success""#)));
+
+    let root = fs::canonicalize(fake.repo()).unwrap();
+    let argv = &fake.invocations()[0];
+    let values = |flag: &str| -> Vec<&str> {
+        argv.iter()
+            .enumerate()
+            .filter(|(_, a)| *a == flag)
+            .map(|(i, _)| argv[i + 1].as_str())
+            .collect()
+    };
+    let settings = root.join("agents/reviewer/settings.json");
+    let plugin = root.join("agents/reviewer");
+    assert_eq!(values("--settings"), [settings.to_str().unwrap()]);
+    assert_eq!(values("--plugin-dir"), [plugin.to_str().unwrap()]);
+    // The fields it doesn't set come from [codergen.claude], once.
+    assert_eq!(values("--tools"), ["Read,Edit"]);
+    assert_eq!(values("--mcp-config"), ["{}"]);
+    assert_eq!(argv.iter().filter(|a| *a == "--safe-mode").count(), 1);
 }
 
 #[test]

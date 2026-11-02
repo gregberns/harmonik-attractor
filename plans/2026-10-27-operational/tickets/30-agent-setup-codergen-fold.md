@@ -22,5 +22,24 @@
 
 **Status:** open
 
-- [ ] Every existing `[codergen.claude]` and `--codergen-claude-*` test still passes
+- [x] Every existing `[codergen.claude]` and `--codergen-claude-*` test still passes
 - [ ] The example validates (`hka validate`)
+
+**Notes:**
+- The `settings_mode` → `isolation` fold landed in 29 (a boundary call the
+  captain accepted), so `--safe-mode` is never passed twice.
+- `settings_json`, `tools`, `plugin_dirs` and `mcp_config_json` now set
+  the profile fields; a profile setting the same field replaces it and
+  passes the flag once
+  (`a_profiles_own_settings_win_over_codergen_claude_with_one_flag`).
+  `agents_json` has no field and stays in `args` as `--agents`.
+- `execute_resolved`/`execute` (and `claude_settings_args`) are reached
+  only from tests and the public library API; the engine calls
+  `execute_configured` (`engine.rs:673`). The compatibility path builds
+  the same flags from a `ClaudeSetup`.
+- Item 3 (the example `reviewer` role) waits for the captain's ruling on
+  the default isolation: with `--safe-mode`, Claude loads a plugin from
+  `plugin_dirs` but not its skills. The "give an agent its own skills"
+  section of item 2 waits with it.
+- The `docs/emergence-analysis.md` Historical design banner was added with
+  the text from `accept-execute-flow.md`, unchanged.

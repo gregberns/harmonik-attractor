@@ -38,6 +38,12 @@ All notable changes to harmonik-attractor (formerly PAS) are documented here.
 - The retry prompt names the previous attempt's failure.
 - `hka validate --workdir` reads the same `.harmonik-attractor/config.toml`
   as `hka run`.
+- **Claude profile fields.** A `claude-p` profile takes `isolation`
+  (`safe`, `bare`, `inherit`), `setting_sources`, `settings`,
+  `plugin_dirs`, `tools`, `disallowed_tools` and `mcp_config`, each passed
+  as its Claude Code flag, so each agent role can have its own settings,
+  plugins and skills. Relative paths are relative to the project root.
+  `hka validate` refuses them on other mechanisms.
 - `hka validate` and `hka run` warn (`node_model`) when a node sets `model`,
   a graph attribute that does nothing there; the node attribute is
   `llm_model`.
@@ -72,8 +78,16 @@ All notable changes to harmonik-attractor (formerly PAS) are documented here.
   `--disallowedTools` for Claude's session tools that reach outside the Run
   (`SendMessage`, `ListAgents`, `Workflow`, `RemoteTrigger`,
   `PushNotification`, `CronCreate`, `CronDelete`, `ScheduleWakeup`), so a
-  pipeline agent can't message or start the operator's other sessions. A
-  profile with its own `args` replaces the list.
+  pipeline agent can't message or start the operator's other sessions. It
+  is the profile's `disallowed_tools`: a profile with its own `args` keeps
+  it, and one that sets `disallowed_tools` replaces it.
+- **`[codergen.claude]` fills the profile fields.** `settings_mode`,
+  `settings_json`, `tools`, `plugin_dirs` and `mcp_config_json` (and their
+  `--codergen-claude-*` flags) set the `claude` profile's `isolation`,
+  `settings`, `tools`, `plugin_dirs` and `mcp_config` instead of appending
+  raw args, so a profile that sets the same field gets its own value and
+  one flag. `agents_json` is still appended as `--agents`. The isolation
+  flag now comes after the profile's args.
 - **Stripped environment.** Agents never inherit API keys that would bill
   outside your subscription (the default `env.remove` list), nor the calling
   Claude Code session's identity variables.

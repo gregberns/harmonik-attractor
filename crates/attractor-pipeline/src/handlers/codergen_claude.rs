@@ -87,9 +87,12 @@ pub fn agent_profiles(controls: &ResolvedConfig) -> std::result::Result<Vec<Prof
 
 /// `config` with `cfg` folded into the `claude` profile: its settings mode
 /// sets `isolation` (and `setting_sources`); without one, a `claude` whose
-/// chain sets no `isolation` gets the default mode's, `safe`. Its other
-/// flags are appended to the args. When that profile sets no args of its
-/// own, they go after the args it inherits.
+/// chain sets no `isolation` gets the default mode's, `safe`. Its
+/// `settings`, `tools`, `plugin_dirs` and `mcp_config` set the profile
+/// fields of the same names, so a profile inheriting from `claude` that sets
+/// one of them replaces it and passes the flag once. Only `--agents`, which
+/// has no profile field, is appended to the args; when that profile sets no
+/// args of its own, it goes after the args it inherits.
 pub(super) fn fold_codergen_claude(
     mut config: AgentsConfig,
     cfg: &ClaudeCliConfig,
@@ -108,10 +111,35 @@ pub(super) fn fold_codergen_claude(
             }
             None => {}
         }
-        let args = claude.args.get_or_insert(inherited);
-        args.extend(claude_flag_args(cfg));
+        if let Some(settings) = &cfg.settings {
+            claude.settings = Some(settings.clone());
+        }
+        if let Some(tools) = &cfg.tools {
+            claude.tools = Some(tool_list(tools));
+        }
+        if !cfg.plugin_dirs.is_empty() {
+            claude.plugin_dirs = Some(cfg.plugin_dirs.clone());
+        }
+        if let Some(mcp_config) = &cfg.mcp_config {
+            claude.mcp_config = Some(mcp_config.clone());
+        }
+        if let Some(agents) = &cfg.agents {
+            let args = claude.args.get_or_insert(inherited);
+            args.extend(["--agents".to_string(), agents.clone()]);
+        }
     }
     config
+}
+
+/// A `[codergen.claude] tools` string as the profile's tool list: split on
+/// commas and trimmed; `""` is the empty list (no built-in tools).
+fn tool_list(tools: &str) -> Vec<String> {
+    tools
+        .split(',')
+        .map(str::trim)
+        .filter(|tool| !tool.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 /// The profile `isolation` a settings mode means.
@@ -153,45 +181,26 @@ fn from_parents<T>(
 }
 
 /// The `[codergen.claude]` flags as extra args, for the compatibility
-/// path: the settings mode's isolation flag, when set, then
-/// [`claude_flag_args`].
+/// path: the setup flags in profile order, then `--agents`.
 pub(super) fn claude_settings_args(cfg: &ClaudeCliConfig) -> Vec<String> {
     let setup = ClaudeSetup {
         isolation: cfg.settings_mode.map(isolation),
         setting_sources: Some(cfg.setting_sources.clone()),
+        settings: cfg.settings.clone(),
+        tools: cfg.tools.as_deref().map(tool_list),
+        plugin_dirs: Some(cfg.plugin_dirs.clone()),
+        mcp_config: cfg.mcp_config.clone(),
         ..ClaudeSetup::default()
     };
     setup
         .args()
         .into_iter()
-        .chain(claude_flag_args(cfg))
+        .chain(
+            cfg.agents
+                .iter()
+                .flat_map(|agents| ["--agents".to_string(), agents.clone()]),
+        )
         .collect()
-}
-
-/// The `[codergen.claude]` flags other than the settings mode:
-/// `--mcp-config`, `--settings`, `--tools`, `--agents`, `--plugin-dir`.
-fn claude_flag_args(cfg: &ClaudeCliConfig) -> Vec<String> {
-    let mut args = Vec::new();
-    let mut flag = |name: &str, value: &str| {
-        args.push(name.to_string());
-        args.push(value.to_string());
-    };
-    if let Some(mcp_config) = &cfg.mcp_config {
-        flag("--mcp-config", mcp_config);
-    }
-    if let Some(settings) = &cfg.settings {
-        flag("--settings", settings);
-    }
-    if let Some(tools) = &cfg.tools {
-        flag("--tools", tools);
-    }
-    if let Some(agents) = &cfg.agents {
-        flag("--agents", agents);
-    }
-    for plugin_dir in &cfg.plugin_dirs {
-        flag("--plugin-dir", plugin_dir);
-    }
-    args
 }
 
 /// The node attributes `allowed_tools` and `max_budget_usd` as flags.
