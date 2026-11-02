@@ -37,9 +37,10 @@
   only from tests and the public library API; the engine calls
   `execute_configured` (`engine.rs:673`). The compatibility path builds
   the same flags from a `ClaudeSetup`.
-- Item 3 (the example `reviewer` role) waits for the captain's ruling on
-  the default isolation: with `--safe-mode`, Claude loads a plugin from
-  `plugin_dirs` but not its skills. The "give an agent its own skills"
-  section of item 2 waits with it.
-- The `docs/emergence-analysis.md` Historical design banner was added with
-  the text from `accept-execute-flow.md`, unchanged.
+- Item 3 (the example `reviewer` role), with item 2's "give an agent its
+  own skills" section, moved to a follow-up ticket pending operator item
+  17 (the default isolation: with `--safe-mode`, Claude loads a plugin
+  from `plugin_dirs` but not its skills). So "The example validates" is
+  not done here.
+- `docs/emergence-analysis.md` has a Historical design banner: "This
+  analysis describes the engine as of 2026-02 (PAS)."

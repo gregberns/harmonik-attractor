@@ -42,7 +42,7 @@ All notable changes to harmonik-attractor (formerly PAS) are documented here.
   (`safe`, `bare`, `inherit`), `setting_sources`, `settings`,
   `plugin_dirs`, `tools`, `disallowed_tools` and `mcp_config`, each passed
   as its Claude Code flag, so each agent role can have its own settings,
-  plugins and skills. Relative paths are relative to the project root.
+  plugins and tools. Relative paths are relative to the project root.
   `hka validate` refuses them on other mechanisms.
 - `hka validate` and `hka run` warn (`node_model`) when a node sets `model`,
   a graph attribute that does nothing there; the node attribute is

@@ -1,8 +1,7 @@
 # Emergence Analysis: PAS Pipeline Engine
 
-> **Historical design.** This flow describes the earlier PAS Web app
-> (Leptos + Axum), which no longer exists. The Monitor
-> (`crates/attractor-monitor`) replaced it.
+> **Historical design.** This analysis describes the engine as of 2026-02
+> (PAS).
 
 > **Analytical Lens:** Grady Booch's "Evolutionary Architecture" — where the system mimics biological resilience over mechanical rigidity.
 >
